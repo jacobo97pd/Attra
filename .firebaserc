@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "attra-database",
+    "Attra": "attra-database"
+  },
+  "targets": {
+    "attra-database": {
+      "database": {
+        "attra": [
+          "attra-database"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "825052601260",
+    "project_id": "attra-database",
+    "storage_bucket": "attra-database.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:825052601260:android:febbb2bb267656f89df809",
+        "android_client_info": {
+          "package_name": "com.jpedrero.attra"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "825052601260-9lb6br4g49t21ac6559pmuj221mmqsjg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jpedrero.attra",
+            "certificate_hash": "7c8218a019aa2968936594c0c5b621ee7805ed40"
+          }
+        },
+        {
+          "client_id": "825052601260-n1t6hb899mipavg8m56mt7dv8l1emdhu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8h_q2epE4Ut_o4cFTqy4yvv9K_TTWAGc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "825052601260-n1t6hb899mipavg8m56mt7dv8l1emdhu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

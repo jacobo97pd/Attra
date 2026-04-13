@@ -1,0 +1,38 @@
+[
+  {
+    "id": "seed_lucia_barcelona_01",
+    "isBot": true,
+    "botProfileVersion": 1,
+    "botScenario": "urban_professional",
+    "seedQualityScore": 92,
+    "displayName": "Lucia",
+    "birthDate": "1997-04-12T00:00:00.000Z",
+    "gender": "female",
+    "currentCity": "Barcelona",
+    "bio": "Disenadora de producto, cafe y escapadas de fin de semana.",
+    "personalityTags": ["creative", "empathetic", "ambitious"],
+    "appearance": {
+      "heightCm": 168,
+      "eyeColor": "green",
+      "hairColor": "brown",
+      "hairType": "wavy",
+      "bodyType": "athletic"
+    },
+    "photos": [
+      {
+        "url": "https://example.com/seed/lucia/1.jpg",
+        "storagePath": "seed_profiles/public/lucia_1.jpg",
+        "source": "seed",
+        "order": 0,
+        "createdAt": "2026-04-01T10:00:00.000Z"
+      },
+      {
+        "url": "https://example.com/seed/lucia/2.jpg",
+        "storagePath": "seed_profiles/public/lucia_2.jpg",
+        "source": "seed",
+        "order": 1,
+        "createdAt": "2026-04-01T10:00:00.000Z"
+      }
+    ]
+  }
+]

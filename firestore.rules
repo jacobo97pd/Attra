@@ -1,0 +1,323 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function allowedTopLevelKeys() {
+      return [
+        'uid',
+        'empresa',
+        'email',
+        'displayName',
+        'photoUrl',
+        'profilePhotoUrl',
+        'createdAt',
+        'lastLoginAt',
+        'onboardingCompleted',
+        'profileCompleted',
+        'authProvider',
+        'onboardingCompletedAt',
+        'updatedAt',
+        'profile',
+        'appearance',
+        'lifestyle',
+        'style',
+        'preferences',
+        'location',
+        'photos',
+        'profileCompletionPercent',
+        'profileCompletionChecklist',
+        'pendingProfileTasks',
+        'profileCompletionRewardsClaimed',
+        'availableProfileRewards',
+        'isBot',
+        'botProfileVersion',
+        'botScenario',
+        'seedQualityScore',
+        'verification',
+        'aiData',
+        'onboardingDraft',
+        'onboardingDraftUpdatedAt'
+      ];
+    }
+
+    function isStringOrNull(value) {
+      return value == null || value is string;
+    }
+
+    function isRequiredString(value) {
+      return value is string && value.size() > 0;
+    }
+
+    function isBoolOrNull(value) {
+      return value == null || value is bool;
+    }
+
+    function isIntOrNull(value) {
+      return value == null || value is int;
+    }
+
+    function isNumberOrNull(value) {
+      return value == null || value is int || value is float;
+    }
+
+    function isTimestampOrNull(value) {
+      return value == null || value is timestamp;
+    }
+
+    function isListOrNull(value) {
+      return value == null || value is list;
+    }
+
+    function isMapOrNull(value) {
+      return value == null || value is map;
+    }
+
+    function isProfile(value) {
+      return value == null || (
+        value is map
+        && isStringOrNull(value.visibleName)
+        && isTimestampOrNull(value.birthDate)
+        && isStringOrNull(value.gender)
+        && isStringOrNull(value.city)
+        && isStringOrNull(value.cityName)
+        && isStringOrNull(value.cityNormalized)
+        && isStringOrNull(value.birthCity)
+        && isStringOrNull(value.birthCityNormalized)
+        && isStringOrNull(value.currentCity)
+        && isStringOrNull(value.currentCityNormalized)
+        && isListOrNull(value.languages)
+        && isStringOrNull(value.bio)
+        && isStringOrNull(value.relationshipIntent)
+        && isListOrNull(value.prompts)
+      );
+    }
+
+    function isAppearance(value) {
+      return value == null || (
+        value is map
+        && isIntOrNull(value.heightCm)
+        && isStringOrNull(value.eyeColor)
+        && isStringOrNull(value.hairColor)
+        && isStringOrNull(value.hairType)
+        && isStringOrNull(value.bodyType)
+      );
+    }
+
+    function isLifestyle(value) {
+      return value == null || (
+        value is map
+        && isStringOrNull(value.smoking)
+        && isStringOrNull(value.drinking)
+        && isStringOrNull(value.fitnessLevel)
+        && isStringOrNull(value.wantsChildren)
+        && isStringOrNull(value.socialStyle)
+        && isStringOrNull(value.travelStyle)
+      );
+    }
+
+    function isStyle(value) {
+      return value == null || (
+        value is map
+        && isListOrNull(value.fashionStyle)
+        && isListOrNull(value.personalityTags)
+      );
+    }
+
+    function isPreferences(value) {
+      return value == null || (
+        value is map
+        && isListOrNull(value.interestedIn)
+        && isIntOrNull(value.preferredAgeMin)
+        && isIntOrNull(value.preferredAgeMax)
+        && isIntOrNull(value.maxDistanceKm)
+        && isListOrNull(value.preferredLanguages)
+        && isListOrNull(value.lifestylePreferences)
+        && isListOrNull(value.appearancePreferences)
+      );
+    }
+
+    function isLocation(value) {
+      return value == null || (
+        value is map
+        && isBoolOrNull(value.permissionGranted)
+        && isStringOrNull(value.permissionStatus)
+        && isNumberOrNull(value.latitude)
+        && isNumberOrNull(value.longitude)
+        && isTimestampOrNull(value.updatedAt)
+      );
+    }
+
+    function isVerification(value) {
+      return value == null || (
+        value is map
+        && isStringOrNull(value.liveSelfiePhotoUrl)
+        && isStringOrNull(value.liveSelfiePublicPhotoUrl)
+        && isStringOrNull(value.liveSelfiePublicStoragePath)
+        && isStringOrNull(value.liveSelfiePrivatePhotoUrl)
+        && isStringOrNull(value.liveSelfiePrivateStoragePath)
+        && isBoolOrNull(value.liveSelfieCaptured)
+        && isTimestampOrNull(value.liveSelfieCapturedAt)
+        && isBoolOrNull(value.liveSelfieVerified)
+        && isIntOrNull(value.liveSelfieVersion)
+        && isTimestampOrNull(value.lastLiveSelfieAt)
+        && isStringOrNull(value.liveSelfieCaptureMethod)
+        && isStringOrNull(value.liveSelfieStatus)
+      );
+    }
+
+    function isAiData(value) {
+      return value == null || (
+        value is map
+        && isListOrNull(value.referenceEmbeddings)
+        && isListOrNull(value.preferenceVector)
+      );
+    }
+
+    function isPhotos(value) {
+      return value == null || (value is list && value.size() <= 5);
+    }
+
+    function hasOnlyAllowedTopLevelKeys(data) {
+      return data.keys().hasOnly(allowedTopLevelKeys());
+    }
+
+    function touchesOnlyAllowedTopLevelKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedTopLevelKeys());
+    }
+
+    function changed(key) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([key]);
+    }
+
+    function baseFieldTypesAreValid(data) {
+      return isStringOrNull(data.uid)
+        && isRequiredString(data.empresa)
+        && isStringOrNull(data.email)
+        && isStringOrNull(data.displayName)
+        && isStringOrNull(data.photoUrl)
+        && isStringOrNull(data.profilePhotoUrl)
+        && isTimestampOrNull(data.createdAt)
+        && isTimestampOrNull(data.lastLoginAt)
+        && isBoolOrNull(data.onboardingCompleted)
+        && isBoolOrNull(data.profileCompleted)
+        && isStringOrNull(data.authProvider)
+        && isTimestampOrNull(data.onboardingCompletedAt)
+        && isTimestampOrNull(data.updatedAt)
+        && isProfile(data.profile)
+        && isAppearance(data.appearance)
+        && isLifestyle(data.lifestyle)
+        && isStyle(data.style)
+        && isPreferences(data.preferences)
+        && isLocation(data.location)
+        && isVerification(data.verification)
+        && isAiData(data.aiData)
+        && isMapOrNull(data.onboardingDraft)
+        && isTimestampOrNull(data.onboardingDraftUpdatedAt)
+        && isPhotos(data.photos)
+        && isIntOrNull(data.profileCompletionPercent)
+        && isListOrNull(data.profileCompletionChecklist)
+        && isListOrNull(data.pendingProfileTasks)
+        && isListOrNull(data.profileCompletionRewardsClaimed)
+        && isListOrNull(data.availableProfileRewards)
+        && isBoolOrNull(data.isBot)
+        && isIntOrNull(data.botProfileVersion)
+        && isStringOrNull(data.botScenario)
+        && isIntOrNull(data.seedQualityScore);
+    }
+
+    function changedFieldsAreValid() {
+      return (!changed('uid') || isStringOrNull(request.resource.data.uid))
+        && (!changed('empresa') || isRequiredString(request.resource.data.empresa))
+        && (!changed('email') || isStringOrNull(request.resource.data.email))
+        && (!changed('displayName') || isStringOrNull(request.resource.data.displayName))
+        && (!changed('photoUrl') || isStringOrNull(request.resource.data.photoUrl))
+        && (!changed('profilePhotoUrl') || isStringOrNull(request.resource.data.profilePhotoUrl))
+        && (!changed('createdAt') || isTimestampOrNull(request.resource.data.createdAt))
+        && (!changed('lastLoginAt') || isTimestampOrNull(request.resource.data.lastLoginAt))
+        && (!changed('onboardingCompleted') || isBoolOrNull(request.resource.data.onboardingCompleted))
+        && (!changed('profileCompleted') || isBoolOrNull(request.resource.data.profileCompleted))
+        && (!changed('authProvider') || isStringOrNull(request.resource.data.authProvider))
+        && (!changed('onboardingCompletedAt') || isTimestampOrNull(request.resource.data.onboardingCompletedAt))
+        && (!changed('updatedAt') || isTimestampOrNull(request.resource.data.updatedAt))
+        && (!changed('profile') || isProfile(request.resource.data.profile))
+        && (!changed('appearance') || isAppearance(request.resource.data.appearance))
+        && (!changed('lifestyle') || isLifestyle(request.resource.data.lifestyle))
+        && (!changed('style') || isStyle(request.resource.data.style))
+        && (!changed('preferences') || isPreferences(request.resource.data.preferences))
+        && (!changed('location') || isLocation(request.resource.data.location))
+        && (!changed('verification') || isVerification(request.resource.data.verification))
+        && (!changed('aiData') || isAiData(request.resource.data.aiData))
+        && (!changed('onboardingDraft') || isMapOrNull(request.resource.data.onboardingDraft))
+        && (!changed('onboardingDraftUpdatedAt') || isTimestampOrNull(request.resource.data.onboardingDraftUpdatedAt))
+        && (!changed('photos') || isPhotos(request.resource.data.photos))
+        && (!changed('profileCompletionPercent') || isIntOrNull(request.resource.data.profileCompletionPercent))
+        && (!changed('profileCompletionChecklist') || isListOrNull(request.resource.data.profileCompletionChecklist))
+        && (!changed('pendingProfileTasks') || isListOrNull(request.resource.data.pendingProfileTasks))
+        && (!changed('profileCompletionRewardsClaimed') || isListOrNull(request.resource.data.profileCompletionRewardsClaimed))
+        && (!changed('availableProfileRewards') || isListOrNull(request.resource.data.availableProfileRewards))
+        && (!changed('isBot') || isBoolOrNull(request.resource.data.isBot))
+        && (!changed('botProfileVersion') || isIntOrNull(request.resource.data.botProfileVersion))
+        && (!changed('botScenario') || isStringOrNull(request.resource.data.botScenario))
+        && (!changed('seedQualityScore') || isIntOrNull(request.resource.data.seedQualityScore));
+    }
+
+    function createIsValid(uid) {
+      return hasOnlyAllowedTopLevelKeys(request.resource.data)
+        && request.resource.data.keys().hasAll(['empresa'])
+        && request.resource.data.uid == uid
+        && baseFieldTypesAreValid(request.resource.data);
+    }
+
+    function immutableFieldsUntouchedOrInitialized(uid) {
+      return (
+        !changed('uid')
+        || request.resource.data.uid == uid
+      )
+      && (
+        !changed('createdAt')
+        || resource.data.createdAt == null
+        || request.resource.data.createdAt == resource.data.createdAt
+      )
+      && (
+        !changed('authProvider')
+        || resource.data.authProvider == null
+        || request.resource.data.authProvider == resource.data.authProvider
+      );
+    }
+
+    function completionFlagsDoNotRegress() {
+      return !(
+        resource.data.onboardingCompleted == true
+        && request.resource.data.onboardingCompleted == false
+      ) && !(
+        resource.data.profileCompleted == true
+        && request.resource.data.profileCompleted == false
+      );
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && createIsValid(uid);
+      allow update: if isOwner(uid)
+        && touchesOnlyAllowedTopLevelKeys()
+        && request.resource.data.keys().hasAll(['empresa'])
+        && isRequiredString(request.resource.data.empresa)
+        && changedFieldsAreValid()
+        && immutableFieldsUntouchedOrInitialized(uid)
+        && completionFlagsDoNotRegress();
+      allow delete: if isOwner(uid);
+    }
+
+    match /seed_profiles/{seedId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+  }
+}
