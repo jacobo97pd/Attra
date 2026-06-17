@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../monetization/domain/subscription_tier.dart';
+
 class AppUser {
   const AppUser({
     required this.uid,
@@ -10,6 +12,21 @@ class AppUser {
     required this.profileCompleted,
     required this.profileCompletionPercent,
     required this.isBot,
+    this.subscriptionTier = SubscriptionTier.free,
+    this.hasActiveSubscription = false,
+    this.attrasBalance = 0,
+    this.aiVisualConsent = false,
+    this.aiVisualConsentVersion = 0,
+    this.aiVisualEnabled = false,
+    this.gender = '',
+    this.interestedIn = const <String>[],
+    this.latitude,
+    this.longitude,
+    this.slowDatingEnabled = false,
+    this.relationshipIntent = '',
+    this.interests = const <String>[],
+    this.boostBalance = 0,
+    this.swipeBalance = 0,
   });
 
   final String uid;
@@ -20,10 +37,48 @@ class AppUser {
   final bool profileCompleted;
   final int profileCompletionPercent;
   final bool isBot;
+  final SubscriptionTier subscriptionTier;
+  final bool hasActiveSubscription;
+  final int attrasBalance;
+  final bool aiVisualConsent;
+  final int aiVisualConsentVersion;
+  final bool aiVisualEnabled;
+
+  /// Consumibles comprados (saldo en `users/{uid}.wallet`).
+  final int boostBalance;
+  final int swipeBalance;
+
+  /// Identidad de género del usuario (de profile.gender).
+  final String gender;
+
+  /// Slow Dating Mode: citas con calma. Si está activo, el feed muestra menos
+  /// perfiles pero más afines (ranking/visibilidad), priorizando conexiones
+  /// intencionales. Opt-in desde Ajustes (`settings['privacy.slowDating']`).
+  final bool slowDatingEnabled;
+
+  /// Qué busca (relationshipIntent) — para afinidad intencional en Slow Dating.
+  final String relationshipIntent;
+
+  /// Intereses del perfil — para afinidad por temas en Slow Dating.
+  final List<String> interests;
+
+  /// Géneros en los que tiene interés (de preferences.interestedIn).
+  /// Vacío = sin filtro (muestra todos).
+  final List<String> interestedIn;
+
+  /// Ubicación aproximada (de location.latitude/longitude) para calcular
+  /// distancia en el feed. null = sin ubicación.
+  final double? latitude;
+  final double? longitude;
 
   factory AppUser.fromDocument(
       DocumentSnapshot<Map<String, dynamic>> document) {
     final Map<String, dynamic> data = document.data() ?? <String, dynamic>{};
+    final Map<String, dynamic> profile = _asMap(data['profile']);
+    final Map<String, dynamic> preferences = _asMap(data['preferences']);
+    final Map<String, dynamic> location = _asMap(data['location']);
+    final Map<String, dynamic> settings = _asMap(data['settings']);
+    final Map<String, dynamic> wallet = _asMap(data['wallet']);
     return AppUser(
       uid: (data['uid'] as String?) ?? document.id,
       email: data['email'] as String?,
@@ -33,7 +88,53 @@ class AppUser {
       profileCompleted: _asBool(data['profileCompleted']),
       profileCompletionPercent: _asInt(data['profileCompletionPercent']),
       isBot: _asBool(data['isBot']),
+      subscriptionTier: SubscriptionTier.fromValue(data['subscriptionTier']),
+      hasActiveSubscription: _asBool(data['hasActiveSubscription']),
+      attrasBalance: _asInt(data['attrasBalance']),
+      aiVisualConsent: _asBool(data['aiVisualConsent']),
+      aiVisualConsentVersion: _asInt(data['aiVisualConsentVersion']),
+      aiVisualEnabled: _asBool(data['aiVisualEnabled']),
+      gender: (profile['gender'] as String?) ?? '',
+      interestedIn: _asStringList(preferences['interestedIn']),
+      latitude: _asDouble(location['latitude']),
+      longitude: _asDouble(location['longitude']),
+      slowDatingEnabled: _asBool(settings['privacy.slowDating']),
+      relationshipIntent: (profile['relationshipIntent'] as String?) ??
+          (preferences['relationshipIntent'] as String?) ??
+          '',
+      interests: _asStringList(profile['interests']),
+      boostBalance: _asInt(wallet['boosts']),
+      swipeBalance: _asInt(wallet['swipes']),
     );
+  }
+
+  static double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  bool get canUseAiVisual =>
+      subscriptionTier.includesAiVisual &&
+      hasActiveSubscription &&
+      aiVisualConsent &&
+      aiVisualEnabled;
+
+  static Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return value.map((dynamic k, dynamic v) => MapEntry(k.toString(), v));
+    }
+    return <String, dynamic>{};
+  }
+
+  static List<String> _asStringList(dynamic value) {
+    if (value is List) {
+      return value.whereType<String>().toList(growable: false);
+    }
+    return const <String>[];
   }
 
   static bool _asBool(dynamic value) {

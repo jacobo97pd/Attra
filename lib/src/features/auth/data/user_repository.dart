@@ -1,12 +1,17 @@
-import 'dart:typed_data';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 
+import '../../profile/data/discovery_publisher.dart';
+import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_completion.dart';
+import '../../profile/domain/profile_prompt.dart';
 import '../../profile/domain/profile_state.dart';
+import '../../profile/domain/profile_trait.dart';
+import '../../profile/domain/public_identity.dart';
 import '../domain/app_user.dart';
+import 'user_document_defaults.dart';
 
 class UserSyncResult {
   const UserSyncResult({required this.user, required this.isNewUser});
@@ -34,15 +39,25 @@ class UserRepository {
   CollectionReference<Map<String, dynamic>> get _seedProfilesCollection =>
       _firestore.collection('seed_profiles');
 
+  CollectionReference<Map<String, dynamic>> get _discoveryCollection =>
+      _firestore.collection('discovery');
+
   Future<UserSyncResult> syncUserFromAuth(User firebaseUser) async {
     final DocumentReference<Map<String, dynamic>> userDoc =
         _usersCollection.doc(firebaseUser.uid);
+    if (kDebugMode) {
+      debugPrint(
+        '[Attra][UserSync] firestoreApp=${_firestore.app.name} '
+        'databaseId=${_firestore.databaseId} path=${userDoc.path} '
+        'authUid=${firebaseUser.uid}',
+      );
+    }
     final DocumentSnapshot<Map<String, dynamic>> snapshot = await userDoc.get();
 
     if (!snapshot.exists) {
       final String authProvider = _resolveAuthProvider(firebaseUser);
       final Map<String, dynamic> baseData = <String, dynamic>{
-        'uid': firebaseUser.uid,
+        ...UserDocumentDefaults.requiredFields(firebaseUser.uid),
         'email': firebaseUser.email,
         'displayName': firebaseUser.displayName,
         'photoUrl': firebaseUser.photoURL,
@@ -79,6 +94,9 @@ class UserRepository {
     if (currentData['uid'] == null || currentData['uid'].toString().isEmpty) {
       updateData['uid'] = firebaseUser.uid;
     }
+    if (!_isRequiredString(currentData['empresa'])) {
+      updateData['empresa'] = UserDocumentDefaults.empresa;
+    }
     if (!_isTimestampValue(currentData['createdAt'])) {
       updateData['createdAt'] = FieldValue.serverTimestamp();
     }
@@ -93,37 +111,71 @@ class UserRepository {
       updateData['profileCompleted'] = false;
     }
 
-    _setFieldIfChanged(
-      updateData,
-      currentData,
-      key: 'displayName',
-      newValue: firebaseUser.displayName,
-    );
+    // El email SI se sincroniza desde el proveedor (auth es la fuente de
+    // verdad del email). El nombre y la foto, NO: los elige el usuario en el
+    // onboarding (profile.visibleName / profilePhotoUrl). Sincronizarlos desde
+    // Google los sobreescribia en cada login.
     _setFieldIfChanged(
       updateData,
       currentData,
       key: 'email',
       newValue: firebaseUser.email,
     );
-    _setFieldIfChanged(
+
+    // Auto-reparacion: el displayName y photoUrl de primer nivel deben reflejar
+    // el nombre/foto ELEGIDOS por el usuario, no los de Google. El resolver cae
+    // a displayName actual si el perfil no tiene nombre (=> no-op seguro).
+    final String publicName = resolvePublicDisplayName(currentData);
+    if (publicName.isNotEmpty && currentData['displayName'] != publicName) {
+      updateData['displayName'] = publicName;
+    }
+    final String profilePhotoUrl =
+        (currentData['profilePhotoUrl'] as String?)?.trim() ?? '';
+    if (profilePhotoUrl.isNotEmpty &&
+        currentData['photoUrl'] != profilePhotoUrl) {
+      updateData['photoUrl'] = profilePhotoUrl;
+    }
+
+    _setDefaultIfMissing(updateData, currentData, 'isBot', false);
+    _setDefaultIfMissing(updateData, currentData, 'botProfileVersion', 0);
+    _setDefaultIfMissing(updateData, currentData, 'botScenario', '');
+    _setDefaultIfMissing(updateData, currentData, 'seedQualityScore', 0);
+    _setDefaultIfMissing(
       updateData,
       currentData,
-      key: 'photoUrl',
-      newValue: firebaseUser.photoURL,
+      'photos',
+      <Map<String, dynamic>>[],
     );
-
-    updateData.putIfAbsent('isBot', () => false);
-    updateData.putIfAbsent('botProfileVersion', () => 0);
-    updateData.putIfAbsent('botScenario', () => '');
-    updateData.putIfAbsent('seedQualityScore', () => 0);
-    updateData.putIfAbsent('photos', () => <Map<String, dynamic>>[]);
-    updateData.putIfAbsent('profileCompletionPercent', () => 0);
-    updateData.putIfAbsent('profileCompletionChecklist', () => <String>[]);
-    updateData.putIfAbsent('pendingProfileTasks', () => <String>[]);
-    updateData.putIfAbsent('profileCompletionRewardsClaimed', () => <String>[]);
-    updateData.putIfAbsent('availableProfileRewards', () => <String>[]);
-
-    await userDoc.set(updateData, SetOptions(merge: true));
+    _setDefaultIfMissing(
+        updateData, currentData, 'profileCompletionPercent', 0);
+    _setDefaultIfMissing(
+      updateData,
+      currentData,
+      'profileCompletionChecklist',
+      <String>[],
+    );
+    _setDefaultIfMissing(
+      updateData,
+      currentData,
+      'pendingProfileTasks',
+      <String>[],
+    );
+    _setDefaultIfMissing(
+      updateData,
+      currentData,
+      'profileCompletionRewardsClaimed',
+      <String>[],
+    );
+    _setDefaultIfMissing(
+      updateData,
+      currentData,
+      'availableProfileRewards',
+      <String>[],
+    );
+    await userDoc.set(
+      _withRequiredUserFields(firebaseUser.uid, updateData),
+      SetOptions(merge: true),
+    );
     await refreshProfileCompletion(firebaseUser.uid);
 
     final DocumentSnapshot<Map<String, dynamic>> updatedDoc =
@@ -143,11 +195,88 @@ class UserRepository {
     return AppUser.fromDocument(snapshot);
   }
 
+  /// Prompts de perfil del usuario (preguntas + respuestas).
+  Future<List<ProfilePrompt>> fetchProfilePrompts(String uid) async {
+    final DocumentSnapshot<Map<String, dynamic>> snap =
+        await _usersCollection.doc(uid).get();
+    final List<dynamic> raw =
+        (snap.data()?['profilePrompts'] as List<dynamic>?) ?? <dynamic>[];
+    final List<ProfilePrompt> prompts = raw
+        .whereType<Map>()
+        .map((Map<dynamic, dynamic> e) => ProfilePrompt.fromMap(
+            e.map((dynamic k, dynamic v) => MapEntry(k.toString(), v))))
+        .toList(growable: true)
+      ..sort((ProfilePrompt a, ProfilePrompt b) => a.order.compareTo(b.order));
+    return prompts;
+  }
+
+  /// Guarda los prompts completos (reemplaza la lista). Además espeja las
+  /// respuestas activas en `profile.prompts` (strings) para mantener el cálculo
+  /// de completitud legacy, y re-sincroniza discovery (perfil público).
+  Future<void> saveProfilePrompts({
+    required String uid,
+    required List<ProfilePrompt> prompts,
+  }) async {
+    final List<Map<String, dynamic>> payload = prompts
+        .asMap()
+        .entries
+        .map((MapEntry<int, ProfilePrompt> e) =>
+            e.value.copyWith(order: e.key).toMap())
+        .toList(growable: false);
+    final List<String> legacyMirror = prompts
+        .where((ProfilePrompt p) => p.isActive)
+        .map((ProfilePrompt p) => '${p.question} ${p.answer}')
+        .toList(growable: false);
+
+    final DocumentSnapshot<Map<String, dynamic>> snap =
+        await _usersCollection.doc(uid).get();
+    final Map<String, dynamic> profile =
+        _asStringMap(snap.data()?['profile']);
+
+    await _usersCollection.doc(uid).set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'profilePrompts': payload,
+        'profile': <String, dynamic>{...profile, 'prompts': legacyMirror},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    await refreshProfileCompletion(uid);
+  }
+
+  /// Concede/retira el consentimiento de IA visual (dato biométrico, RGPD).
+  Future<void> setAiVisualConsent({
+    required String uid,
+    required bool granted,
+  }) async {
+    await _usersCollection.doc(uid).set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'aiVisualConsent': granted,
+        'aiVisualConsentVersion': granted ? 1 : 0,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Datos crudos del documento de usuario (para editar rasgos/visibilidad).
+  Future<Map<String, dynamic>> fetchUserData(String uid) async {
+    final DocumentSnapshot<Map<String, dynamic>> snap =
+        await _usersCollection.doc(uid).get();
+    return snap.data() ?? <String, dynamic>{};
+  }
+
   Future<void> completeOnboarding(String uid) async {
-    await _usersCollection.doc(uid).update(<String, dynamic>{
-      'onboardingCompleted': true,
-      'profileCompleted': true,
-    });
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(
+            uid,
+            <String, dynamic>{
+              'onboardingCompleted': true,
+              'profileCompleted': true,
+            },
+          ),
+          SetOptions(merge: true),
+        );
     await refreshProfileCompletion(uid);
   }
 
@@ -160,15 +289,129 @@ class UserRepository {
         ProfileCompletionCalculator.calculate(data);
 
     await userDoc.set(
-      <String, dynamic>{
-        'profileCompletionPercent': result.percent,
-        'profileCompletionChecklist': result.pendingTaskLabels,
-        'pendingProfileTasks': result.pendingTaskIds,
-        'availableProfileRewards': result.availableRewards,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      _withRequiredUserFields(
+        uid,
+        <String, dynamic>{
+          'profileCompletionPercent': result.percent,
+          'profileCompletionChecklist': result.pendingTaskLabels,
+          'pendingProfileTasks': result.pendingTaskIds,
+          'availableProfileRewards': result.availableRewards,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      ),
       SetOptions(merge: true),
     );
+
+    // Publica/actualiza el perfil publico para el feed de descubrimiento.
+    await _syncDiscoveryProfile(uid, data);
+  }
+
+  /// Espeja los campos PUBLICOS del usuario en `discovery/{uid}` (colección
+  /// legible por todos) para que aparezca en el feed de otros. Si el usuario no
+  /// es descubrible (onboarding incompleto o bot), borra su doc. Best-effort:
+  /// nunca rompe el login si las reglas aun no permiten escribir.
+  Future<void> _syncDiscoveryProfile(
+      String uid, Map<String, dynamic> data) async {
+    try {
+      final bool discoverable = data['onboardingCompleted'] == true &&
+          data['profileCompleted'] == true &&
+          data['isBot'] != true;
+      final DocumentReference<Map<String, dynamic>> ref =
+          _discoveryCollection.doc(uid);
+      if (!discoverable) {
+        await ref.delete();
+        return;
+      }
+      // El payload público (respetando visibilidad/consentimiento por campo) se
+      // construye en DiscoveryPublisher: nunca email/nombre legal/tokens/selfie/
+      // lat-lng, y los rasgos sensibles solo si visibleInProfile=true.
+      final Map<String, dynamic> payload =
+          DiscoveryPublisher.buildPayload(uid, data);
+      // `set` sin merge: reconstruye el doc para que ocultar/borrar un campo lo
+      // elimine de discovery (no quedan restos de un valor revocado).
+      await ref.set(<String, dynamic>{
+        ...payload,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[Attra][Discovery] sync fallo (se ignora): $error');
+      }
+    }
+  }
+
+  /// Perfiles reales publicados en `discovery`, excluyendo al propio usuario.
+  Future<List<SeedProfile>> fetchDiscoveryProfiles({
+    required String excludeUid,
+    int limit = 50,
+  }) async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot =
+        await _discoveryCollection.limit(limit).get();
+    return snapshot.docs
+        .where((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+            d.id != excludeUid)
+        .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+            SeedProfile.fromMap(d.id, d.data()))
+        .toList(growable: false);
+  }
+
+  /// Escribe (o borra si vacío/null) un rasgo de perfil en
+  /// `users/{uid}.[group].[field]`. Nunca infiere ni autorrellena: solo guarda
+  /// lo que el usuario introduce. Tras escribir re-sincroniza discovery.
+  Future<void> setProfileTrait({
+    required String uid,
+    required ProfileTraitDefinition def,
+    required Object? value,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> ref =
+        _usersCollection.doc(uid);
+    final bool empty = value == null ||
+        (value is String && value.trim().isEmpty) ||
+        (value is List && value.isEmpty);
+    if (empty) {
+      // Borrar el campo lo elimina de users (y luego de discovery al re-sync).
+      await ref.update(<String, Object?>{
+        '${def.group}.${def.field}': FieldValue.delete(),
+      });
+    } else {
+      await ref.set(
+        _withRequiredUserFields(uid, <String, dynamic>{
+          def.group: <String, dynamic>{def.field: value},
+          'updatedAt': FieldValue.serverTimestamp(),
+        }),
+        SetOptions(merge: true),
+      );
+    }
+    await refreshProfileCompletion(uid);
+  }
+
+  /// Actualiza el consentimiento por campo en
+  /// `users/{uid}.profileVisibility.fields.{traitKey}`. Re-sincroniza discovery
+  /// (ocultar un campo lo retira de discovery).
+  Future<void> setTraitVisibility({
+    required String uid,
+    required String traitKey,
+    required bool visibleInProfile,
+    required bool useForMatching,
+    required bool useForFilters,
+  }) async {
+    await _usersCollection.doc(uid).set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'profileVisibility': <String, dynamic>{
+          'fields': <String, dynamic>{
+            traitKey: <String, dynamic>{
+              'visibleInProfile': visibleInProfile,
+              'useForMatching': useForMatching,
+              'useForFilters': useForFilters,
+            },
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    await refreshProfileCompletion(uid);
   }
 
   Future<ProfileCompletionState> fetchProfileCompletionState(String uid) async {
@@ -268,15 +511,18 @@ class UserRepository {
     currentPhotos.add(newPhoto);
 
     await userDoc.set(
-      <String, dynamic>{
-        'photos': currentPhotos
-            .asMap()
-            .entries
-            .map((MapEntry<int, AdditionalPhoto> e) =>
-                e.value.copyWith(order: e.key).toMap())
-            .toList(growable: false),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      _withRequiredUserFields(
+        uid,
+        <String, dynamic>{
+          'photos': currentPhotos
+              .asMap()
+              .entries
+              .map((MapEntry<int, AdditionalPhoto> e) =>
+                  e.value.copyWith(order: e.key).toMap())
+              .toList(growable: false),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      ),
       SetOptions(merge: true),
     );
 
@@ -317,15 +563,18 @@ class UserRepository {
     }
 
     await userDoc.set(
-      <String, dynamic>{
-        'photos': remaining
-            .asMap()
-            .entries
-            .map((MapEntry<int, AdditionalPhoto> e) =>
-                e.value.copyWith(order: e.key).toMap())
-            .toList(growable: false),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      _withRequiredUserFields(
+        uid,
+        <String, dynamic>{
+          'photos': remaining
+              .asMap()
+              .entries
+              .map((MapEntry<int, AdditionalPhoto> e) =>
+                  e.value.copyWith(order: e.key).toMap())
+              .toList(growable: false),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      ),
       SetOptions(merge: true),
     );
     await refreshProfileCompletion(uid);
@@ -366,17 +615,185 @@ class UserRepository {
     reordered.addAll(photoByPath.values);
 
     await userDoc.set(
-      <String, dynamic>{
-        'photos': reordered
-            .asMap()
-            .entries
-            .map((MapEntry<int, AdditionalPhoto> e) =>
-                e.value.copyWith(order: e.key).toMap())
-            .toList(growable: false),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      _withRequiredUserFields(
+        uid,
+        <String, dynamic>{
+          'photos': reordered
+              .asMap()
+              .entries
+              .map((MapEntry<int, AdditionalPhoto> e) =>
+                  e.value.copyWith(order: e.key).toMap())
+              .toList(growable: false),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      ),
       SetOptions(merge: true),
     );
+  }
+
+  // ── Media de presentación: audio (voice prompt) + vídeo corto ────────────
+  // Públicos (los ve cualquiera que vea el perfil). Anidados en
+  // `profile.introAudio` / `profile.introVideo` (no tocan reglas de Firestore).
+
+  /// Sube el audio de presentación y lo guarda en `profile.introAudio`.
+  /// Reemplaza el anterior (borra su archivo) si existía.
+  Future<IntroAudio> uploadIntroAudio({
+    required String uid,
+    required Uint8List bytes,
+    required String contentType,
+    required String extension,
+    required int durationMs,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> userDoc =
+        _usersCollection.doc(uid);
+    final DocumentSnapshot<Map<String, dynamic>> snap = await userDoc.get();
+    final Map<String, dynamic> profile = _asStringMap(snap.data()?['profile']);
+
+    // Borra el archivo anterior si lo hay (no dejar huérfanos en Storage).
+    final IntroAudio? prev = IntroAudio.fromMap(profile['introAudio']);
+    if (prev != null && prev.storagePath.isNotEmpty) {
+      try {
+        await _storage.ref().child(prev.storagePath).delete();
+      } catch (_) {/* si no existe, seguimos */}
+    }
+
+    final String ext = extension.replaceAll('.', '').trim();
+    final String fileName =
+        'audio_${DateTime.now().millisecondsSinceEpoch}.${ext.isEmpty ? 'm4a' : ext}';
+    final Reference ref =
+        _storage.ref().child('users/$uid/public/intro/$fileName');
+    await ref.putData(
+      bytes,
+      SettableMetadata(
+        contentType: contentType.isEmpty ? 'audio/mp4' : contentType,
+        customMetadata: <String, String>{
+          'assetType': 'intro_audio',
+          'assetVisibility': 'public',
+          'uploadedBy': uid,
+        },
+      ),
+    );
+
+    final IntroAudio audio = IntroAudio(
+      url: await ref.getDownloadURL(),
+      storagePath: ref.fullPath,
+      durationMs: durationMs,
+    );
+
+    await userDoc.set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'profile': <String, dynamic>{...profile, 'introAudio': audio.toMap()},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    await refreshProfileCompletion(uid);
+    return audio;
+  }
+
+  /// Elimina el audio de presentación (archivo + campo).
+  Future<void> deleteIntroAudio({required String uid}) async {
+    final DocumentReference<Map<String, dynamic>> userDoc =
+        _usersCollection.doc(uid);
+    final DocumentSnapshot<Map<String, dynamic>> snap = await userDoc.get();
+    final Map<String, dynamic> profile = _asStringMap(snap.data()?['profile']);
+    final IntroAudio? prev = IntroAudio.fromMap(profile['introAudio']);
+    if (prev != null && prev.storagePath.isNotEmpty) {
+      try {
+        await _storage.ref().child(prev.storagePath).delete();
+      } catch (_) {/* si no existe, seguimos */}
+    }
+    await userDoc.set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'profile': <String, dynamic>{
+          ...profile,
+          'introAudio': FieldValue.delete(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    await refreshProfileCompletion(uid);
+  }
+
+  /// Sube el vídeo de presentación (ya comprimido por el cliente) y lo guarda
+  /// en `profile.introVideo`. Reemplaza el anterior si existía.
+  Future<IntroVideo> uploadIntroVideo({
+    required String uid,
+    required Uint8List bytes,
+    required String contentType,
+    required String extension,
+    required int durationMs,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> userDoc =
+        _usersCollection.doc(uid);
+    final DocumentSnapshot<Map<String, dynamic>> snap = await userDoc.get();
+    final Map<String, dynamic> profile = _asStringMap(snap.data()?['profile']);
+
+    final IntroVideo? prev = IntroVideo.fromMap(profile['introVideo']);
+    if (prev != null && prev.storagePath.isNotEmpty) {
+      try {
+        await _storage.ref().child(prev.storagePath).delete();
+      } catch (_) {/* si no existe, seguimos */}
+    }
+
+    final String ext = extension.replaceAll('.', '').trim();
+    final String fileName =
+        'video_${DateTime.now().millisecondsSinceEpoch}.${ext.isEmpty ? 'mp4' : ext}';
+    final Reference ref =
+        _storage.ref().child('users/$uid/public/intro/$fileName');
+    await ref.putData(
+      bytes,
+      SettableMetadata(
+        contentType: contentType.isEmpty ? 'video/mp4' : contentType,
+        customMetadata: <String, String>{
+          'assetType': 'intro_video',
+          'assetVisibility': 'public',
+          'uploadedBy': uid,
+        },
+      ),
+    );
+
+    final IntroVideo video = IntroVideo(
+      url: await ref.getDownloadURL(),
+      storagePath: ref.fullPath,
+      durationMs: durationMs,
+    );
+
+    await userDoc.set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'profile': <String, dynamic>{...profile, 'introVideo': video.toMap()},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    await refreshProfileCompletion(uid);
+    return video;
+  }
+
+  /// Elimina el vídeo de presentación (archivo + campo).
+  Future<void> deleteIntroVideo({required String uid}) async {
+    final DocumentReference<Map<String, dynamic>> userDoc =
+        _usersCollection.doc(uid);
+    final DocumentSnapshot<Map<String, dynamic>> snap = await userDoc.get();
+    final Map<String, dynamic> profile = _asStringMap(snap.data()?['profile']);
+    final IntroVideo? prev = IntroVideo.fromMap(profile['introVideo']);
+    if (prev != null && prev.storagePath.isNotEmpty) {
+      try {
+        await _storage.ref().child(prev.storagePath).delete();
+      } catch (_) {/* si no existe, seguimos */}
+    }
+    await userDoc.set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'profile': <String, dynamic>{
+          ...profile,
+          'introVideo': FieldValue.delete(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    await refreshProfileCompletion(uid);
   }
 
   Future<void> addPrompt({
@@ -406,13 +823,16 @@ class UserRepository {
     }
 
     await userDoc.set(
-      <String, dynamic>{
-        'profile': <String, dynamic>{
-          ...profile,
-          'prompts': prompts,
+      _withRequiredUserFields(
+        uid,
+        <String, dynamic>{
+          'profile': <String, dynamic>{
+            ...profile,
+            'prompts': prompts,
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
         },
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      ),
       SetOptions(merge: true),
     );
 
@@ -443,10 +863,13 @@ class UserRepository {
     }
 
     await userDoc.set(
-      <String, dynamic>{
-        'profileCompletionRewardsClaimed': claimed,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
+      _withRequiredUserFields(
+        uid,
+        <String, dynamic>{
+          'profileCompletionRewardsClaimed': claimed,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      ),
       SetOptions(merge: true),
     );
     await refreshProfileCompletion(uid);
@@ -464,6 +887,23 @@ class UserRepository {
         .toList(growable: false);
   }
 
+  /// Perfil completo de un usuario por uid para verlo (desde chats/matches):
+  /// primero `discovery` (perfiles reales), luego `seed_profiles` (mocks).
+  Future<SeedProfile?> fetchProfileByUid(String uid) async {
+    if (uid.isEmpty) return null;
+    final DocumentSnapshot<Map<String, dynamic>> disc =
+        await _discoveryCollection.doc(uid).get();
+    if (disc.exists) {
+      return SeedProfile.fromMap(disc.id, disc.data()!);
+    }
+    final DocumentSnapshot<Map<String, dynamic>> seed =
+        await _seedProfilesCollection.doc(uid).get();
+    if (seed.exists) {
+      return SeedProfile.fromMap(seed.id, seed.data()!);
+    }
+    return null;
+  }
+
   Future<void> deleteUserData(String uid) async {
     final DocumentReference<Map<String, dynamic>> userDoc =
         _usersCollection.doc(uid);
@@ -475,11 +915,15 @@ class UserRepository {
     final Map<String, dynamic> data = snapshot.data() ?? <String, dynamic>{};
     final List<String> storagePaths = <String>[];
 
-    final Map<String, dynamic> verification = _asStringMap(data['verification']);
-    _collectPathIfPresent(storagePaths, verification['liveSelfiePublicStoragePath']);
-    _collectPathIfPresent(storagePaths, verification['liveSelfiePrivateStoragePath']);
+    final Map<String, dynamic> verification =
+        _asStringMap(data['verification']);
+    _collectPathIfPresent(
+        storagePaths, verification['liveSelfiePublicStoragePath']);
+    _collectPathIfPresent(
+        storagePaths, verification['liveSelfiePrivateStoragePath']);
 
-    final List<dynamic> photos = (data['photos'] as List<dynamic>?) ?? <dynamic>[];
+    final List<dynamic> photos =
+        (data['photos'] as List<dynamic>?) ?? <dynamic>[];
     for (final dynamic photo in photos) {
       final Map<String, dynamic> mapped = _asStringMap(photo);
       _collectPathIfPresent(storagePaths, mapped['storagePath']);
@@ -513,6 +957,27 @@ class UserRepository {
     if (currentData[key] != newValue) {
       updateData[key] = newValue;
     }
+  }
+
+  void _setDefaultIfMissing(
+    Map<String, dynamic> updateData,
+    Map<String, dynamic> currentData,
+    String key,
+    dynamic defaultValue,
+  ) {
+    if (!currentData.containsKey(key) || currentData[key] == null) {
+      updateData[key] = defaultValue;
+    }
+  }
+
+  Map<String, dynamic> _withRequiredUserFields(
+    String uid,
+    Map<String, dynamic> data,
+  ) {
+    return <String, dynamic>{
+      ...UserDocumentDefaults.requiredFields(uid),
+      ...data,
+    };
   }
 
   String _resolveAuthProvider(User firebaseUser) {
@@ -554,6 +1019,10 @@ class UserRepository {
 
   bool _isTimestampValue(dynamic value) {
     return value is Timestamp;
+  }
+
+  bool _isRequiredString(dynamic value) {
+    return value is String && value.trim().isNotEmpty;
   }
 
   void _collectPathIfPresent(List<String> target, dynamic value) {

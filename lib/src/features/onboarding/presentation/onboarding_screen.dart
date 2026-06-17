@@ -8,8 +8,30 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../auth/domain/app_user.dart';
+import '../../geo/data/geo_repository.dart';
+import '../../geo/presentation/country_city_field.dart';
+import '../../profile/domain/profile_prompt.dart';
+import '../../profile/presentation/company_field.dart';
+import '../../profile/presentation/profile_prompts_editor_screen.dart';
+import '../../../theme/app_colors.dart';
+import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_buttons.dart';
 import '../data/onboarding_repository.dart';
 import '../domain/onboarding_draft.dart';
+
+/// Metadatos visuales por paso (icono + etiqueta corta para el progreso).
+const List<({IconData icon, String label})> _stepMeta =
+    <({IconData icon, String label})>[
+  (icon: Icons.camera_alt_rounded, label: 'Selfie'),
+  (icon: Icons.badge_rounded, label: 'Identidad'),
+  (icon: Icons.face_retouching_natural_rounded, label: 'Apariencia'),
+  (icon: Icons.auto_awesome_rounded, label: 'Perfil'),
+  (icon: Icons.spa_rounded, label: 'Estilo de vida'),
+  (icon: Icons.palette_rounded, label: 'Vibe'),
+  (icon: Icons.favorite_rounded, label: 'Preferencias'),
+  (icon: Icons.chat_bubble_rounded, label: 'Preguntas'),
+];
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({
@@ -44,17 +66,16 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen>
     with WidgetsBindingObserver {
-  static const int _totalSteps = 7;
+  static const int _totalSteps = 8;
   static const int _minimumAge = 18;
 
   final PageController _pageController = PageController();
   final ImagePicker _imagePicker = ImagePicker();
 
   late final TextEditingController _visibleNameController;
-  late final TextEditingController _birthCityController;
-  late final TextEditingController _currentCityController;
   late final TextEditingController _heightController;
   late final TextEditingController _bioController;
+  late final TextEditingController _jobTitleController;
 
   Timer? _draftDebounce;
   String? _lastPersistedFingerprint;
@@ -64,6 +85,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   bool _loadingDraft = true;
   bool _submitting = false;
   String? _localError;
+  bool _birthCityValid = false;
+  bool _currentCityValid = false;
 
   Uint8List? _liveSelfieBytes;
   String _liveSelfieFileExtension = 'jpg';
@@ -74,16 +97,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     WidgetsBinding.instance.addObserver(this);
 
     _visibleNameController = TextEditingController();
-    _birthCityController = TextEditingController();
-    _currentCityController = TextEditingController();
     _heightController = TextEditingController();
     _bioController = TextEditingController();
+    _jobTitleController = TextEditingController();
 
     _visibleNameController.addListener(_onTextInputChanged);
-    _birthCityController.addListener(_onTextInputChanged);
-    _currentCityController.addListener(_onTextInputChanged);
     _heightController.addListener(_onTextInputChanged);
     _bioController.addListener(_onTextInputChanged);
+    _jobTitleController.addListener(_onTextInputChanged);
 
     _loadDraft();
   }
@@ -94,19 +115,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     _draftDebounce?.cancel();
 
     _visibleNameController.removeListener(_onTextInputChanged);
-    _birthCityController.removeListener(_onTextInputChanged);
-    _currentCityController.removeListener(_onTextInputChanged);
     _heightController.removeListener(_onTextInputChanged);
     _bioController.removeListener(_onTextInputChanged);
+    _jobTitleController.removeListener(_onTextInputChanged);
 
     unawaited(_persistCurrentDraft(force: true));
 
     _pageController.dispose();
     _visibleNameController.dispose();
-    _birthCityController.dispose();
-    _currentCityController.dispose();
     _heightController.dispose();
     _bioController.dispose();
+    _jobTitleController.dispose();
     super.dispose();
   }
 
@@ -128,10 +147,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       }
 
       _visibleNameController.text = loadedDraft.visibleName;
-      _birthCityController.text = loadedDraft.birthCity;
-      _currentCityController.text = loadedDraft.currentCity;
       _heightController.text = loadedDraft.heightCm?.toString() ?? '';
       _bioController.text = loadedDraft.bio;
+      _jobTitleController.text = loadedDraft.jobTitle;
 
       setState(() {
         _draft = loadedDraft;
@@ -156,10 +174,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       final OnboardingDraft fallbackDraft =
           OnboardingDraft.fromUser(widget.user);
       _visibleNameController.text = fallbackDraft.visibleName;
-      _birthCityController.text = fallbackDraft.birthCity;
-      _currentCityController.text = fallbackDraft.currentCity;
       _heightController.text = fallbackDraft.heightCm?.toString() ?? '';
       _bioController.text = fallbackDraft.bio;
+      _jobTitleController.text = fallbackDraft.jobTitle;
       setState(() {
         _loadingDraft = false;
         _localError =
@@ -395,17 +412,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   OnboardingDraft _syncControllersIntoDraft(OnboardingDraft draft) {
     final int? parsedHeight = int.tryParse(_heightController.text.trim());
-    final String normalizedBirthCity =
-        _normalizeToken(_birthCityController.text);
-    final String normalizedCurrentCity =
-        _normalizeToken(_currentCityController.text);
     return draft.copyWith(
       visibleName: _visibleNameController.text.trim(),
-      birthCity: _birthCityController.text.trim(),
-      birthCityNormalized: normalizedBirthCity,
-      currentCity: _currentCityController.text.trim(),
-      currentCityNormalized: normalizedCurrentCity,
       bio: _bioController.text.trim(),
+      jobTitle: _jobTitleController.text.trim(),
       heightCm: parsedHeight,
       clearHeight: _heightController.text.trim().isEmpty,
     );
@@ -428,11 +438,15 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         if (draft.gender.isEmpty) {
           return 'Selecciona tu genero.';
         }
-        if (draft.birthCity.trim().isEmpty) {
-          return 'La ciudad de nacimiento es obligatoria.';
+        if (draft.birthCountryCode.isEmpty ||
+            draft.birthCity.trim().isEmpty ||
+            !_birthCityValid) {
+          return 'Selecciona un pais y una ciudad de nacimiento reales (de la lista).';
         }
-        if (draft.currentCity.trim().isEmpty) {
-          return 'La ciudad actual es obligatoria.';
+        if (draft.currentCountryCode.isEmpty ||
+            draft.currentCity.trim().isEmpty ||
+            !_currentCityValid) {
+          return 'Selecciona un pais y una ciudad actual reales (de la lista).';
         }
         if (draft.languages.isEmpty) {
           return 'Selecciona al menos un idioma.';
@@ -517,25 +531,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   String _draftFingerprint(OnboardingDraft draft) {
     return jsonEncode(draft.toMap());
-  }
-
-  String _normalizeToken(String value) {
-    final String lower = value.toLowerCase().trim();
-    if (lower.isEmpty) {
-      return '';
-    }
-
-    final StringBuffer buffer = StringBuffer();
-    for (final int codePoint in lower.runes) {
-      final String char = String.fromCharCode(codePoint);
-      buffer.write(_latinMap[char] ?? char);
-    }
-
-    return buffer
-        .toString()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
   }
 
   Future<void> _requestLocationPermissionAndFix() async {
@@ -654,13 +649,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Color _locationStatusColor(ThemeData theme, OnboardingDraft draft) {
     switch (draft.locationPermissionStatus) {
       case 'granted':
-        return Colors.green.shade700;
+        return AppColors.success;
       case 'error':
       case 'denied_forever':
       case 'service_disabled':
-        return theme.colorScheme.error;
+        return AppColors.coral;
       default:
-        return theme.colorScheme.onSurfaceVariant;
+        return AppColors.textSecondary;
     }
   }
 
@@ -670,145 +665,204 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
     if (_loadingDraft || _draft == null) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: AttraGradientBackground(
+          child: Center(
+              child: CircularProgressIndicator(color: AppColors.attraRed)),
+        ),
       );
     }
 
     final OnboardingDraft draft = _draft!;
     final int step = draft.currentStep;
-    final double progress = (step + 1) / _totalSteps;
+    final bool isLast = step == _totalSteps - 1;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Completa tu perfil'),
-        actions: <Widget>[
-          IconButton(
-            onPressed: _submitting ? null : widget.onLogout,
-            tooltip: 'Cerrar sesion',
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Paso ${step + 1} de $_totalSteps',
-                    style: theme.textTheme.labelLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(value: progress),
-                ],
-              ),
-            ),
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: <Widget>[
-                  _buildSelfieStep(theme, draft),
-                  _buildIdentityStep(theme, draft),
-                  _buildAppearanceStep(theme, draft),
-                  _buildPersonalStep(theme, draft),
-                  _buildLifestyleStep(theme, draft),
-                  _buildStyleStep(theme, draft),
-                  _buildPreferencesStep(theme, draft),
-                ],
-              ),
-            ),
-            if (widget.errorMessage != null || _localError != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                child: Text(
-                  _localError ?? widget.errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
+      backgroundColor: Colors.transparent,
+      body: AttraGradientBackground(
+        child: SafeArea(
+          child: Column(
+            children: <Widget>[
+              _buildHeader(theme, step),
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: <Widget>[
+                    _buildSelfieStep(theme, draft),
+                    _buildIdentityStep(theme, draft),
+                    _buildAppearanceStep(theme, draft),
+                    _buildPersonalStep(theme, draft),
+                    _buildLifestyleStep(theme, draft),
+                    _buildStyleStep(theme, draft),
+                    _buildPreferencesStep(theme, draft),
+                    _buildPromptsStep(theme, draft),
+                  ],
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: step == 0 || _submitting ? null : _goBack,
-                      child: const Text('Atras'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton(
-                      onPressed: _submitting ? null : _goNext,
-                      child: Text(
-                        _submitting
-                            ? 'Guardando...'
-                            : (step == _totalSteps - 1
-                                ? 'Finalizar onboarding'
-                                : 'Continuar'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+              _buildFooter(theme, step, isLast),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildSelfieStep(ThemeData theme, OnboardingDraft draft) {
-    return _StepLayout(
-      title: 'Selfie en vivo obligatoria',
-      subtitle:
-          'Tu primera foto debe ser una selfie tomada ahora mismo desde la camara.',
+  Widget _buildHeader(ThemeData theme, int step) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Container(
-            height: 260,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: theme.colorScheme.surfaceContainerHighest,
-            ),
-            child: _liveSelfieBytes != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Image.memory(
-                      _liveSelfieBytes!,
-                      fit: BoxFit.cover,
-                    ),
-                  )
-                : draft.liveSelfiePublicPhotoUrl.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Image.network(
-                          draft.liveSelfiePublicPhotoUrl,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    : const Center(
-                        child: Text(
-                          'Aun no has capturado tu selfie en vivo',
-                          textAlign: TextAlign.center,
-                        ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Paso ${step + 1} de $_totalSteps',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: AppColors.attraRed,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _stepMeta[step].label,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: _submitting ? null : widget.onLogout,
+                tooltip: 'Cerrar sesión',
+                icon: const Icon(Icons.logout_rounded,
+                    color: AppColors.textSecondary),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
+          const SizedBox(height: 12),
+          _StepProgress(current: step, total: _totalSteps),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(ThemeData theme, int step, bool isLast) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.surfaceLine)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (widget.errorMessage != null || _localError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.attraRed.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  border: Border.all(
+                      color: AppColors.attraRed.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(Icons.error_outline_rounded,
+                        color: AppColors.coral, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _localError ?? widget.errorMessage!,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Row(
+            children: <Widget>[
+              if (step > 0) ...<Widget>[
+                _CircleNavButton(
+                  icon: Icons.arrow_back_rounded,
+                  onPressed: _submitting ? null : _goBack,
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: AttraPrimaryButton(
+                  label: isLast ? 'Finalizar' : 'Continuar',
+                  icon: isLast ? Icons.check_rounded : null,
+                  loading: _submitting,
+                  onPressed: _submitting ? null : _goNext,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelfieStep(ThemeData theme, OnboardingDraft draft) {
+    final bool hasSelfie = _hasLiveSelfie(draft);
+    final ImageProvider? selfieImage = _liveSelfieBytes != null
+        ? MemoryImage(_liveSelfieBytes!)
+        : (draft.liveSelfiePublicPhotoUrl.isNotEmpty
+            ? NetworkImage(draft.liveSelfiePublicPhotoUrl)
+            : null) as ImageProvider?;
+
+    return _StepLayout(
+      icon: _stepMeta[0].icon,
+      title: 'Tu selfie en vivo',
+      subtitle:
+          'Tu primera foto debe ser una selfie tomada ahora mismo. Así verificamos que eres tú.',
+      child: Column(
+        children: <Widget>[
+          const SizedBox(height: 8),
+          Center(
+            child: _SelfieRing(
+              hasSelfie: hasSelfie,
+              image: selfieImage,
+              onTap: _submitting ? null : _captureLiveSelfie,
+            ),
+          ),
+          const SizedBox(height: 20),
+          AttraPrimaryButton(
+            label: hasSelfie ? 'Repetir selfie' : 'Tomar selfie ahora',
+            icon: Icons.camera_alt_rounded,
+            expand: false,
             onPressed: _submitting ? null : _captureLiveSelfie,
-            icon: const Icon(Icons.camera_alt_outlined),
-            label: Text(_hasLiveSelfie(draft)
-                ? 'Repetir selfie'
-                : 'Tomar selfie ahora'),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(Icons.verified_user_rounded,
+                  size: 16,
+                  color: hasSelfie
+                      ? AppColors.success
+                      : AppColors.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                hasSelfie ? 'Selfie capturada' : 'Pendiente de capturar',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color:
+                      hasSelfie ? AppColors.success : AppColors.textMuted,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -817,6 +871,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Widget _buildIdentityStep(ThemeData theme, OnboardingDraft draft) {
     return _StepLayout(
+      icon: _stepMeta[1].icon,
       title: 'Identidad basica',
       subtitle: 'Informacion esencial para tu perfil publico.',
       child: Column(
@@ -848,22 +903,64 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 _updateDraft(draft.copyWith(gender: value)),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _birthCityController,
-            decoration: const InputDecoration(
-              labelText: 'Ciudad de nacimiento *',
-              border: OutlineInputBorder(),
-            ),
+          _buildSingleChoiceWrap(
+            title: 'Pronombres',
+            options: _pronounOptions,
+            selected: draft.pronouns,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(pronouns: value)),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _currentCityController,
-            decoration: const InputDecoration(
-              labelText: 'Ciudad actual *',
-              border: OutlineInputBorder(),
-            ),
+          _buildMultiChoiceWrap(
+            title: 'Orientación sexual',
+            options: _orientationOptions,
+            selected: draft.orientation,
+            onChanged: (List<String> values) =>
+                _updateDraft(draft.copyWith(orientation: values)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          CountryCityField(
+            label: 'Lugar de nacimiento *',
+            initialCountryIso2: draft.birthCountryCode,
+            initialCountryName: draft.birthCountryName,
+            initialCity: draft.birthCity,
+            onChanged: ({
+              required String? iso2,
+              required String? countryName,
+              required String? city,
+              required bool cityIsValid,
+            }) {
+              _birthCityValid = cityIsValid;
+              _updateDraft(draft.copyWith(
+                birthCountryCode: iso2 ?? '',
+                birthCountryName: countryName ?? '',
+                birthCity: city ?? '',
+                birthCityNormalized: GeoRepository.normalize(city ?? ''),
+              ));
+            },
+          ),
+          const SizedBox(height: 16),
+          CountryCityField(
+            label: 'Ubicacion actual *',
+            initialCountryIso2: draft.currentCountryCode,
+            initialCountryName: draft.currentCountryName,
+            initialCity: draft.currentCity,
+            onChanged: ({
+              required String? iso2,
+              required String? countryName,
+              required String? city,
+              required bool cityIsValid,
+            }) {
+              _currentCityValid = cityIsValid;
+              _updateDraft(draft.copyWith(
+                currentCountryCode: iso2 ?? '',
+                currentCountryName: countryName ?? '',
+                currentCity: city ?? '',
+                currentCityNormalized: GeoRepository.normalize(city ?? ''),
+              ));
+            },
+          ),
+          const SizedBox(height: 16),
           _buildMultiChoiceWrap(
             title: 'Idiomas *',
             options: _languageOptions,
@@ -878,6 +975,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Widget _buildAppearanceStep(ThemeData theme, OnboardingDraft draft) {
     return _StepLayout(
+      icon: _stepMeta[2].icon,
       title: 'Apariencia',
       subtitle: 'Describe rasgos generales sin entrar en detalles invasivos.',
       child: Column(
@@ -930,6 +1028,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Widget _buildPersonalStep(ThemeData theme, OnboardingDraft draft) {
     return _StepLayout(
+      icon: _stepMeta[3].icon,
       title: 'Perfil personal',
       subtitle: 'Haz que tu perfil se sienta real y autentico.',
       child: Column(
@@ -953,6 +1052,45 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             onSelected: (String value) =>
                 _updateDraft(draft.copyWith(relationshipIntent: value)),
           ),
+          const SizedBox(height: 12),
+          _buildSingleChoiceWrap(
+            title: 'Tipo de relación',
+            options: _relationshipTypeOptions,
+            selected: draft.relationshipType,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(relationshipType: value)),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _jobTitleController,
+            decoration: const InputDecoration(
+              labelText: 'Trabajo / ocupación',
+              hintText: 'Ej. Diseñadora, Ingeniero...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          CompanyField(
+            initialValue: draft.company,
+            onChanged: (String value) =>
+                _updateDraft(draft.copyWith(company: value)),
+          ),
+          const SizedBox(height: 12),
+          _buildSingleChoiceWrap(
+            title: 'Estudios',
+            options: _educationOptions,
+            selected: draft.educationLevel,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(educationLevel: value)),
+          ),
+          const SizedBox(height: 12),
+          _buildSingleChoiceWrap(
+            title: 'Signo del zodiaco',
+            options: _zodiacOptions,
+            selected: draft.zodiac,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(zodiac: value)),
+          ),
         ],
       ),
     );
@@ -960,6 +1098,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Widget _buildLifestyleStep(ThemeData theme, OnboardingDraft draft) {
     return _StepLayout(
+      icon: _stepMeta[4].icon,
       title: 'Estilo de vida',
       subtitle: 'Compatibilidad sin juicios ni filtros rigidos.',
       child: Column(
@@ -998,6 +1137,38 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           ),
           const SizedBox(height: 12),
           _buildSingleChoiceWrap(
+            title: 'Tienes hijos',
+            options: _hasChildrenOptions,
+            selected: draft.hasChildren,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(hasChildren: value)),
+          ),
+          const SizedBox(height: 12),
+          _buildSingleChoiceWrap(
+            title: 'Cannabis',
+            options: _cannabisOptions,
+            selected: draft.cannabis,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(cannabis: value)),
+          ),
+          const SizedBox(height: 12),
+          _buildSingleChoiceWrap(
+            title: 'Otras sustancias',
+            options: _drugsOptions,
+            selected: draft.drugs,
+            onSelected: (String value) =>
+                _updateDraft(draft.copyWith(drugs: value)),
+          ),
+          const SizedBox(height: 12),
+          _buildMultiChoiceWrap(
+            title: 'Mascotas',
+            options: _petOptions,
+            selected: draft.pets,
+            onChanged: (List<String> values) =>
+                _updateDraft(draft.copyWith(pets: values)),
+          ),
+          const SizedBox(height: 12),
+          _buildSingleChoiceWrap(
             title: 'Estilo social',
             options: _socialStyleOptions,
             selected: draft.socialStyle,
@@ -1019,6 +1190,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Widget _buildStyleStep(ThemeData theme, OnboardingDraft draft) {
     return _StepLayout(
+      icon: _stepMeta[5].icon,
       title: 'Estilo y vibe',
       subtitle: 'Define tu energia para personalizar la experiencia.',
       child: Column(
@@ -1051,6 +1223,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
 
     return _StepLayout(
+      icon: _stepMeta[6].icon,
       title: 'Preferencias iniciales',
       subtitle: 'Personaliza a quien te mostraremos mas frecuentemente.',
       child: Column(
@@ -1132,20 +1305,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final bool hasCoordinates =
         draft.locationLatitude != null && draft.locationLongitude != null;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant,
-        ),
-      ),
+    return AttraCard(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            'Ubicacion para perfiles cercanos',
-            style: theme.textTheme.titleSmall,
+          Row(
+            children: <Widget>[
+              const Icon(Icons.place_rounded,
+                  size: 18, color: AppColors.attraRed),
+              const SizedBox(width: 8),
+              Text(
+                'Ubicacion para perfiles cercanos',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(color: AppColors.textPrimary),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
@@ -1236,7 +1411,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                 Expanded(
                   child: CupertinoTheme(
                     data: const CupertinoThemeData(
-                      brightness: Brightness.light,
+                      brightness: Brightness.dark,
                     ),
                     child: CupertinoDatePicker(
                       mode: CupertinoDatePickerMode.date,
@@ -1276,30 +1451,114 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     _markDraftDirtyAndDebounceSave();
   }
 
+  /// Paso OPCIONAL: preguntas de perfil (Attra Prompts). Reutiliza el editor del
+  /// perfil conectado al BORRADOR en memoria (sin Firestore). Se puede saltar:
+  /// el footer permite "Finalizar" aunque no haya ninguna.
+  Widget _buildPromptsStep(ThemeData theme, OnboardingDraft draft) {
+    final List<ProfilePrompt> prompts = draft.prompts
+        .where((ProfilePrompt p) => p.isActive)
+        .toList(growable: false);
+
+    return _StepLayout(
+      icon: _stepMeta[7].icon,
+      title: 'Tus preguntas (opcional)',
+      subtitle:
+          'Da chispa a tu perfil. Elige preguntas del catálogo o crea las tuyas y respóndelas. Puedes saltarte este paso y añadirlas luego desde tu perfil.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const SizedBox(height: 8),
+          if (prompts.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                border: Border.all(color: AppColors.surfaceLine),
+              ),
+              child: Column(
+                children: <Widget>[
+                  const Icon(Icons.chat_bubble_outline_rounded,
+                      size: 40, color: AppColors.attraRed),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Aún no has añadido preguntas',
+                    style: theme.textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Las preguntas dan tema de conversación y mejoran tus matches.',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: AppColors.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          else
+            for (final ProfilePrompt p in prompts)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceHigh,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                    border: Border.all(color: AppColors.surfaceLine),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(p.question,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: AppColors.textSecondary)),
+                      const SizedBox(height: 6),
+                      Text(p.answer,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700, height: 1.25)),
+                    ],
+                  ),
+                ),
+              ),
+          const SizedBox(height: 12),
+          AttraPrimaryButton(
+            label: prompts.isEmpty ? 'Elegir preguntas' : 'Editar preguntas',
+            icon: Icons.add_comment_rounded,
+            expand: false,
+            onPressed: _submitting ? null : () => _openPromptsEditor(draft),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openPromptsEditor(OnboardingDraft draft) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ProfilePromptsEditorScreen(
+        // Carga/guarda contra el BORRADOR en memoria (no Firestore todavía).
+        loadPrompts: () async => _draft?.prompts ?? const <ProfilePrompt>[],
+        savePrompts: (List<ProfilePrompt> updated) async {
+          final OnboardingDraft? current = _draft;
+          if (current == null) return;
+          _updateDraft(current.copyWith(prompts: updated));
+        },
+      ),
+    ));
+  }
+
   Widget _buildSingleChoiceWrap({
     required String title,
     required List<_OptionItem> options,
     required String selected,
     required ValueChanged<String> onSelected,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(title),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: options.map((_OptionItem option) {
-            final bool isSelected = selected == option.value;
-            return ChoiceChip(
-              label: Text(option.label),
-              selected: isSelected,
-              onSelected: (_) => onSelected(option.value),
-            );
-          }).toList(growable: false),
-        ),
-      ],
+    return _ChoiceGroup(
+      title: title,
+      options: options,
+      isSelected: (String value) => selected == value,
+      onTap: onSelected,
     );
   }
 
@@ -1309,34 +1568,20 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     required List<String> selected,
     required ValueChanged<List<String>> onChanged,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(title),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: options.map((_OptionItem option) {
-            final bool isSelected = selected.contains(option.value);
-            return FilterChip(
-              label: Text(option.label),
-              selected: isSelected,
-              onSelected: (bool value) {
-                final List<String> next = List<String>.from(selected);
-                if (value) {
-                  if (!next.contains(option.value)) {
-                    next.add(option.value);
-                  }
-                } else {
-                  next.remove(option.value);
-                }
-                onChanged(next);
-              },
-            );
-          }).toList(growable: false),
-        ),
-      ],
+    return _ChoiceGroup(
+      title: title,
+      options: options,
+      multi: true,
+      isSelected: (String value) => selected.contains(value),
+      onTap: (String value) {
+        final List<String> next = List<String>.from(selected);
+        if (next.contains(value)) {
+          next.remove(value);
+        } else {
+          next.add(value);
+        }
+        onChanged(next);
+      },
     );
   }
 
@@ -1374,26 +1619,305 @@ class _StepLayout extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.child,
+    this.icon,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(title, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 6),
-          Text(subtitle, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 18),
-          child,
-        ],
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+      builder: (BuildContext context, double t, Widget? c) {
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 16),
+            child: c,
+          ),
+        );
+      },
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (icon != null) ...<Widget>[
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: AppColors.action),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: AppColors.attraRed.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: AppColors.textPrimary, size: 26),
+              ),
+              const SizedBox(height: 16),
+            ],
+            Text(title,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                )),
+            const SizedBox(height: 6),
+            Text(subtitle,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.textSecondary, height: 1.4)),
+            const SizedBox(height: 22),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Barra de progreso segmentada (un segmento por paso) que se rellena con el
+/// degradado de marca de forma animada.
+class _StepProgress extends StatelessWidget {
+  const _StepProgress({required this.current, required this.total});
+
+  final int current;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: List<Widget>.generate(total, (int i) {
+        final bool filled = i <= current;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: i == total - 1 ? 0 : 5),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              height: 5,
+              decoration: BoxDecoration(
+                gradient: filled
+                    ? const LinearGradient(colors: AppColors.action)
+                    : null,
+                color: filled ? null : AppColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+/// Botón circular de navegación (atrás) con estilo grafito.
+class _CircleNavButton extends StatelessWidget {
+  const _CircleNavButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = onPressed != null;
+    return Material(
+      color: AppColors.surfaceHigh,
+      shape: const CircleBorder(
+        side: BorderSide(color: AppColors.surfaceLine),
+      ),
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 54,
+          height: 54,
+          child: Icon(icon,
+              color: enabled ? AppColors.textPrimary : AppColors.textMuted),
+        ),
+      ),
+    );
+  }
+}
+
+/// Marco circular para la selfie en vivo: anillo con degradado de marca y glow
+/// cuando hay foto; placeholder con icono cuando no.
+class _SelfieRing extends StatelessWidget {
+  const _SelfieRing({
+    required this.hasSelfie,
+    required this.image,
+    required this.onTap,
+  });
+
+  final bool hasSelfie;
+  final ImageProvider? image;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: hasSelfie
+                ? AppColors.action
+                : const <Color>[AppColors.surfaceLine, AppColors.surfaceHigh],
+          ),
+          boxShadow: hasSelfie
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: AppColors.attraRed.withValues(alpha: 0.4),
+                    blurRadius: 28,
+                    spreadRadius: 2,
+                  ),
+                ]
+              : null,
+        ),
+        child: Container(
+          width: 200,
+          height: 200,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.surface,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: image != null
+              ? Image(image: image!, fit: BoxFit.cover)
+              : const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(Icons.add_a_photo_rounded,
+                        size: 44, color: AppColors.textMuted),
+                    SizedBox(height: 10),
+                    Text('Toca para\ntomar tu selfie',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
+                            height: 1.3)),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Grupo de selección (única o múltiple) con título y pills animadas.
+class _ChoiceGroup extends StatelessWidget {
+  const _ChoiceGroup({
+    required this.title,
+    required this.options,
+    required this.isSelected,
+    required this.onTap,
+    this.multi = false,
+  });
+
+  final String title;
+  final List<_OptionItem> options;
+  final bool Function(String value) isSelected;
+  final ValueChanged<String> onTap;
+  final bool multi;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            )),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((_OptionItem option) {
+            return _SelectablePill(
+              label: option.label,
+              selected: isSelected(option.value),
+              onTap: () => onTap(option.value),
+            );
+          }).toList(growable: false),
+        ),
+      ],
+    );
+  }
+}
+
+/// Pill seleccionable animada: grafito cuando está apagada, degradado de marca
+/// con check cuando está activa.
+class _SelectablePill extends StatelessWidget {
+  const _SelectablePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.symmetric(
+            horizontal: selected ? 14 : 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient:
+              selected ? const LinearGradient(colors: AppColors.action) : null,
+          color: selected ? null : AppColors.surfaceHigh,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+          border: Border.all(
+            color: selected ? Colors.transparent : AppColors.surfaceLine,
+          ),
+          boxShadow: selected
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: AppColors.attraRed.withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (selected) ...<Widget>[
+              const Icon(Icons.check_rounded,
+                  size: 16, color: AppColors.textPrimary),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color:
+                    selected ? AppColors.textPrimary : AppColors.textSecondary,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1413,6 +1937,90 @@ const List<_OptionItem> _genderOptions = <_OptionItem>[
   _OptionItem(value: 'female', label: 'Mujer'),
   _OptionItem(value: 'male', label: 'Hombre'),
   _OptionItem(value: 'non_binary', label: 'No binario'),
+  _OptionItem(value: 'trans_woman', label: 'Mujer trans'),
+  _OptionItem(value: 'trans_man', label: 'Hombre trans'),
+  _OptionItem(value: 'genderfluid', label: 'Género fluido'),
+  _OptionItem(value: 'agender', label: 'Agénero'),
+  _OptionItem(value: 'other', label: 'Otro'),
+];
+
+const List<_OptionItem> _pronounOptions = <_OptionItem>[
+  _OptionItem(value: 'she', label: 'Ella'),
+  _OptionItem(value: 'he', label: 'Él'),
+  _OptionItem(value: 'they', label: 'Elle'),
+  _OptionItem(value: 'other', label: 'Otros'),
+];
+
+const List<_OptionItem> _orientationOptions = <_OptionItem>[
+  _OptionItem(value: 'straight', label: 'Hetero'),
+  _OptionItem(value: 'gay', label: 'Gay'),
+  _OptionItem(value: 'lesbian', label: 'Lesbiana'),
+  _OptionItem(value: 'bisexual', label: 'Bisexual'),
+  _OptionItem(value: 'pansexual', label: 'Pansexual'),
+  _OptionItem(value: 'asexual', label: 'Asexual'),
+  _OptionItem(value: 'demisexual', label: 'Demisexual'),
+  _OptionItem(value: 'queer', label: 'Queer'),
+  _OptionItem(value: 'questioning', label: 'Cuestionándome'),
+  _OptionItem(value: 'other', label: 'Otra'),
+];
+
+const List<_OptionItem> _educationOptions = <_OptionItem>[
+  _OptionItem(value: 'high_school', label: 'Secundaria'),
+  _OptionItem(value: 'vocational', label: 'FP / Técnico'),
+  _OptionItem(value: 'bachelor', label: 'Grado'),
+  _OptionItem(value: 'master', label: 'Máster'),
+  _OptionItem(value: 'phd', label: 'Doctorado'),
+  _OptionItem(value: 'other', label: 'Otro'),
+];
+
+const List<_OptionItem> _hasChildrenOptions = <_OptionItem>[
+  _OptionItem(value: 'no', label: 'No tengo'),
+  _OptionItem(value: 'yes', label: 'Tengo hijos'),
+  _OptionItem(value: 'prefer_not', label: 'Prefiero no decir'),
+];
+
+const List<_OptionItem> _relationshipTypeOptions = <_OptionItem>[
+  _OptionItem(value: 'monogamous', label: 'Monógama'),
+  _OptionItem(value: 'open', label: 'Abierta'),
+  _OptionItem(value: 'enm', label: 'No monógama ética'),
+  _OptionItem(value: 'unsure', label: 'Aún no lo sé'),
+];
+
+const List<_OptionItem> _cannabisOptions = <_OptionItem>[
+  _OptionItem(value: 'never', label: 'Nunca'),
+  _OptionItem(value: 'sometimes', label: 'A veces'),
+  _OptionItem(value: 'often', label: 'Frecuente'),
+];
+
+const List<_OptionItem> _drugsOptions = <_OptionItem>[
+  _OptionItem(value: 'never', label: 'Nunca'),
+  _OptionItem(value: 'sometimes', label: 'A veces'),
+  _OptionItem(value: 'often', label: 'Frecuente'),
+];
+
+const List<_OptionItem> _petOptions = <_OptionItem>[
+  _OptionItem(value: 'dog', label: 'Perro'),
+  _OptionItem(value: 'cat', label: 'Gato'),
+  _OptionItem(value: 'bird', label: 'Pájaro'),
+  _OptionItem(value: 'reptile', label: 'Reptil'),
+  _OptionItem(value: 'other', label: 'Otra'),
+  _OptionItem(value: 'none', label: 'Ninguna'),
+  _OptionItem(value: 'want', label: 'Quiero tener'),
+];
+
+const List<_OptionItem> _zodiacOptions = <_OptionItem>[
+  _OptionItem(value: 'aries', label: 'Aries'),
+  _OptionItem(value: 'taurus', label: 'Tauro'),
+  _OptionItem(value: 'gemini', label: 'Géminis'),
+  _OptionItem(value: 'cancer', label: 'Cáncer'),
+  _OptionItem(value: 'leo', label: 'Leo'),
+  _OptionItem(value: 'virgo', label: 'Virgo'),
+  _OptionItem(value: 'libra', label: 'Libra'),
+  _OptionItem(value: 'scorpio', label: 'Escorpio'),
+  _OptionItem(value: 'sagittarius', label: 'Sagitario'),
+  _OptionItem(value: 'capricorn', label: 'Capricornio'),
+  _OptionItem(value: 'aquarius', label: 'Acuario'),
+  _OptionItem(value: 'pisces', label: 'Piscis'),
 ];
 
 const List<_OptionItem> _languageOptions = <_OptionItem>[
@@ -1537,29 +2145,3 @@ const List<_OptionItem> _appearancePreferenceOptions = <_OptionItem>[
   _OptionItem(value: 'sporty_vibe', label: 'Vibe deportiva'),
 ];
 
-const Map<String, String> _latinMap = <String, String>{
-  'á': 'a',
-  'à': 'a',
-  'â': 'a',
-  'ä': 'a',
-  'ã': 'a',
-  'é': 'e',
-  'è': 'e',
-  'ê': 'e',
-  'ë': 'e',
-  'í': 'i',
-  'ì': 'i',
-  'î': 'i',
-  'ï': 'i',
-  'ó': 'o',
-  'ò': 'o',
-  'ô': 'o',
-  'ö': 'o',
-  'õ': 'o',
-  'ú': 'u',
-  'ù': 'u',
-  'û': 'u',
-  'ü': 'u',
-  'ñ': 'n',
-  'ç': 'c',
-};

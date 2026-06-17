@@ -1,6 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:country_code_picker/country_code_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+
+import '../../../theme/app_colors.dart';
+import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_buttons.dart';
+import 'login_video_background.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -16,6 +23,8 @@ class LoginScreen extends StatefulWidget {
 
   final VoidCallback onGooglePressed;
   final VoidCallback onApplePressed;
+
+  /// Recibe el número completo con prefijo, ej: "+34600111222"
   final ValueChanged<String> onSendPhoneCode;
   final ValueChanged<String> onVerifyPhoneCode;
   final bool phoneCodeSent;
@@ -29,164 +38,547 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   late final TextEditingController _phoneController;
   late final TextEditingController _smsCodeController;
+  late final FocusNode _phoneFocus;
+  late final FocusNode _smsFocus;
+
+  String _dialCode = '+34';
+  String _countryCode = 'ES';
 
   @override
   void initState() {
     super.initState();
     _phoneController = TextEditingController();
     _smsCodeController = TextEditingController();
+    _phoneFocus = FocusNode();
+    _smsFocus = FocusNode();
   }
 
   @override
   void dispose() {
     _phoneController.dispose();
     _smsCodeController.dispose();
+    _phoneFocus.dispose();
+    _smsFocus.dispose();
     super.dispose();
+  }
+
+  String get _fullPhoneNumber {
+    final String digits = _phoneController.text
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(RegExp(r'^0+'), '');
+    return '$_dialCode$digits';
+  }
+
+  void _sendCode() {
+    if (widget.isLoading) return;
+    final String phone = _fullPhoneNumber;
+    if (phone.length < 8) return;
+    widget.onSendPhoneCode(phone);
+  }
+
+  void _verifyCode() {
+    if (widget.isLoading) return;
+    final String code = _smsCodeController.text.trim();
+    if (code.isEmpty) return;
+    widget.onVerifyPhoneCode(code);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bool showAppleButton = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final ThemeData theme = Theme.of(context);
+    final bool showApple =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(28),
-                    child: Image.asset(
-                      'assets/images/app_logo.png',
-                      height: 140,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Attra',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Conecta con personas que van en serio.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: widget.isLoading ? null : widget.onGooglePressed,
-                    icon: widget.isLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.g_mobiledata_rounded, size: 22),
-                    label: Text(
-                      widget.isLoading
-                          ? 'Iniciando sesion...'
-                          : 'Continuar con Google',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                    ),
-                  ),
-                  if (showAppleButton) ...<Widget>[
-                    const SizedBox(height: 12),
-                    IgnorePointer(
-                      ignoring: widget.isLoading,
-                      child: Opacity(
-                        opacity: widget.isLoading ? 0.55 : 1,
-                        child: SignInWithAppleButton(
-                          onPressed: widget.onApplePressed,
-                          style: SignInWithAppleButtonStyle.black,
+      backgroundColor: AppColors.black,
+      body: LoginVideoBackground(
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // Logo con glow de marca.
+                    Center(
+                      child: Container(
+                        width: 116,
+                        height: 116,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.03),
                           borderRadius:
-                              const BorderRadius.all(Radius.circular(12)),
-                          text: 'Continuar con Apple',
+                              BorderRadius.circular(AppSpacing.radiusXl),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.12)),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: AppColors.attraRed.withValues(alpha: 0.22),
+                              blurRadius: 32,
+                              spreadRadius: 2,
+                            ),
+                          ],
                         ),
+                        child: Image.asset('assets/images/app_logo.png',
+                            filterQuality: FilterQuality.medium),
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 16),
-                  Row(
-                    children: <Widget>[
-                      const Expanded(child: Divider()),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(
-                          'o',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ),
-                      const Expanded(child: Divider()),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    enabled: !widget.isLoading,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      labelText: 'Telefono',
-                      hintText: '+34600111222',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton(
-                    onPressed: widget.isLoading
-                        ? null
-                        : () => widget
-                            .onSendPhoneCode(_phoneController.text.trim()),
-                    child: Text(
-                      widget.phoneCodeSent
-                          ? 'Reenviar codigo SMS'
-                          : 'Continuar con Telefono',
-                    ),
-                  ),
-                  if (widget.phoneCodeSent) ...<Widget>[
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _smsCodeController,
-                      keyboardType: TextInputType.number,
-                      enabled: !widget.isLoading,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        labelText: 'Codigo SMS',
-                        hintText: '123456',
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    FilledButton(
-                      onPressed: widget.isLoading
-                          ? null
-                          : () => widget.onVerifyPhoneCode(
-                                _smsCodeController.text.trim(),
-                              ),
-                      child: const Text('Verificar codigo'),
-                    ),
-                  ],
-                  if (widget.errorMessage != null) ...<Widget>[
-                    const SizedBox(height: 16),
-                    Text(
-                      widget.errorMessage!,
+                    const SizedBox(height: 24),
+                    const Text(
+                      'ATTRA',
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.error,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 6,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Conecta con personas que van en serio.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 36),
+
+                    // Google.
+                    _SocialButton(
+                      label: widget.isLoading
+                          ? 'Iniciando sesión...'
+                          : 'Continuar con Google',
+                      loading: widget.isLoading,
+                      onPressed:
+                          widget.isLoading ? null : widget.onGooglePressed,
+                    ),
+                    if (showApple) ...<Widget>[
+                      const SizedBox(height: 12),
+                      IgnorePointer(
+                        ignoring: widget.isLoading,
+                        child: Opacity(
+                          opacity: widget.isLoading ? 0.55 : 1,
+                          child: SignInWithAppleButton(
+                            onPressed: widget.onApplePressed,
+                            style: SignInWithAppleButtonStyle.white,
+                            height: 54,
+                            borderRadius: const BorderRadius.all(
+                                Radius.circular(AppSpacing.radiusPill)),
+                            text: 'Continuar con Apple',
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 22),
+                    _Divider(theme: theme),
+                    const SizedBox(height: 22),
+
+                    // ── SECCIÓN TELÉFONO ──────────────────────────────────
+                    if (!widget.phoneCodeSent) ...<Widget>[
+                      // Campo: [🇪🇸 +34] [número]
+                      _PhoneField(
+                        controller: _phoneController,
+                        focusNode: _phoneFocus,
+                        enabled: !widget.isLoading,
+                        dialCode: _dialCode,
+                        countryCode: _countryCode,
+                        onCountryChanged: (CountryCode c) => setState(() {
+                          _dialCode = c.dialCode ?? _dialCode;
+                          _countryCode = c.code ?? _countryCode;
+                        }),
+                        onSubmitted: (_) => _sendCode(),
+                      ),
+                      const SizedBox(height: 14),
+                      AttraPrimaryButton(
+                        label: 'Continuar con teléfono',
+                        icon: Icons.sms_rounded,
+                        loading: widget.isLoading,
+                        onPressed: widget.isLoading ? null : _sendCode,
+                      ),
+                    ] else ...<Widget>[
+                      // Número bloqueado (recap).
+                      _PhoneReadonly(
+                        phone: _fullPhoneNumber,
+                        onEdit: () => widget.onSendPhoneCode(_fullPhoneNumber),
+                      ),
+                      const SizedBox(height: 16),
+                      _SmsCodeField(
+                        controller: _smsCodeController,
+                        focusNode: _smsFocus,
+                        enabled: !widget.isLoading,
+                        onSubmitted: (_) => _verifyCode(),
+                      ),
+                      const SizedBox(height: 14),
+                      AttraPrimaryButton(
+                        label: 'Verificar código',
+                        icon: Icons.check_rounded,
+                        loading: widget.isLoading,
+                        onPressed: widget.isLoading ? null : _verifyCode,
+                      ),
+                      const SizedBox(height: 10),
+                      AttraGhostButton(
+                        label: 'Reenviar código SMS',
+                        onPressed: widget.isLoading ? null : _sendCode,
+                      ),
+                    ],
+
+                    // Error pill.
+                    if (widget.errorMessage != null) ...<Widget>[
+                      const SizedBox(height: 20),
+                      _ErrorPill(message: widget.errorMessage!, theme: theme),
+                    ],
+                    const SizedBox(height: 8),
                   ],
-                ],
+                ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── WIDGETS PRIVADOS ────────────────────────────────────────────────────────
+
+class _Divider extends StatelessWidget {
+  const _Divider({required this.theme});
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        const Expanded(child: Divider(color: AppColors.surfaceLine)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text('o',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textMuted)),
+        ),
+        const Expanded(child: Divider(color: AppColors.surfaceLine)),
+      ],
+    );
+  }
+}
+
+/// Campo de teléfono con selector de prefijo a la izquierda.
+class _PhoneField extends StatelessWidget {
+  const _PhoneField({
+    required this.controller,
+    required this.focusNode,
+    required this.dialCode,
+    required this.countryCode,
+    required this.onCountryChanged,
+    required this.enabled,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String dialCode;
+  final String countryCode;
+  final ValueChanged<CountryCode> onCountryChanged;
+  final bool enabled;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.surfaceLine),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          // Selector de país (diálogo oscuro).
+          CountryCodePicker(
+            onChanged: onCountryChanged,
+            initialSelection: countryCode,
+            favorite: const <String>['+34', '+1', '+52', '+57', '+54'],
+            showCountryOnly: false,
+            showOnlyCountryWhenClosed: false,
+            alignLeft: false,
+            enabled: enabled,
+            padding: EdgeInsets.zero,
+            flagWidth: 26,
+            textStyle: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            // --- Estilo del diálogo (antes salía en blanco) ---
+            dialogBackgroundColor: AppColors.surface,
+            barrierColor: Colors.black.withValues(alpha: 0.6),
+            closeIcon:
+                const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+            boxDecoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+              border: Border.all(color: AppColors.surfaceLine),
+            ),
+            dialogItemPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            dialogTextStyle: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+            searchStyle: const TextStyle(color: AppColors.textPrimary),
+            searchDecoration: InputDecoration(
+              hintText: 'Buscar país...',
+              hintStyle:
+                  const TextStyle(color: AppColors.textMuted, fontSize: 14),
+              prefixIcon:
+                  const Icon(Icons.search_rounded, color: AppColors.textMuted),
+              filled: true,
+              fillColor: AppColors.surfaceHigh,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                borderSide: const BorderSide(color: AppColors.surfaceLine),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                borderSide: const BorderSide(color: AppColors.attraRed),
+              ),
+            ),
+          ),
+          // Separador vertical.
+          Container(
+            width: 1,
+            height: 28,
+            color: AppColors.surfaceLine,
+          ),
+          // Campo de número.
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
+                enabled: enabled,
+                keyboardType: TextInputType.phone,
+                textInputAction: TextInputAction.done,
+                onSubmitted: onSubmitted,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d\s\-]')),
+                ],
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: const InputDecoration(
+                  hintText: '600 111 222',
+                  hintStyle:
+                      TextStyle(color: AppColors.textMuted, fontSize: 15),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Muestra el número enviado (solo lectura) con botón "cambiar".
+class _PhoneReadonly extends StatelessWidget {
+  const _PhoneReadonly({required this.phone, required this.onEdit});
+  final String phone;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.surfaceLine),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.phone_rounded,
+              color: AppColors.textSecondary, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              phone,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onEdit,
+            child: const Text(
+              'Cambiar',
+              style: TextStyle(
+                color: AppColors.attraRed,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Campo para el código SMS: grande, centrado, tipografía monoespaciada.
+class _SmsCodeField extends StatelessWidget {
+  const _SmsCodeField({
+    required this.controller,
+    required this.focusNode,
+    required this.enabled,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      enabled: enabled,
+      keyboardType: TextInputType.number,
+      textAlign: TextAlign.center,
+      textInputAction: TextInputAction.done,
+      onSubmitted: onSubmitted,
+      autofocus: true,
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(6),
+      ],
+      style: const TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 10,
+      ),
+      decoration: InputDecoration(
+        hintText: '------',
+        hintStyle: TextStyle(
+          color: AppColors.textMuted.withValues(alpha: 0.5),
+          fontSize: 28,
+          letterSpacing: 10,
+        ),
+        labelText: 'Código SMS',
+        labelStyle:
+            const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        prefixIcon:
+            const Icon(Icons.lock_outline_rounded, color: AppColors.attraRed),
+      ),
+    );
+  }
+}
+
+/// Pill de error.
+class _ErrorPill extends StatelessWidget {
+  const _ErrorPill({required this.message, required this.theme});
+  final String message;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.attraRed.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border:
+            Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.error_outline_rounded,
+              color: AppColors.coral, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textPrimary)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Botón social (pill claro) sobre fondo oscuro.
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
+    required this.label,
+    required this.onPressed,
+    this.loading = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.textPrimary,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        child: SizedBox(
+          height: 54,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              if (loading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.4, color: AppColors.black),
+                )
+              else ...<Widget>[
+                Container(
+                  width: 22,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.black,
+                  ),
+                  child: const Text('G',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14)),
+                ),
+                const SizedBox(width: 10),
+                Text(label,
+                    style: const TextStyle(
+                        color: AppColors.black,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ],
           ),
         ),
       ),

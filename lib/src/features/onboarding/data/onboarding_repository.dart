@@ -2,8 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../auth/data/user_document_defaults.dart';
+import '../../auth/domain/app_user.dart';
 import '../../profile/domain/profile_completion.dart';
 import '../domain/onboarding_draft.dart';
+import 'onboarding_user_store.dart';
 
 class OnboardingRepositoryException implements Exception {
   const OnboardingRepositoryException(this.message);
@@ -38,11 +41,20 @@ class OnboardingRepository {
   OnboardingRepository({
     required FirebaseFirestore firestore,
     required FirebaseStorage storage,
-  })  : _firestore = firestore,
+  }) : this.withStore(
+          userStore: FirestoreOnboardingUserStore(firestore),
+          storage: storage,
+        );
+
+  @visibleForTesting
+  OnboardingRepository.withStore({
+    required OnboardingUserStore userStore,
+    FirebaseStorage? storage,
+  })  : _userStore = userStore,
         _storage = storage;
 
-  final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
+  final OnboardingUserStore _userStore;
+  final FirebaseStorage? _storage;
 
   static const Map<String, String> _genderMap = <String, String>{
     'mujer': 'female',
@@ -265,14 +277,13 @@ class OnboardingRepository {
     'error': 'error',
   };
 
-  DocumentReference<Map<String, dynamic>> _userDoc(String uid) {
-    return _firestore.collection('users').doc(uid);
-  }
-
   Future<OnboardingDraft?> loadDraft(String uid) async {
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
-        await _userDoc(uid).get();
-    final Map<String, dynamic>? data = snapshot.data();
+    final String normalizedUid = _requireUid(
+      uid,
+      'cargar onboarding',
+    );
+    final Map<String, dynamic>? data =
+        await _userStore.getUserData(normalizedUid);
     if (data == null) {
       return null;
     }
@@ -292,23 +303,42 @@ class OnboardingRepository {
     return null;
   }
 
+  Future<void> saveDraftForUser(AppUser? user, OnboardingDraft draft) async {
+    final String uid = _requireUid(
+      user?.uid,
+      'guardar onboarding',
+    );
+    await saveDraft(uid, draft);
+  }
+
   Future<void> saveDraft(String uid, OnboardingDraft draft) async {
+    final String normalizedUid = _requireUid(
+      uid,
+      'guardar onboarding',
+    );
     final OnboardingDraft normalized = _normalizeDraft(draft);
     final Map<String, dynamic> payload = <String, dynamic>{
-      'uid': uid,
+      ...UserDocumentDefaults.requiredFields(normalizedUid),
       'onboardingDraft': _sanitizeFirestoreMap(normalized.toMap()),
       'onboardingDraftUpdatedAt': FieldValue.serverTimestamp(),
     };
-    _logPayload('ONBOARDING_DRAFT_PAYLOAD', payload);
+    final String path = _userStore.userPath(normalizedUid);
+    _logPayload(
+      operation: 'saveDraft',
+      path: path,
+      payload: payload,
+    );
 
     try {
-      await _userDoc(uid).set(
+      await _userStore.setUserData(
+        normalizedUid,
         payload,
-        SetOptions(merge: true),
+        merge: true,
       );
     } catch (error, stack) {
       _logFirestoreError(
         operation: 'saveDraft',
+        path: path,
         error: error,
         stack: stack,
         payload: payload,
@@ -322,6 +352,10 @@ class OnboardingRepository {
     required Uint8List bytes,
     required String fileExtension,
   }) async {
+    final String normalizedUid = _requireUid(
+      uid,
+      'subir la selfie en vivo',
+    );
     if (bytes.isEmpty) {
       throw const OnboardingRepositoryException(
         'La selfie en vivo es obligatoria para completar el onboarding.',
@@ -329,7 +363,7 @@ class OnboardingRepository {
     }
 
     return _uploadLiveSelfiePair(
-      uid: uid,
+      uid: normalizedUid,
       bytes: bytes,
       fileExtension: fileExtension,
     );
@@ -341,6 +375,10 @@ class OnboardingRepository {
     Uint8List? liveSelfieBytes,
     String? liveSelfieFileExtension,
   }) async {
+    final String normalizedUid = _requireUid(
+      uid,
+      'completar onboarding',
+    );
     final OnboardingDraft normalized = _normalizeDraft(draft);
 
     if (normalized.birthDate == null) {
@@ -377,7 +415,7 @@ class OnboardingRepository {
         );
       }
       selfieAssets = await _uploadLiveSelfiePair(
-        uid: uid,
+        uid: normalizedUid,
         bytes: liveSelfieBytes,
         fileExtension: liveSelfieFileExtension ?? 'jpg',
       );
@@ -396,106 +434,130 @@ class OnboardingRepository {
             : normalized.currentCityNormalized;
 
     final Map<String, dynamic> submitPayload = <String, dynamic>{
-        'uid': uid,
-        'displayName': _cleanText(normalized.visibleName),
-        'photoUrl': selfieAssets.publicPhotoUrl,
-        'profilePhotoUrl': selfieAssets.publicPhotoUrl,
-        'onboardingCompleted': true,
-        'profileCompleted': true,
-        'onboardingCompletedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'profile': <String, dynamic>{
-          'visibleName': _cleanText(normalized.visibleName),
-          'birthDate': Timestamp.fromDate(normalized.birthDate!),
-          'gender': normalized.gender,
-          'birthCity': birthCity,
-          'birthCityNormalized': birthCityNormalized,
-          'currentCity': currentCity,
-          'currentCityNormalized': currentCityNormalized,
-          'city': currentCity,
-          'cityName': currentCity,
-          'cityNormalized': currentCityNormalized,
-          'languages': normalized.languages,
-          'bio': _cleanText(normalized.bio),
-          'relationshipIntent': normalized.relationshipIntent,
-        },
-        'appearance': <String, dynamic>{
-          'heightCm': _asFirestoreIntOrNull(normalized.heightCm),
-          'eyeColor': normalized.eyeColor,
-          'hairColor': normalized.hairColor,
-          'hairType': normalized.hairType,
-          'bodyType': normalized.bodyType,
-        },
-        'lifestyle': <String, dynamic>{
-          'smoking': normalized.smoking,
-          'drinking': normalized.drinking,
-          'fitnessLevel': normalized.fitnessLevel,
-          'wantsChildren': normalized.wantsChildren,
-          'socialStyle': normalized.socialStyle,
-          'travelStyle': normalized.travelStyle,
-        },
-        'style': <String, dynamic>{
-          'fashionStyle': normalized.fashionStyle,
-          'personalityTags': normalized.personalityTags,
-        },
-        'preferences': <String, dynamic>{
-          'interestedIn': List<String>.from(normalized.interestedIn),
-          'preferredAgeMin': _asFirestoreInt(normalized.preferredAgeMin),
-          'preferredAgeMax': _asFirestoreInt(normalized.preferredAgeMax),
-          'maxDistanceKm': _asFirestoreInt(normalized.maxDistanceKm),
-          'preferredLanguages': List<String>.from(normalized.preferredLanguages),
-          'lifestylePreferences': List<String>.from(normalized.lifestylePreferences),
-          'appearancePreferences': List<String>.from(normalized.appearancePreferences),
-        },
-        'location': <String, dynamic>{
-          'permissionGranted': normalized.locationPermissionGranted,
-          'permissionStatus': normalized.locationPermissionStatus,
-          'latitude': normalized.locationLatitude,
-          'longitude': normalized.locationLongitude,
-          'updatedAt': normalized.locationUpdatedAt == null
-              ? FieldValue.serverTimestamp()
-              : Timestamp.fromDate(normalized.locationUpdatedAt!),
-        },
-        'isBot': false,
-        'botProfileVersion': _asFirestoreInt(0),
-        'botScenario': '',
-        'seedQualityScore': _asFirestoreInt(0),
-        'photos': <Map<String, dynamic>>[],
-        'profileCompletionRewardsClaimed': <String>[],
-        'availableProfileRewards': <String>[],
-        'verification': <String, dynamic>{
-          'liveSelfiePhotoUrl': selfieAssets.privatePhotoUrl,
-          'liveSelfiePublicPhotoUrl': selfieAssets.publicPhotoUrl,
-          'liveSelfiePublicStoragePath': selfieAssets.publicStoragePath,
-          'liveSelfiePrivatePhotoUrl': selfieAssets.privatePhotoUrl,
-          'liveSelfiePrivateStoragePath': selfieAssets.privateStoragePath,
-          'liveSelfieCaptured': true,
-          'liveSelfieCapturedAt': Timestamp.fromDate(selfieCapturedAt),
-          'liveSelfieVerified': false,
-          'liveSelfieVersion': _asFirestoreInt(normalized.liveSelfieVersion),
-          'lastLiveSelfieAt': Timestamp.fromDate(
-            normalized.lastLiveSelfieAt ?? selfieCapturedAt,
-          ),
-          'liveSelfieCaptureMethod': selfieAssets.captureMethod,
-          'liveSelfieStatus': selfieAssets.status,
-        },
-        'aiData': <String, dynamic>{
-          'referenceEmbeddings': <double>[],
-          'preferenceVector': <double>[],
-        },
-        'onboardingDraft': FieldValue.delete(),
-        'onboardingDraftUpdatedAt': FieldValue.delete(),
-      };
-    _logPayload('ONBOARDING_SUBMIT_PAYLOAD', submitPayload);
+      ...UserDocumentDefaults.requiredFields(normalizedUid),
+      'displayName': _cleanText(normalized.visibleName),
+      'photoUrl': selfieAssets.publicPhotoUrl,
+      'profilePhotoUrl': selfieAssets.publicPhotoUrl,
+      'onboardingCompleted': true,
+      'profileCompleted': true,
+      'onboardingCompletedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'profile': <String, dynamic>{
+        'visibleName': _cleanText(normalized.visibleName),
+        'birthDate': Timestamp.fromDate(normalized.birthDate!),
+        'gender': normalized.gender,
+        'birthCity': birthCity,
+        'birthCityNormalized': birthCityNormalized,
+        'currentCity': currentCity,
+        'currentCityNormalized': currentCityNormalized,
+        'city': currentCity,
+        'cityName': currentCity,
+        'cityNormalized': currentCityNormalized,
+        'languages': normalized.languages,
+        'bio': _cleanText(normalized.bio),
+        'relationshipIntent': normalized.relationshipIntent,
+        'relationshipType': normalized.relationshipType,
+        'pronouns': normalized.pronouns,
+        'orientation': List<String>.from(normalized.orientation),
+        'jobTitle': _cleanText(normalized.jobTitle),
+        'company': _cleanText(normalized.company),
+        'educationLevel': normalized.educationLevel,
+        'zodiac': normalized.zodiac,
+        'birthCountryCode': normalized.birthCountryCode,
+        'birthCountryName': normalized.birthCountryName,
+        'currentCountryCode': normalized.currentCountryCode,
+        'currentCountryName': normalized.currentCountryName,
+      },
+      'appearance': <String, dynamic>{
+        'heightCm': _asFirestoreIntOrNull(normalized.heightCm),
+        'eyeColor': normalized.eyeColor,
+        'hairColor': normalized.hairColor,
+        'hairType': normalized.hairType,
+        'bodyType': normalized.bodyType,
+      },
+      'lifestyle': <String, dynamic>{
+        'smoking': normalized.smoking,
+        'drinking': normalized.drinking,
+        'fitnessLevel': normalized.fitnessLevel,
+        'wantsChildren': normalized.wantsChildren,
+        'socialStyle': normalized.socialStyle,
+        'travelStyle': normalized.travelStyle,
+        'hasChildren': normalized.hasChildren,
+        'cannabis': normalized.cannabis,
+        'drugs': normalized.drugs,
+        'pets': List<String>.from(normalized.pets),
+      },
+      'style': <String, dynamic>{
+        'fashionStyle': normalized.fashionStyle,
+        'personalityTags': normalized.personalityTags,
+      },
+      'preferences': <String, dynamic>{
+        'interestedIn': List<String>.from(normalized.interestedIn),
+        'preferredAgeMin': _asFirestoreInt(normalized.preferredAgeMin),
+        'preferredAgeMax': _asFirestoreInt(normalized.preferredAgeMax),
+        'maxDistanceKm': _asFirestoreInt(normalized.maxDistanceKm),
+        'preferredLanguages': List<String>.from(normalized.preferredLanguages),
+        'lifestylePreferences':
+            List<String>.from(normalized.lifestylePreferences),
+        'appearancePreferences':
+            List<String>.from(normalized.appearancePreferences),
+      },
+      'location': <String, dynamic>{
+        'permissionGranted': normalized.locationPermissionGranted,
+        'permissionStatus': normalized.locationPermissionStatus,
+        'latitude': normalized.locationLatitude,
+        'longitude': normalized.locationLongitude,
+        'updatedAt': normalized.locationUpdatedAt == null
+            ? FieldValue.serverTimestamp()
+            : Timestamp.fromDate(normalized.locationUpdatedAt!),
+      },
+      'isBot': false,
+      'botProfileVersion': _asFirestoreInt(0),
+      'botScenario': '',
+      'seedQualityScore': _asFirestoreInt(0),
+      'photos': <Map<String, dynamic>>[],
+      'profileCompletionRewardsClaimed': <String>[],
+      'availableProfileRewards': <String>[],
+      'verification': <String, dynamic>{
+        'liveSelfiePhotoUrl': selfieAssets.privatePhotoUrl,
+        'liveSelfiePublicPhotoUrl': selfieAssets.publicPhotoUrl,
+        'liveSelfiePublicStoragePath': selfieAssets.publicStoragePath,
+        'liveSelfiePrivatePhotoUrl': selfieAssets.privatePhotoUrl,
+        'liveSelfiePrivateStoragePath': selfieAssets.privateStoragePath,
+        'liveSelfieCaptured': true,
+        'liveSelfieCapturedAt': Timestamp.fromDate(selfieCapturedAt),
+        'liveSelfieVerified': false,
+        'liveSelfieVersion': _asFirestoreInt(normalized.liveSelfieVersion),
+        'lastLiveSelfieAt': Timestamp.fromDate(
+          normalized.lastLiveSelfieAt ?? selfieCapturedAt,
+        ),
+        'liveSelfieCaptureMethod': selfieAssets.captureMethod,
+        'liveSelfieStatus': selfieAssets.status,
+      },
+      'aiData': <String, dynamic>{
+        'referenceEmbeddings': <double>[],
+        'preferenceVector': <double>[],
+      },
+      'onboardingDraft': FieldValue.delete(),
+      'onboardingDraftUpdatedAt': FieldValue.delete(),
+    };
+    final String path = _userStore.userPath(normalizedUid);
+    _logPayload(
+      operation: 'submitOnboarding:setMain',
+      path: path,
+      payload: submitPayload,
+    );
 
     try {
-      await _userDoc(uid).set(
+      await _userStore.setUserData(
+        normalizedUid,
         _sanitizeFirestoreMap(submitPayload),
-        SetOptions(merge: true),
+        merge: true,
       );
     } catch (error, stack) {
       _logFirestoreError(
         operation: 'submitOnboarding:setMain',
+        path: path,
         error: error,
         stack: stack,
         payload: submitPayload,
@@ -503,28 +565,34 @@ class OnboardingRepository {
       rethrow;
     }
 
-    final DocumentSnapshot<Map<String, dynamic>> finalDoc =
-        await _userDoc(uid).get();
+    final Map<String, dynamic> finalDoc =
+        await _userStore.getUserData(normalizedUid) ?? <String, dynamic>{};
     final ProfileCompletionResult completion =
-        ProfileCompletionCalculator.calculate(
-            finalDoc.data() ?? <String, dynamic>{});
+        ProfileCompletionCalculator.calculate(finalDoc);
     final Map<String, dynamic> completionPayload = <String, dynamic>{
-        'profileCompletionPercent': completion.percent,
-        'profileCompletionChecklist': completion.pendingTaskLabels,
-        'pendingProfileTasks': completion.pendingTaskIds,
-        'availableProfileRewards': completion.availableRewards,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-    _logPayload('ONBOARDING_COMPLETION_PAYLOAD', completionPayload);
+      ...UserDocumentDefaults.requiredFields(normalizedUid),
+      'profileCompletionPercent': completion.percent,
+      'profileCompletionChecklist': completion.pendingTaskLabels,
+      'pendingProfileTasks': completion.pendingTaskIds,
+      'availableProfileRewards': completion.availableRewards,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    _logPayload(
+      operation: 'submitOnboarding:setCompletion',
+      path: path,
+      payload: completionPayload,
+    );
 
     try {
-      await _userDoc(uid).set(
+      await _userStore.setUserData(
+        normalizedUid,
         _sanitizeFirestoreMap(completionPayload),
-        SetOptions(merge: true),
+        merge: true,
       );
     } catch (error, stack) {
       _logFirestoreError(
         operation: 'submitOnboarding:setCompletion',
+        path: path,
         error: error,
         stack: stack,
         payload: completionPayload,
@@ -538,6 +606,7 @@ class OnboardingRepository {
     required Uint8List bytes,
     required String fileExtension,
   }) async {
+    final FirebaseStorage storage = _requireStorage();
     final String normalizedExt =
         fileExtension.toLowerCase().replaceAll('.', '').trim();
     final String extension = normalizedExt.isEmpty ? 'jpg' : normalizedExt;
@@ -545,9 +614,9 @@ class OnboardingRepository {
         '${DateTime.now().millisecondsSinceEpoch}.$extension';
 
     final Reference privateRef =
-        _storage.ref().child('users/$uid/private/live_selfie/$fileName');
+        storage.ref().child('users/$uid/private/live_selfie/$fileName');
     final Reference publicRef =
-        _storage.ref().child('users/$uid/public/profile/$fileName');
+        storage.ref().child('users/$uid/public/profile/$fileName');
 
     final String contentType = _contentTypeFor(extension);
     final DateTime capturedAt = DateTime.now();
@@ -745,30 +814,84 @@ class OnboardingRepository {
       return List<String>.from(value);
     }
     if (value is List) {
-      return value.map<dynamic>(_sanitizeFirestoreValue).toList(growable: false);
+      return value
+          .map<dynamic>(_sanitizeFirestoreValue)
+          .toList(growable: false);
     }
     return value;
   }
 
-  void _logPayload(String tag, Map<String, dynamic> payload) {
-    debugPrint('=== $tag ===');
-    debugPrint(payload.toString());
-    debugPrint('payload runtimeType: ${payload.runtimeType}');
+  String _requireUid(String? uid, String operation) {
+    final String? normalizedUid = uid?.trim();
+    if (normalizedUid == null || normalizedUid.isEmpty) {
+      throw OnboardingRepositoryException(
+        'No hay sesion activa para $operation.',
+      );
+    }
+    return normalizedUid;
+  }
+
+  FirebaseStorage _requireStorage() {
+    final FirebaseStorage? storage = _storage;
+    if (storage == null) {
+      throw const OnboardingRepositoryException(
+        'Firebase Storage no esta configurado para onboarding.',
+      );
+    }
+    return storage;
+  }
+
+  void _logPayload({
+    required String operation,
+    required String path,
+    required Map<String, dynamic> payload,
+  }) {
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint(
+      '[Attra][Onboarding][$operation] path=$path '
+      'payloadKeys=${payload.keys.toList()} '
+      'payloadShape=${_payloadShape(payload)}',
+    );
   }
 
   void _logFirestoreError({
     required String operation,
+    required String path,
     required Object error,
     required StackTrace stack,
     Map<String, dynamic>? payload,
   }) {
-    debugPrint('FIRESTORE ERROR [$operation]:');
-    debugPrint(error.toString());
+    if (!kDebugMode) {
+      return;
+    }
+    debugPrint('[Attra][Onboarding][$operation] Firestore error path=$path');
+    if (error is FirebaseException) {
+      debugPrint(
+        'FirebaseException(plugin=${error.plugin}, code=${error.code}, '
+        'message=${error.message})',
+      );
+    } else {
+      debugPrint('${error.runtimeType}: $error');
+    }
     debugPrint(stack.toString());
     if (payload != null) {
       debugPrint('Failed payload keys: ${payload.keys.toList()}');
-      debugPrint('Failed payload: $payload');
+      debugPrint('Failed payload shape: ${_payloadShape(payload)}');
     }
+  }
+
+  Map<String, Object?> _payloadShape(Map<String, dynamic> payload) {
+    return payload.map((String key, dynamic value) {
+      if (value is Map) {
+        return MapEntry<String, Object?>(key, 'map:${value.keys.toList()}');
+      }
+      if (value is List) {
+        return MapEntry<String, Object?>(key, 'list:${value.length}');
+      }
+      return MapEntry<String, Object?>(key, value.runtimeType.toString());
+    });
   }
 }
 

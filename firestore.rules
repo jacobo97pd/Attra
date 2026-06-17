@@ -9,6 +9,15 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function isRequiredString(value) {
+      return value is string && value.size() > 0;
+    }
+
+    // Claves de primer nivel permitidas en el documento de usuario.
+    // Esto es la frontera de seguridad real: impide que se escriban
+    // campos arbitrarios. La validacion de TIPOS por campo se hace en
+    // la app (no en reglas) porque hacerla exhaustiva aqui supera el
+    // presupuesto de evaluacion de Firestore Rules con payloads grandes.
     function allowedTopLevelKeys() {
       return [
         'uid',
@@ -29,6 +38,9 @@ service cloud.firestore {
         'lifestyle',
         'style',
         'preferences',
+        'origin',
+        'profileVisibility',
+        'settings',
         'location',
         'photos',
         'profileCompletionPercent',
@@ -42,146 +54,13 @@ service cloud.firestore {
         'seedQualityScore',
         'verification',
         'aiData',
+        'aiVisualConsent',
+        'aiVisualConsentVersion',
+        'aiVisualEnabled',
         'onboardingDraft',
-        'onboardingDraftUpdatedAt'
+        'onboardingDraftUpdatedAt',
+        'profilePrompts'
       ];
-    }
-
-    function isStringOrNull(value) {
-      return value == null || value is string;
-    }
-
-    function isRequiredString(value) {
-      return value is string && value.size() > 0;
-    }
-
-    function isBoolOrNull(value) {
-      return value == null || value is bool;
-    }
-
-    function isIntOrNull(value) {
-      return value == null || value is int;
-    }
-
-    function isNumberOrNull(value) {
-      return value == null || value is int || value is float;
-    }
-
-    function isTimestampOrNull(value) {
-      return value == null || value is timestamp;
-    }
-
-    function isListOrNull(value) {
-      return value == null || value is list;
-    }
-
-    function isMapOrNull(value) {
-      return value == null || value is map;
-    }
-
-    function isProfile(value) {
-      return value == null || (
-        value is map
-        && isStringOrNull(value.visibleName)
-        && isTimestampOrNull(value.birthDate)
-        && isStringOrNull(value.gender)
-        && isStringOrNull(value.city)
-        && isStringOrNull(value.cityName)
-        && isStringOrNull(value.cityNormalized)
-        && isStringOrNull(value.birthCity)
-        && isStringOrNull(value.birthCityNormalized)
-        && isStringOrNull(value.currentCity)
-        && isStringOrNull(value.currentCityNormalized)
-        && isListOrNull(value.languages)
-        && isStringOrNull(value.bio)
-        && isStringOrNull(value.relationshipIntent)
-        && isListOrNull(value.prompts)
-      );
-    }
-
-    function isAppearance(value) {
-      return value == null || (
-        value is map
-        && isIntOrNull(value.heightCm)
-        && isStringOrNull(value.eyeColor)
-        && isStringOrNull(value.hairColor)
-        && isStringOrNull(value.hairType)
-        && isStringOrNull(value.bodyType)
-      );
-    }
-
-    function isLifestyle(value) {
-      return value == null || (
-        value is map
-        && isStringOrNull(value.smoking)
-        && isStringOrNull(value.drinking)
-        && isStringOrNull(value.fitnessLevel)
-        && isStringOrNull(value.wantsChildren)
-        && isStringOrNull(value.socialStyle)
-        && isStringOrNull(value.travelStyle)
-      );
-    }
-
-    function isStyle(value) {
-      return value == null || (
-        value is map
-        && isListOrNull(value.fashionStyle)
-        && isListOrNull(value.personalityTags)
-      );
-    }
-
-    function isPreferences(value) {
-      return value == null || (
-        value is map
-        && isListOrNull(value.interestedIn)
-        && isIntOrNull(value.preferredAgeMin)
-        && isIntOrNull(value.preferredAgeMax)
-        && isIntOrNull(value.maxDistanceKm)
-        && isListOrNull(value.preferredLanguages)
-        && isListOrNull(value.lifestylePreferences)
-        && isListOrNull(value.appearancePreferences)
-      );
-    }
-
-    function isLocation(value) {
-      return value == null || (
-        value is map
-        && isBoolOrNull(value.permissionGranted)
-        && isStringOrNull(value.permissionStatus)
-        && isNumberOrNull(value.latitude)
-        && isNumberOrNull(value.longitude)
-        && isTimestampOrNull(value.updatedAt)
-      );
-    }
-
-    function isVerification(value) {
-      return value == null || (
-        value is map
-        && isStringOrNull(value.liveSelfiePhotoUrl)
-        && isStringOrNull(value.liveSelfiePublicPhotoUrl)
-        && isStringOrNull(value.liveSelfiePublicStoragePath)
-        && isStringOrNull(value.liveSelfiePrivatePhotoUrl)
-        && isStringOrNull(value.liveSelfiePrivateStoragePath)
-        && isBoolOrNull(value.liveSelfieCaptured)
-        && isTimestampOrNull(value.liveSelfieCapturedAt)
-        && isBoolOrNull(value.liveSelfieVerified)
-        && isIntOrNull(value.liveSelfieVersion)
-        && isTimestampOrNull(value.lastLiveSelfieAt)
-        && isStringOrNull(value.liveSelfieCaptureMethod)
-        && isStringOrNull(value.liveSelfieStatus)
-      );
-    }
-
-    function isAiData(value) {
-      return value == null || (
-        value is map
-        && isListOrNull(value.referenceEmbeddings)
-        && isListOrNull(value.preferenceVector)
-      );
-    }
-
-    function isPhotos(value) {
-      return value == null || (value is list && value.size() <= 5);
     }
 
     function hasOnlyAllowedTopLevelKeys(data) {
@@ -196,128 +75,270 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([key]);
     }
 
-    function baseFieldTypesAreValid(data) {
-      return isStringOrNull(data.uid)
-        && isRequiredString(data.empresa)
-        && isStringOrNull(data.email)
-        && isStringOrNull(data.displayName)
-        && isStringOrNull(data.photoUrl)
-        && isStringOrNull(data.profilePhotoUrl)
-        && isTimestampOrNull(data.createdAt)
-        && isTimestampOrNull(data.lastLoginAt)
-        && isBoolOrNull(data.onboardingCompleted)
-        && isBoolOrNull(data.profileCompleted)
-        && isStringOrNull(data.authProvider)
-        && isTimestampOrNull(data.onboardingCompletedAt)
-        && isTimestampOrNull(data.updatedAt)
-        && isProfile(data.profile)
-        && isAppearance(data.appearance)
-        && isLifestyle(data.lifestyle)
-        && isStyle(data.style)
-        && isPreferences(data.preferences)
-        && isLocation(data.location)
-        && isVerification(data.verification)
-        && isAiData(data.aiData)
-        && isMapOrNull(data.onboardingDraft)
-        && isTimestampOrNull(data.onboardingDraftUpdatedAt)
-        && isPhotos(data.photos)
-        && isIntOrNull(data.profileCompletionPercent)
-        && isListOrNull(data.profileCompletionChecklist)
-        && isListOrNull(data.pendingProfileTasks)
-        && isListOrNull(data.profileCompletionRewardsClaimed)
-        && isListOrNull(data.availableProfileRewards)
-        && isBoolOrNull(data.isBot)
-        && isIntOrNull(data.botProfileVersion)
-        && isStringOrNull(data.botScenario)
-        && isIntOrNull(data.seedQualityScore);
-    }
-
-    function changedFieldsAreValid() {
-      return (!changed('uid') || isStringOrNull(request.resource.data.uid))
-        && (!changed('empresa') || isRequiredString(request.resource.data.empresa))
-        && (!changed('email') || isStringOrNull(request.resource.data.email))
-        && (!changed('displayName') || isStringOrNull(request.resource.data.displayName))
-        && (!changed('photoUrl') || isStringOrNull(request.resource.data.photoUrl))
-        && (!changed('profilePhotoUrl') || isStringOrNull(request.resource.data.profilePhotoUrl))
-        && (!changed('createdAt') || isTimestampOrNull(request.resource.data.createdAt))
-        && (!changed('lastLoginAt') || isTimestampOrNull(request.resource.data.lastLoginAt))
-        && (!changed('onboardingCompleted') || isBoolOrNull(request.resource.data.onboardingCompleted))
-        && (!changed('profileCompleted') || isBoolOrNull(request.resource.data.profileCompleted))
-        && (!changed('authProvider') || isStringOrNull(request.resource.data.authProvider))
-        && (!changed('onboardingCompletedAt') || isTimestampOrNull(request.resource.data.onboardingCompletedAt))
-        && (!changed('updatedAt') || isTimestampOrNull(request.resource.data.updatedAt))
-        && (!changed('profile') || isProfile(request.resource.data.profile))
-        && (!changed('appearance') || isAppearance(request.resource.data.appearance))
-        && (!changed('lifestyle') || isLifestyle(request.resource.data.lifestyle))
-        && (!changed('style') || isStyle(request.resource.data.style))
-        && (!changed('preferences') || isPreferences(request.resource.data.preferences))
-        && (!changed('location') || isLocation(request.resource.data.location))
-        && (!changed('verification') || isVerification(request.resource.data.verification))
-        && (!changed('aiData') || isAiData(request.resource.data.aiData))
-        && (!changed('onboardingDraft') || isMapOrNull(request.resource.data.onboardingDraft))
-        && (!changed('onboardingDraftUpdatedAt') || isTimestampOrNull(request.resource.data.onboardingDraftUpdatedAt))
-        && (!changed('photos') || isPhotos(request.resource.data.photos))
-        && (!changed('profileCompletionPercent') || isIntOrNull(request.resource.data.profileCompletionPercent))
-        && (!changed('profileCompletionChecklist') || isListOrNull(request.resource.data.profileCompletionChecklist))
-        && (!changed('pendingProfileTasks') || isListOrNull(request.resource.data.pendingProfileTasks))
-        && (!changed('profileCompletionRewardsClaimed') || isListOrNull(request.resource.data.profileCompletionRewardsClaimed))
-        && (!changed('availableProfileRewards') || isListOrNull(request.resource.data.availableProfileRewards))
-        && (!changed('isBot') || isBoolOrNull(request.resource.data.isBot))
-        && (!changed('botProfileVersion') || isIntOrNull(request.resource.data.botProfileVersion))
-        && (!changed('botScenario') || isStringOrNull(request.resource.data.botScenario))
-        && (!changed('seedQualityScore') || isIntOrNull(request.resource.data.seedQualityScore));
-    }
-
-    function createIsValid(uid) {
-      return hasOnlyAllowedTopLevelKeys(request.resource.data)
-        && request.resource.data.keys().hasAll(['empresa'])
-        && request.resource.data.uid == uid
-        && baseFieldTypesAreValid(request.resource.data);
-    }
-
+    // uid, createdAt y authProvider no pueden modificarse una vez fijados.
     function immutableFieldsUntouchedOrInitialized(uid) {
       return (
         !changed('uid')
-        || request.resource.data.uid == uid
+        || request.resource.data.get('uid', null) == uid
       )
       && (
         !changed('createdAt')
-        || resource.data.createdAt == null
-        || request.resource.data.createdAt == resource.data.createdAt
+        || resource.data.get('createdAt', null) == null
+        || request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
       )
       && (
         !changed('authProvider')
-        || resource.data.authProvider == null
-        || request.resource.data.authProvider == resource.data.authProvider
+        || resource.data.get('authProvider', null) == null
+        || request.resource.data.get('authProvider', null) == resource.data.get('authProvider', null)
       );
     }
 
+    // Una vez completado el onboarding/perfil, no puede volver a false.
     function completionFlagsDoNotRegress() {
       return !(
-        resource.data.onboardingCompleted == true
-        && request.resource.data.onboardingCompleted == false
+        resource.data.get('onboardingCompleted', false) == true
+        && request.resource.data.get('onboardingCompleted', false) == false
       ) && !(
-        resource.data.profileCompleted == true
-        && request.resource.data.profileCompleted == false
+        resource.data.get('profileCompleted', false) == true
+        && request.resource.data.get('profileCompleted', false) == false
       );
     }
 
     match /users/{uid} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && createIsValid(uid);
+      allow create: if isOwner(uid)
+        && hasOnlyAllowedTopLevelKeys(request.resource.data)
+        && request.resource.data.keys().hasAll(['empresa'])
+        && request.resource.data.get('uid', null) == uid
+        && isRequiredString(request.resource.data.get('empresa', null));
       allow update: if isOwner(uid)
         && touchesOnlyAllowedTopLevelKeys()
         && request.resource.data.keys().hasAll(['empresa'])
-        && isRequiredString(request.resource.data.empresa)
-        && changedFieldsAreValid()
+        && isRequiredString(request.resource.data.get('empresa', null))
         && immutableFieldsUntouchedOrInitialized(uid)
         && completionFlagsDoNotRegress();
       allow delete: if isOwner(uid);
+
+      // Consent ledger: append-only e inmutable (para poder probar
+      // cumplimiento RGPD). El dueno crea y lee; nadie edita/borra.
+      match /consentRecords/{recordId} {
+        allow read, create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+
+      // Solicitudes de privacidad (export/erasure/disable). El cliente las crea
+      // como 'pending'; el procesado lo hace el backend con privilegios.
+      match /privacyRequests/{requestId} {
+        allow read, create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+
+      // Auditoria ligera lado cliente del historial de cambios del usuario.
+      match /auditEvents/{eventId} {
+        allow read, create: if isOwner(uid);
+        allow update, delete: if false;
+      }
     }
 
     match /seed_profiles/{seedId} {
       allow read: if isSignedIn();
       allow write: if false;
+    }
+
+    // Perfiles publicos para el feed de descubrimiento. Cualquier sesion lee;
+    // cada usuario solo escribe el SUYO (espejo de campos publicos), marcando
+    // isBot=false. Datos privados (email, ajustes) siguen solo en users/{uid}.
+    // El dueno publica su propio espejo publico (uid + isBot=false). El backend
+    // (trigger onUserWrittenSyncDiscovery) tambien lo mantiene via Admin SDK,
+    // pero permitir la escritura del dueno hace que el feed funcione SIN
+    // desplegar Cloud Functions. Datos privados (email, ajustes) NO van aqui.
+    match /discovery/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid)
+        && request.resource.data.get('uid', null) == uid
+        && request.resource.data.get('isBot', true) == false;
+      allow delete: if isOwner(uid);
+    }
+
+    // --- Monetizacion: el cliente SOLO lee. Tier, saldo y ledger son
+    // autoritativos en backend (Admin SDK bypassa reglas). El cliente nunca
+    // concede entitlements ni modifica saldo. ---
+
+    // Feature flags / kill switch. Lectura para cualquier sesion.
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Telemetría de Attra Spark: append-only. Cualquier sesion crea eventos con
+    // su propio uid; nadie lee/edita/borra desde el cliente (analítica backend).
+    match /sparkAnalytics/{eventId} {
+      allow create: if isSignedIn()
+        && request.resource.data.get('uid', '') == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
+    // Telemetría del feed/embudo (impresiones, likes, matches, conversaciones).
+    // Append-only: cada quien crea sus eventos con su uid; lectura/analítica en
+    // backend. No se edita ni borra desde el cliente.
+    match /feedEvents/{eventId} {
+      allow create: if isSignedIn()
+        && request.resource.data.get('uid', '') == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
+    // Perfiles ya mostrados al usuario (frecuencia de aparición / no repetir).
+    // PRIVADO del dueño: solo él lee y escribe sus impresiones.
+    match /seenProfiles/{uid}/seen/{otherUid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Entitlements autoritativos por usuario.
+    match /userEntitlements/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // Monedero de Attras (saldo). Solo lectura del dueno.
+    match /attraWallets/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // Boosts consumibles. `users/{uid}.wallet.boosts`, `boostSessions` y
+    // `activeBoosts` son autoritativos del backend. El cliente puede leer los
+    // boosts activos mínimos para ordenar el feed, pero nunca escribir saldo ni
+    // contadores.
+    match /boostSessions/{boostId} {
+      allow read: if isSignedIn()
+        && resource.data.get('userId', null) == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /activeBoosts/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /boostImpressions/{impressionId} {
+      allow read, write: if false;
+    }
+
+    // Ledger de Attras: inmutable y solo backend. El dueno lee sus entradas.
+    match /attraLedger/{ledgerId} {
+      allow read: if isSignedIn()
+        && resource.data.get('uid', null) == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Envios de Attras. Visibles para emisor y receptor; escritura backend.
+    match /attraSends/{sendId} {
+      allow read: if isSignedIn() && (
+        resource.data.get('fromUid', null) == request.auth.uid
+        || resource.data.get('toUid', null) == request.auth.uid
+      );
+      allow write: if false;
+    }
+
+    // --- Match y chat: el cliente SOLO lee lo suyo. Todas las escrituras
+    // (likes, matches, chats, mensajes, bloqueos, reportes) pasan por Cloud
+    // Functions con Admin SDK. El cliente nunca crea un match ni modifica
+    // unreadCount ni envia mensajes directamente. ---
+
+    function isParticipant(usersList) {
+      return isSignedIn() && request.auth.uid in usersList;
+    }
+
+    // Likes: visibles para emisor y receptor (bandeja "te han dado like").
+    match /likes/{likeId} {
+      allow read: if isSignedIn() && (
+        resource.data.get('fromUid', null) == request.auth.uid
+        || resource.data.get('toUid', null) == request.auth.uid
+      );
+      allow write: if false;
+    }
+
+    // Dislikes: solo el emisor.
+    match /dislikes/{dislikeId} {
+      allow read: if isSignedIn()
+        && resource.data.get('fromUid', null) == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Matches: solo los participantes.
+    match /matches/{matchId} {
+      allow read: if isParticipant(resource.data.get('users', []));
+      allow write: if false;
+
+      // Attra Spark: sesiones de juego del match. Cliente lee/escribe SOLO si es
+      // participante del match padre (lo valida contra matches/{matchId}.users).
+      // El doc es la sala en vivo (presencia/rondas/respuestas/reacciones). El
+      // mensaje de sistema final en el chat lo inserta el backend (Cloud Func).
+      match /sparkSessions/{sessionId} {
+        function matchUsers() {
+          return get(/databases/$(database)/documents/matches/$(matchId))
+              .data.get('users', []);
+        }
+        allow read: if isParticipant(matchUsers());
+        // Crear: solo un participante, declarándose como userA (anfitrión) y con
+        // el otro participante como userB.
+        allow create: if isParticipant(matchUsers())
+          && sessionId == 'icebreaker_v1'
+          && request.resource.data.get('userAId', '') == request.auth.uid
+          && matchUsers().hasAll([
+               request.resource.data.get('userAId', ''),
+               request.resource.data.get('userBId', '')
+             ]);
+        // Actualizar: cualquier participante del match (responder/reaccionar/
+        // presencia/avanzar). No se permite borrar.
+        allow update: if isParticipant(matchUsers());
+        allow delete: if false;
+      }
+    }
+
+    // Chats: solo los participantes. Los mensajes heredan: se valida contra el
+    // documento de chat padre.
+    match /chats/{chatId} {
+      allow read: if isParticipant(resource.data.get('users', []));
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if isParticipant(
+          get(/databases/$(database)/documents/chats/$(chatId)).data.get('users', [])
+        );
+        allow write: if false;
+      }
+    }
+
+    // Bloqueos: solo quien bloquea ve su registro.
+    match /blocks/{blockId} {
+      allow read: if isSignedIn()
+        && resource.data.get('blockerUid', null) == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Reportes: solo quien reporta; escritura y moderacion en backend.
+    match /reports/{reportId} {
+      allow read: if isSignedIn()
+        && resource.data.get('reporterUid', null) == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Stories de video 24h. Lectura para cualquier sesion (el cliente oculta las
+    // caducadas/expiradas y filtra bloqueados). Escritura SOLO backend
+    // (createStory/viewStory/replyToStory/deleteStory + cleanup con Admin SDK).
+    match /stories/{storyId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /views/{viewerUid} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+      match /replies/{replyId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
     }
   }
 }

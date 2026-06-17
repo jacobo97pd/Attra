@@ -4,7 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../auth/domain/app_user.dart';
+import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_state.dart';
+import '../../profile/domain/profile_prompt.dart';
+import '../../profile/domain/profile_trait.dart';
+import '../../profile/presentation/edit_traits_screen.dart';
+import '../../profile/presentation/intro_media_editor.dart';
+import '../../profile/presentation/profile_prompts_editor_screen.dart';
+import '../../profile/presentation/profile_strength_card.dart';
+import '../../profile/presentation/profile_view_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -17,6 +25,21 @@ class HomeScreen extends StatefulWidget {
     required this.onClaimReward,
     required this.onLoadSeedProfiles,
     required this.onDeleteAccount,
+    required this.onLoadProfileRaw,
+    required this.onSetTrait,
+    required this.onSetTraitVisibility,
+    required this.onLoadProfilePrompts,
+    required this.onSaveProfilePrompts,
+    required this.onLoadIntroMedia,
+    required this.onUploadIntroAudio,
+    required this.onDeleteIntroAudio,
+    required this.onUploadIntroVideo,
+    required this.onDeleteIntroVideo,
+    this.onOpenSettings,
+    this.onOpenUpgrade,
+    this.onOpenAiVisual,
+    this.currentPlanLabel = 'Free',
+    this.isProUser = false,
     this.user,
     this.errorMessage,
   });
@@ -35,6 +58,38 @@ class HomeScreen extends StatefulWidget {
   final Future<void> Function(String rewardId) onClaimReward;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
   final Future<void> Function() onDeleteAccount;
+  final Future<Map<String, dynamic>> Function() onLoadProfileRaw;
+  final Future<void> Function(ProfileTraitDefinition def, Object? value)
+      onSetTrait;
+  final Future<void> Function(
+    String traitKey, {
+    required bool visibleInProfile,
+    required bool useForMatching,
+    required bool useForFilters,
+  }) onSetTraitVisibility;
+  final Future<List<ProfilePrompt>> Function() onLoadProfilePrompts;
+  final Future<void> Function(List<ProfilePrompt> prompts) onSaveProfilePrompts;
+  final Future<({IntroAudio? audio, IntroVideo? video})> Function()
+      onLoadIntroMedia;
+  final Future<void> Function({
+    required Uint8List bytes,
+    required String contentType,
+    required String extension,
+    required int durationMs,
+  }) onUploadIntroAudio;
+  final Future<void> Function() onDeleteIntroAudio;
+  final Future<void> Function({
+    required Uint8List bytes,
+    required String contentType,
+    required String extension,
+    required int durationMs,
+  }) onUploadIntroVideo;
+  final Future<void> Function() onDeleteIntroVideo;
+  final VoidCallback? onOpenSettings;
+  final VoidCallback? onOpenUpgrade;
+  final VoidCallback? onOpenAiVisual;
+  final String currentPlanLabel;
+  final bool isProUser;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -42,7 +97,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _imagePicker = ImagePicker();
-  final TextEditingController _promptController = TextEditingController();
 
   ProfileCompletionState? _profile;
   List<SeedProfile> _seedProfiles = const <SeedProfile>[];
@@ -58,8 +112,43 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _promptController.dispose();
     super.dispose();
+  }
+
+  /// Abre una VISTA PREVIA del propio perfil tal y como lo ve el resto (mismo
+  /// visor que se usa desde los chats), construido con los datos del usuario.
+  Future<void> _previewProfile() async {
+    final NavigatorState nav = Navigator.of(context);
+    setState(() => _busy = true);
+    SeedProfile? profile;
+    try {
+      final Map<String, dynamic> raw = await widget.onLoadProfileRaw();
+      profile = SeedProfile.fromMap(widget.user?.uid ?? 'me', raw);
+    } catch (_) {
+      profile = null;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (profile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo cargar tu perfil.')),
+      );
+      return;
+    }
+    nav.push(MaterialPageRoute<void>(
+      builder: (_) => ProfileViewScreen(profile: profile!),
+    ));
+  }
+
+  Future<void> _openEditTraits() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => EditTraitsScreen(
+        loadData: widget.onLoadProfileRaw,
+        onSetTrait: widget.onSetTrait,
+        onSetVisibility: widget.onSetTraitVisibility,
+      ),
+    ));
+    if (mounted) _reload(); // refresca el score al volver
   }
 
   Future<void> _reload() async {
@@ -136,35 +225,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       await widget.onDeleteAdditionalPhoto(storagePath);
-      await _reload();
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = '$error';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _addPrompt() async {
-    final String prompt = _promptController.text.trim();
-    if (prompt.isEmpty) {
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await widget.onAddPrompt(prompt);
-      _promptController.clear();
       await _reload();
     } catch (error) {
       if (!mounted) {
@@ -310,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Attra'),
+        title: const _AttraTitleLogo(),
         actions: <Widget>[
           IconButton(
             onPressed: _busy ? null : _reload,
@@ -335,6 +395,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: <Widget>[
                   _buildHeaderCard(theme, profile),
                   const SizedBox(height: 12),
+                  if (widget.onOpenUpgrade != null) ...<Widget>[
+                    _buildUpgradeCard(theme),
+                    const SizedBox(height: 12),
+                  ],
+                  if (widget.onOpenAiVisual != null) ...<Widget>[
+                    _buildAiVisualCard(theme),
+                    const SizedBox(height: 12),
+                  ],
+                  if (widget.onOpenSettings != null) ...<Widget>[
+                    _buildSettingsCard(theme),
+                    const SizedBox(height: 12),
+                  ],
                   _buildChecklistCard(theme, profile),
                   const SizedBox(height: 12),
                   _buildRewardsCard(theme, profile),
@@ -342,6 +414,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildAdditionalPhotosCard(theme, profile),
                   const SizedBox(height: 12),
                   _buildPromptsCard(theme, profile),
+                  const SizedBox(height: 12),
+                  IntroMediaEditor(
+                    loadMedia: widget.onLoadIntroMedia,
+                    onUploadAudio: widget.onUploadIntroAudio,
+                    onDeleteAudio: widget.onDeleteIntroAudio,
+                    onUploadVideo: widget.onUploadIntroVideo,
+                    onDeleteVideo: widget.onDeleteIntroVideo,
+                  ),
                   const SizedBox(height: 12),
                   _buildSeedProfilesCard(theme),
                   const SizedBox(height: 12),
@@ -368,7 +448,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeaderCard(ThemeData theme, ProfileCompletionState profile) {
     final String displayName = widget.user?.displayName ?? 'Usuario';
     final String email = widget.user?.email ?? 'Sin email';
-    final double progress = profile.percent / 100;
 
     return Card(
       child: Padding(
@@ -399,15 +478,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Tu perfil esta completado al ${profile.percent}%',
-              style: theme.textTheme.titleMedium,
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _previewProfile,
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: const Text('Ver mi perfil'),
+              ),
             ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(value: progress, minHeight: 10),
+            const SizedBox(height: 16),
+            ProfileStrengthCard(
+              percent: profile.percent,
+              onEdit: _openEditTraits,
+              pendingTasks: profile.pendingTasks,
             ),
             const SizedBox(height: 8),
             Text(
@@ -416,6 +500,86 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildUpgradeCard(ThemeData theme) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: widget.onOpenUpgrade,
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[Color(0xFF1D6A96), Color(0xFFB8860B)],
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.workspace_premium,
+                  color: Colors.white, size: 32),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      widget.isProUser
+                          ? 'Tu plan: ${widget.currentPlanLabel}'
+                          : 'Mejora a Attra Plus o Pro',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.isProUser
+                          ? 'Gestiona tu suscripción y compara los planes.'
+                          : 'Plan actual: ${widget.currentPlanLabel}. Ve todos tus '
+                              'likes, filtros avanzados y la IA visual de Pro.',
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAiVisualCard(ThemeData theme) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(Icons.auto_awesome, color: theme.colorScheme.primary),
+        title: const Text('IA visual · Pro'),
+        subtitle: const Text(
+            'Encuentra parecidos a una foto de referencia y mejora tu perfil.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpenAiVisual,
+      ),
+    );
+  }
+
+  Widget _buildSettingsCard(ThemeData theme) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading:
+            Icon(Icons.settings_outlined, color: theme.colorScheme.primary),
+        title: const Text('Ajustes'),
+        subtitle: const Text('Privacidad, notificaciones, cuenta…'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpenSettings,
       ),
     );
   }
@@ -591,36 +755,53 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('Prompts opcionales', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _promptController,
-              maxLength: 120,
-              decoration: const InputDecoration(
-                labelText: 'Anade un prompt o dato extra de personalidad',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: _busy ? null : _addPrompt,
-                child: const Text('Guardar prompt'),
-              ),
+            Text('Preguntas de perfil', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Añade respuestas que ayuden a empezar una conversación.',
+              style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             if (profile.prompts.isEmpty)
-              const Text('Todavia no hay prompts guardados.')
+              const Text('Añade una respuesta para que tu perfil no parezca '
+                  'un contrato de alquiler.')
             else
-              ...profile.prompts.map((String prompt) => Padding(
+              ...profile.prompts.take(3).map((String prompt) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Text('- $prompt'),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Icon(Icons.chat_bubble_outline, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Text(prompt,
+                                maxLines: 2, overflow: TextOverflow.ellipsis)),
+                      ],
+                    ),
                   )),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _openPromptsEditor,
+                icon: const Icon(Icons.add_comment_outlined, size: 18),
+                label: const Text('Gestionar preguntas'),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _openPromptsEditor() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ProfilePromptsEditorScreen(
+        loadPrompts: widget.onLoadProfilePrompts,
+        savePrompts: widget.onSaveProfilePrompts,
+      ),
+    ));
+    if (mounted) _reload(); // refresca el espejo legacy y el score
   }
 
   Widget _buildSeedProfilesCard(ThemeData theme) {
@@ -666,7 +847,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildDangerZoneCard(ThemeData theme) {
     return Card(
-      color: theme.colorScheme.errorContainer.withOpacity(0.25),
+      color: theme.colorScheme.errorContainer.withValues(alpha: 0.25),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -690,6 +871,24 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AttraTitleLogo extends StatelessWidget {
+  const _AttraTitleLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Attra',
+      image: true,
+      child: Image.asset(
+        'assets/images/ATTRA.png',
+        height: 28,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
