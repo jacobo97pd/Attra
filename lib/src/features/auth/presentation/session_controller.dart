@@ -124,6 +124,26 @@ class SessionController extends ChangeNotifier {
     await _refreshAuthenticatedUser(uid);
   }
 
+  /// MODO VIAJES (Plus/Pro): fija (active=true) o desactiva el destino. Refresca
+  /// el usuario para que el feed reaccione (lee `AppUser.travel*`).
+  Future<void> setTravelLocation({
+    required bool active,
+    String iso2 = '',
+    String city = '',
+    String country = '',
+  }) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.setTravelLocation(
+      uid: uid,
+      active: active,
+      iso2: iso2,
+      city: city,
+      country: country,
+    );
+    await _refreshAuthenticatedUser(uid);
+  }
+
   /// Repositorio de la Settings Platform (consumido por HomeShell para
   /// construir el SettingsController de la sesion).
   SettingsRepository get settingsRepository => _settingsRepository;

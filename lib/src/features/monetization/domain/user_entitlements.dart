@@ -155,6 +155,7 @@ class UserEntitlements {
           PremiumFeature.seeAllLikes,
           PremiumFeature.incognitoMode,
           PremiumFeature.attrasMonthlyGrant,
+          PremiumFeature.travelMode,
         ];
       case SubscriptionTier.premium:
         return const <PremiumFeature>[
@@ -170,6 +171,7 @@ class UserEntitlements {
           PremiumFeature.monthlyBoost,
           PremiumFeature.readReceipts,
           PremiumFeature.attrasMonthlyGrant,
+          PremiumFeature.travelMode,
         ];
       case SubscriptionTier.pro:
         return const <PremiumFeature>[
@@ -185,6 +187,7 @@ class UserEntitlements {
           PremiumFeature.monthlyBoost,
           PremiumFeature.readReceipts,
           PremiumFeature.attrasMonthlyGrant,
+          PremiumFeature.travelMode,
           PremiumFeature.aiVisualEngine,
           PremiumFeature.aiVisualTraitFilters,
           PremiumFeature.visualReferenceSearch,

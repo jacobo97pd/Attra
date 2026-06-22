@@ -40,6 +40,23 @@ export const grantConsumable = onCall({ region: REGION }, async (request) => {
     typeof request.data?.purchaseId === "string" && request.data.purchaseId.trim()
       ? request.data.purchaseId.trim().slice(0, 120)
       : null;
+  // Recibo de la tienda (IAP). En la app real llega siempre; el placeholder de
+  // pruebas puede no traerlo.
+  const platform =
+    request.data?.platform === "app_store" || request.data?.platform === "play_store"
+      ? (request.data.platform as string)
+      : null;
+  const verificationData =
+    typeof request.data?.verificationData === "string"
+      ? (request.data.verificationData as string).slice(0, 8000)
+      : null;
+
+  // TODO(IAP server validation): cuando haya recibo (platform+verificationData),
+  // validarlo contra Google Play Developer API / App Store Server API ANTES de
+  // conceder. Requiere credenciales de tienda (service account / shared secret).
+  // Hoy: si llega recibo confiamos en él (idempotente por purchaseId); si no,
+  // es la concesión placeholder de pruebas.
+  const source = platform ? `iap_${platform}` : "purchase_placeholder";
 
   const userRef = col.users.doc(uid);
   const ledgerRef = purchaseId
@@ -84,8 +101,10 @@ export const grantConsumable = onCall({ region: REGION }, async (request) => {
       kind,
       amount,
       purchaseId,
+      platform,
+      hasReceipt: verificationData != null,
       type: "grant",
-      source: "purchase_placeholder",
+      source,
       createdAt: now,
     });
 

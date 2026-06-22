@@ -11,6 +11,7 @@ enum PremiumFeature {
   monthlyBoost('monthly_boost'),
   readReceipts('read_receipts'),
   attrasMonthlyGrant('attras_monthly_grant'),
+  travelMode('travel_mode'),
   aiVisualEngine('ai_visual_engine'),
   aiVisualTraitFilters('ai_visual_trait_filters'),
   visualReferenceSearch('visual_reference_search'),
@@ -43,6 +44,7 @@ enum PremiumFeature {
       case PremiumFeature.monthlyBoost:
       case PremiumFeature.readReceipts:
       case PremiumFeature.attrasMonthlyGrant:
+      case PremiumFeature.travelMode:
         return false;
     }
   }

@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../auth/domain/app_user.dart';
 import '../data/boost_service.dart';
+import '../data/iap_service.dart';
 import '../domain/boost.dart';
+import '../domain/premium_product_catalog.dart';
 
 /// Hoja de consumibles: Boosts (visibilidad temporal) y Attra Swipes (likes
 /// extra). Muestra saldos, permite ACTIVAR un Boost (consume saldo) y COMPRAR
@@ -53,14 +57,93 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
   int _boosts = 0;
   int _swipes = 0;
 
+  // Compras IAP: ids consumibles del catálogo (boosts + swipes).
+  static Set<String> get _consumableIds => <String>{
+        for (final PremiumProductDefinition p in <PremiumProductDefinition>[
+          ...PremiumProductCatalog.boostPacks,
+          ...PremiumProductCatalog.swipePacks,
+        ])
+          p.id,
+      };
+  late final IapService _iap;
+
   @override
   void initState() {
     super.initState();
     _boosts = widget.user?.boostBalance ?? 0;
     _swipes = widget.user?.swipeBalance ?? 0;
+    _iap = IapService(consumableIds: _consumableIds)
+      ..deliver = _deliver
+      ..addListener(_onIap);
+    _iap.init(productIds: _consumableIds);
+  }
+
+  @override
+  void dispose() {
+    _iap.removeListener(_onIap);
+    _iap.dispose();
+    super.dispose();
   }
 
   String get _uid => widget.user?.uid ?? '';
+
+  /// Refleja el estado del flujo IAP (busy/error) en la hoja.
+  void _onIap() {
+    if (!mounted) return;
+    setState(() => _busy = _iap.isBusy);
+    final String? err = _iap.error;
+    if (err != null) _snack(err);
+  }
+
+  String? _platform() {
+    if (kIsWeb) return null;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        return 'app_store';
+      case TargetPlatform.android:
+        return 'play_store';
+      default:
+        return null;
+    }
+  }
+
+  /// Entrega (server-side): valida el recibo y abona el consumible. Solo si el
+  /// backend confirma, la compra se da por completada.
+  Future<IapDeliveryResult> _deliver(PurchaseDetails purchase) async {
+    final PremiumProductDefinition? def =
+        PremiumProductCatalog.byId(purchase.productID);
+    if (def == null || def.consumableKind == null) {
+      return const IapDeliveryResult(
+          delivered: false, message: 'Producto desconocido.');
+    }
+    try {
+      final int balance = await widget.service.purchaseConsumable(
+        kind: def.consumableKind!,
+        amount: def.consumableAmount,
+        purchaseId: purchase.purchaseID,
+        platform: _platform(),
+        verificationData: purchase.verificationData.serverVerificationData,
+      );
+      if (!mounted) return const IapDeliveryResult(delivered: true);
+      setState(() {
+        if (def.consumableKind == 'boost') {
+          _boosts = balance;
+        } else {
+          _swipes = balance;
+        }
+      });
+      _snack('Compra realizada. Saldo: $balance');
+      widget.onChanged?.call();
+      return const IapDeliveryResult(delivered: true);
+    } on BoostServiceException catch (e) {
+      return IapDeliveryResult(delivered: false, message: e.message);
+    }
+  }
+
+  Future<void> _buyProduct(String productId) async {
+    if (_busy) return;
+    await _iap.buy(productId);
+  }
 
   void _snack(String m) {
     if (!mounted) return;
@@ -90,27 +173,6 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     }
   }
 
-  Future<void> _buy(String kind, int amount) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      final int balance =
-          await widget.service.purchaseConsumable(kind: kind, amount: amount);
-      setState(() {
-        if (kind == 'boost') {
-          _boosts = balance;
-        } else {
-          _swipes = balance;
-        }
-      });
-      _snack('Compra realizada. Saldo: $balance');
-      widget.onChanged?.call();
-    } on BoostServiceException catch (e) {
-      _snack(e.message);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -192,26 +254,29 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
             ),
             const SizedBox(height: 20),
 
-            // Comprar (placeholder de IAP).
+            // Comprar (pasarela nativa Google Play / App Store).
             Text('Comprar',
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            _BuyRow(
-                label: '1 Boost',
-                sub: 'Sube al frente del feed un rato',
-                onTap: _busy ? null : () => _buy('boost', 1)),
-            _BuyRow(
-                label: '5 Boosts',
-                sub: 'Pack ahorro',
-                onTap: _busy ? null : () => _buy('boost', 5)),
-            _BuyRow(
-                label: '25 Attra Swipes',
-                sub: 'Likes extra cuando se acaban los del día',
-                onTap: _busy ? null : () => _buy('swipe', 25)),
+            // Packs de compra desde el catálogo (única fuente de verdad de los
+            // IDs de tienda y cantidades). El precio lo pone la tienda.
+            for (final PremiumProductDefinition p in <PremiumProductDefinition>[
+              ...PremiumProductCatalog.boostPacks,
+              ...PremiumProductCatalog.swipePacks,
+            ])
+              _BuyRow(
+                label: p.title,
+                sub: p.description,
+                badge: p.badge,
+                price: _iap.productById(p.id)?.price,
+                onTap: _busy ? null : () => _buyProduct(p.id),
+              ),
             const SizedBox(height: 8),
             Text(
-              'Compra de prueba (sin cargo). En producción se valida el pago real.',
+              _iap.isAvailable
+                  ? 'Pago seguro a través de tu tienda (Google Play / App Store).'
+                  : 'Las compras no están disponibles en este dispositivo.',
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: AppColors.textMuted),
               textAlign: TextAlign.center,
@@ -317,9 +382,16 @@ class _BalanceTile extends StatelessWidget {
 }
 
 class _BuyRow extends StatelessWidget {
-  const _BuyRow({required this.label, required this.sub, required this.onTap});
+  const _BuyRow(
+      {required this.label,
+      required this.sub,
+      required this.onTap,
+      this.badge,
+      this.price});
   final String label;
   final String sub;
+  final String? badge;
+  final String? price;
   final VoidCallback? onTap;
 
   @override
@@ -334,11 +406,55 @@ class _BuyRow extends StatelessWidget {
       ),
       child: ListTile(
         onTap: onTap,
-        title: Text(label,
-            style: const TextStyle(fontWeight: FontWeight.w700)),
+        title: Row(
+          children: <Widget>[
+            Flexible(
+              child: Text(label,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            if (badge != null && badge!.isNotEmpty) ...<Widget>[
+              const SizedBox(width: 8),
+              _PackBadge(text: badge!),
+            ],
+          ],
+        ),
         subtitle: Text(sub, style: theme.textTheme.bodySmall),
-        trailing: const Icon(Icons.add_circle_outline_rounded,
-            color: AppColors.attraRed),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (price != null && price!.isNotEmpty) ...<Widget>[
+              Text(price!,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+            ],
+            const Icon(Icons.add_circle_outline_rounded,
+                color: AppColors.attraRed),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Etiqueta comercial ("Ahorro", "Más comprado"…) con degradado de marca.
+class _PackBadge extends StatelessWidget {
+  const _PackBadge({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: AppColors.action),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+            color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
       ),
     );
   }

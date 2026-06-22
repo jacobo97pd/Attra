@@ -12,6 +12,7 @@ import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/presentation/feed_screen.dart';
+import '../../feed/presentation/travel_sheet.dart';
 import '../../notifications/data/notification_router.dart';
 import '../../notifications/data/notification_service.dart';
 import '../../notifications/presentation/notifications_screen.dart';
@@ -75,6 +76,7 @@ class HomeShell extends StatefulWidget {
     required this.aiVisualService,
     required this.onSetAiConsent,
     required this.onSetSlowDating,
+    required this.onSetTravelLocation,
     required this.onLoadProfileByUid,
     this.integrationConnector,
     this.user,
@@ -136,6 +138,14 @@ class HomeShell extends StatefulWidget {
   final AiVisualService aiVisualService;
   final Future<void> Function(bool granted) onSetAiConsent;
   final Future<void> Function(bool value) onSetSlowDating;
+
+  /// Modo viajes (Plus/Pro): fija/desactiva el destino del feed.
+  final Future<void> Function({
+    required bool active,
+    String iso2,
+    String city,
+    String country,
+  }) onSetTravelLocation;
   final Future<SeedProfile?> Function(String uid) onLoadProfileByUid;
   final IntegrationConnector? integrationConnector;
 
@@ -289,6 +299,8 @@ class _HomeShellState extends State<HomeShell> {
         // Anuncios: flag activo Y el usuario NO es Plus/Pro (premium sin ads).
         adsEnabled: (_entitlementController?.flags.adsEnabled ?? false) &&
             !(_entitlementController?.isPlusActive ?? false),
+        canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
+        onOpenTravel: _openTravelSheet,
       ),
     );
 
@@ -473,24 +485,47 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
+  Future<void> _openTravelSheet() async {
+    await showTravelSheet(
+      context,
+      canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
+      active: widget.user?.isTraveling ?? false,
+      iso2: widget.user?.travelIso2,
+      city: widget.user?.travelCity,
+      country: widget.user?.travelCountry,
+      onApply: widget.onSetTravelLocation,
+      onUpgrade: () {
+        Navigator.of(context).maybePop();
+        _openPaywall();
+      },
+    );
+    // Tras cambiar el destino, refresca el feed (re-centra la ubicación).
+    if (mounted) setState(() => _feedReloadToken++);
+  }
+
   void _openPaywall() {
     final SubscriptionTier tier =
         _entitlementController?.tier ?? SubscriptionTier.free;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => PaywallScreen(
         currentTier: tier,
-        onBuyPlus: () => _comingSoon('Attra Plus'),
-        onBuyPro: () => _comingSoon('Attra Pro'),
-        onRestore: () => _comingSoon('Restaurar compras'),
+        verifySubscription: widget.boostService == null
+            ? null
+            : ({
+                required String productId,
+                required String platform,
+                required String verificationData,
+                String? purchaseId,
+              }) =>
+                widget.boostService!.verifySubscription(
+                  productId: productId,
+                  platform: platform,
+                  verificationData: verificationData,
+                  purchaseId: purchaseId,
+                ),
+        onPurchased: () => _entitlementController?.load(),
       ),
     ));
-  }
-
-  void _comingSoon(String what) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$what: disponible próximamente.')),
-    );
   }
 
   void _openNotifications() {

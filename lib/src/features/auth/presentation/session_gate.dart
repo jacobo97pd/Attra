@@ -87,6 +87,7 @@ class SessionGate extends StatelessWidget {
               aiVisualService: controller.aiVisualService,
               onSetAiConsent: controller.setAiVisualConsent,
               onSetSlowDating: controller.setSlowDatingEnabled,
+              onSetTravelLocation: controller.setTravelLocation,
               onLoadProfileByUid: controller.loadProfileByUid,
             );
             break;

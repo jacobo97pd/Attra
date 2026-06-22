@@ -103,6 +103,10 @@ class EntitlementController extends ChangeNotifier {
   bool get canCommentOnLike => isPlusActive;
   bool get canUseIncognito => hasFeature(PremiumFeature.incognitoMode);
 
+  /// Modo viajes (Plus/Pro): cambiar tu ubicación para ver el feed de otra parte
+  /// del mundo y aparecer allí "de viaje".
+  bool get canUseTravelMode => hasFeature(PremiumFeature.travelMode);
+
   /// IA visual (solo Pro + consentimiento + flags). hasFeature ya exige consent.
   bool get canUseAiVisualMatching => hasFeature(PremiumFeature.aiVisualEngine);
   bool get canUsePriorityLikes => hasFeature(PremiumFeature.discoveryPriority);

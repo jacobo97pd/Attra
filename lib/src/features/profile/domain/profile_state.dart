@@ -77,6 +77,7 @@ class SeedProfile {
     this.ethnicity = '',
     this.religion = '',
     this.verified = false,
+    this.traveling = false,
     this.lat,
     this.lng,
     required this.age,
@@ -122,6 +123,9 @@ class SeedProfile {
 
   /// Verificado (selfie/identidad).
   final bool verified;
+
+  /// Modo viajes: el perfil aparece "de viaje" en este destino (discovery).
+  final bool traveling;
 
   /// Ubicación aproximada (coords redondeadas) para distancia.
   final double? lat;
@@ -265,6 +269,7 @@ class SeedProfile {
       ethnicity: (filterTraits['ethnicity'] as String?) ?? '',
       religion: (filterTraits['religion'] as String?) ?? '',
       verified: (data['verified'] as bool?) ?? false,
+      traveling: (data['traveling'] as bool?) ?? false,
       lat: (geo['lat'] as num?)?.toDouble(),
       lng: (geo['lng'] as num?)?.toDouble(),
       age: age,

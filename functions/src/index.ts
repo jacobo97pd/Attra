@@ -62,6 +62,7 @@ export {
   recordBoostImpression,
 } from "./boosts";
 export { grantConsumable } from "./consumables";
+export { verifyPurchase } from "./subscriptions";
 export {
   onLikeCreated,
   onMatchCreated,

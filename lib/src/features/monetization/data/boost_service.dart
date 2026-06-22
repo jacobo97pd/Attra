@@ -36,13 +36,34 @@ class BoostService {
     required String kind,
     int amount = 1,
     String? purchaseId,
+    String? platform, // 'app_store' | 'play_store'
+    String? verificationData,
   }) async {
     final Map<String, dynamic> data = await _call('grantConsumable', <String, dynamic>{
       'kind': kind,
       'amount': amount,
       if (purchaseId != null) 'purchaseId': purchaseId,
+      if (platform != null) 'platform': platform,
+      if (verificationData != null) 'verificationData': verificationData,
     });
     return (data['balance'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Verifica una SUSCRIPCIÓN comprada por IAP y concede el plan (server-side).
+  /// Devuelve true si el backend concedió el tier.
+  Future<bool> verifySubscription({
+    required String productId,
+    required String platform, // 'app_store' | 'play_store'
+    required String verificationData,
+    String? purchaseId,
+  }) async {
+    final Map<String, dynamic> data = await _call('verifyPurchase', <String, dynamic>{
+      'productId': productId,
+      'platform': platform,
+      'verificationData': verificationData,
+      if (purchaseId != null) 'purchaseId': purchaseId,
+    });
+    return data['ok'] == true;
   }
 
   Future<BoostActivationResult> activateBoost({

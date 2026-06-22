@@ -355,6 +355,36 @@ class UserRepository {
         .toList(growable: false);
   }
 
+  /// MODO VIAJES (Plus/Pro): fija (o desactiva) el destino en
+  /// `users/{uid}.travel` y re-sincroniza discovery para que el perfil aparezca
+  /// allí "de viaje". El gate de tier se valida en la capa superior.
+  Future<void> setTravelLocation({
+    required String uid,
+    required bool active,
+    String iso2 = '',
+    String city = '',
+    String country = '',
+  }) async {
+    final DocumentReference<Map<String, dynamic>> ref =
+        _usersCollection.doc(uid);
+    await ref.set(
+      _withRequiredUserFields(uid, <String, dynamic>{
+        'travel': <String, dynamic>{
+          'active': active,
+          'iso2': iso2.toUpperCase(),
+          'city': city,
+          'country': country,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+      SetOptions(merge: true),
+    );
+    // Re-publica discovery con (o sin) el destino de viaje.
+    final DocumentSnapshot<Map<String, dynamic>> snap = await ref.get();
+    await _syncDiscoveryProfile(uid, snap.data() ?? <String, dynamic>{});
+  }
+
   /// Escribe (o borra si vacío/null) un rasgo de perfil en
   /// `users/{uid}.[group].[field]`. Nunca infiere ni autorrellena: solo guarda
   /// lo que el usuario introduce. Tras escribir re-sincroniza discovery.

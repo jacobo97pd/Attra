@@ -30,6 +30,15 @@ class DiscoveryPublisher {
         _asInt(userData['age']) ??
         _ageFromBirthDate(birthDate);
 
+    // Modo viajes: si está activo, el perfil aparece en el DESTINO elegido (no
+    // en su ciudad real) y se marca `traveling` para mostrar el distintivo.
+    final Map<String, dynamic> travel = _map(userData['travel']);
+    final bool traveling = travel['active'] == true &&
+        (travel['country'] ?? '').toString().trim().isNotEmpty;
+    final String realCity =
+        (profile['currentCity'] ?? profile['city'] ?? '').toString();
+    final String realCountry = (profile['currentCountryName'] ?? '').toString();
+
     // Núcleo público no sensible (identidad/matching mínimos).
     final Map<String, dynamic> out = <String, dynamic>{
       'uid': uid,
@@ -41,8 +50,9 @@ class DiscoveryPublisher {
       'interestedIn': prefs['interestedIn'] ?? <dynamic>[],
       'age': age,
       'bio': profile['bio'] ?? '',
-      'currentCity': profile['currentCity'] ?? profile['city'] ?? '',
-      'currentCountryName': profile['currentCountryName'] ?? '',
+      'currentCity': traveling ? (travel['city'] ?? '') : realCity,
+      'currentCountryName': traveling ? (travel['country'] ?? '') : realCountry,
+      'traveling': traveling,
     };
 
     // Rasgos del catálogo: se publican bajo su `field` si son utilizables y
