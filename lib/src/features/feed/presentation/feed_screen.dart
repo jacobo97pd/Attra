@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../ads/presentation/feed_native_ad_card.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
@@ -58,6 +59,8 @@ class FeedScreen extends StatefulWidget {
     this.metrics,
     this.boostService,
     this.adsEnabled = false,
+    this.canUseTravelMode = false,
+    this.onOpenTravel,
   });
 
   final AppUser? user;
@@ -101,6 +104,10 @@ class FeedScreen extends StatefulWidget {
   /// Muestra ad cards nativas en el feed (ya viene resuelto: flag activo Y el
   /// usuario NO es Plus/Pro). Si false, el feed va sin anuncios.
   final bool adsEnabled;
+
+  /// Modo viajes (Plus/Pro): botón para cambiar la ubicación del feed.
+  final bool canUseTravelMode;
+  final VoidCallback? onOpenTravel;
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -147,11 +154,50 @@ class _FeedScreenState extends State<FeedScreen> {
   List<_FeedRewindAction> _rewindHistory = const <_FeedRewindAction>[];
   FeedFilters _filters = const FeedFilters();
 
+  // Ubicación del dispositivo como RESPALDO cuando el perfil del usuario no tiene
+  // coordenadas guardadas: así la distancia del feed siempre tiene un "yo".
+  double? _deviceLat;
+  double? _deviceLng;
+
+  /// Lat efectiva del usuario: la guardada o, si falta, la del dispositivo.
+  double? get _effectiveLat => widget.user?.latitude ?? _deviceLat;
+  double? get _effectiveLng => widget.user?.longitude ?? _deviceLng;
+
   @override
   void initState() {
     super.initState();
     _load();
     _loadStoriesFlag();
+    _ensureDeviceLocation();
+  }
+
+  /// Asegura una ubicación para el usuario cuando su perfil no tiene coords:
+  /// usa la última conocida y, si no hay, pide la actual (con permiso). Así la
+  /// distancia del feed siempre funciona. Best-effort: nunca rompe.
+  Future<void> _ensureDeviceLocation() async {
+    if (widget.user?.latitude != null) return; // ya hay coords guardadas
+    try {
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+      // getLastKnownPosition no está soportado en web: ahí se pide la actual.
+      Position? pos = kIsWeb ? null : await Geolocator.getLastKnownPosition();
+      pos ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+      ).timeout(const Duration(seconds: 6),
+          onTimeout: () => throw TimeoutException('geo'));
+      if (!mounted) return;
+      setState(() {
+        _deviceLat = pos!.latitude;
+        _deviceLng = pos.longitude;
+      });
+      _load();
+    } catch (_) {/* sin ubicación: el feed cae al filtro por país */}
   }
 
   @override
@@ -202,6 +248,26 @@ class _FeedScreenState extends State<FeedScreen> {
     } catch (_) {
       return profiles;
     }
+  }
+
+  /// Centra el feed en el destino de viaje: deja solo los perfiles del país
+  /// elegido y pone delante los de la ciudad. Sin país no filtra (devuelve tal
+  /// cual). Comparaciones case-insensitive.
+  List<SeedProfile> _applyTravel(List<SeedProfile> profiles) {
+    final String country = (widget.user?.travelCountry ?? '').trim().toLowerCase();
+    final String city = (widget.user?.travelCity ?? '').trim().toLowerCase();
+    if (country.isEmpty) return profiles;
+    final List<SeedProfile> inCountry = profiles
+        .where((SeedProfile p) => p.country.trim().toLowerCase() == country)
+        .toList(growable: false);
+    if (city.isEmpty) return inCountry;
+    inCountry.sort((SeedProfile a, SeedProfile b) {
+      final bool aCity = a.city.trim().toLowerCase() == city;
+      final bool bCity = b.city.trim().toLowerCase() == city;
+      if (aCity == bCity) return 0;
+      return aCity ? -1 : 1;
+    });
+    return inCountry;
   }
 
   Future<void> _loadStoriesFlag() async {
@@ -288,6 +354,9 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted) {
         return;
       }
+      // Modo viajes: cuando viajas, el feed se CENTRA en el destino (se ignora
+      // la distancia real y se usa el PAÍS de destino para la relevancia).
+      final bool traveling = widget.user?.isTraveling ?? false;
       List<SeedProfile> filtered = FeedFilter.apply(
         profiles: all,
         myUid: myUid,
@@ -295,9 +364,17 @@ class _FeedScreenState extends State<FeedScreen> {
         myInterestedIn: widget.user?.interestedIn ?? const <String>[],
         excludedUids: excluded,
         filters: _filters,
-        myLat: widget.user?.latitude,
-        myLng: widget.user?.longitude,
+        // En viaje no hay "mi" lat/lng: la relevancia es por país de destino.
+        myLat: traveling ? null : _effectiveLat,
+        myLng: traveling ? null : _effectiveLng,
+        myCountry: traveling
+            ? (widget.user?.travelCountry ?? '')
+            : (widget.user?.countryName ?? ''),
+        defaultMaxKm: widget.user?.maxDistanceKm,
       );
+      if (traveling) {
+        filtered = _applyTravel(filtered);
+      }
       Map<String, ActiveBoost> activeBoosts = const <String, ActiveBoost>{};
       final BoostService? boostService = widget.boostService;
       if (boostService != null && filtered.isNotEmpty) {
@@ -742,14 +819,60 @@ class _FeedScreenState extends State<FeedScreen> {
         ],
       ),
     );
+    // Botón de Modo viajes (globo). Se resalta si estás de viaje.
+    final bool traveling = widget.user?.isTraveling ?? false;
+    final Widget travelButton = IconButton(
+      tooltip: 'Modo viajes',
+      icon: Icon(
+        traveling ? Icons.travel_explore_rounded : Icons.public_rounded,
+        color: traveling ? AppColors.attraRed : null,
+      ),
+      onPressed: widget.onOpenTravel,
+    );
     return SafeArea(
       bottom: false,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Expanded(child: _storiesStrip()),
+          travelButton,
           filterButton,
         ],
+      ),
+    );
+  }
+
+  /// Banner cuando estás de viaje: indica el destino y permite volver.
+  Widget _travelBanner() {
+    final String label = widget.user?.travelLabel ?? '';
+    return Material(
+      color: AppColors.attraRed.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: widget.onOpenTravel,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.flight_takeoff_rounded,
+                  size: 16, color: AppColors.attraRed),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label.isEmpty ? 'Estás de viaje' : 'De viaje en $label',
+                  style: const TextStyle(
+                      color: AppColors.attraRed,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13),
+                ),
+              ),
+              const Text('Cambiar',
+                  style: TextStyle(
+                      color: AppColors.attraRed,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -759,6 +882,7 @@ class _FeedScreenState extends State<FeedScreen> {
     return Column(
       children: <Widget>[
         _feedHeader(),
+        if (widget.user?.isTraveling ?? false) _travelBanner(),
         Expanded(child: _buildContent(context)),
       ],
     );
@@ -1184,6 +1308,10 @@ class _ProfileDetail extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              if (profile.traveling) ...<Widget>[
+                const _TravelingChip(),
+                const SizedBox(height: 8),
+              ],
               Text(
                 '${profile.displayName}$ageText',
                 style: theme.textTheme.headlineMedium?.copyWith(
@@ -1491,6 +1619,36 @@ class _StoryPill extends StatelessWidget {
 
 /// Distintivo "Te ha dado like" sobre la foto principal (Plus/Pro). Pill con
 /// degradado de marca, glow y corazón.
+/// Distintivo "De viaje" sobre la foto de quien está en modo viajes.
+class _TravelingChip extends StatelessWidget {
+  const _TravelingChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.6)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.flight_takeoff_rounded,
+              size: 13, color: AppColors.attraRed),
+          SizedBox(width: 5),
+          Text('De viaje',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
 class _LikedYouBadge extends StatelessWidget {
   const _LikedYouBadge();
 

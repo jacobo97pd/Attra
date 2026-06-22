@@ -1,32 +1,137 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_badges.dart';
 import '../../../widgets/attra_buttons.dart';
+import '../data/iap_service.dart';
 import '../domain/subscription_tier.dart';
 
-/// Paywall premium: compara Free / Attra Plus / Attra Pro con cards de producto,
-/// degradados, badges y CTA destacados. La verificación de compra y la concesión
-/// del plan son SIEMPRE backend; el cliente nunca concede tier ni saldo.
-class PaywallScreen extends StatelessWidget {
+/// Verifica una suscripción comprada por IAP en el backend. Devuelve true si se
+/// concedió el plan.
+typedef VerifySubscription = Future<bool> Function({
+  required String productId,
+  required String platform,
+  required String verificationData,
+  String? purchaseId,
+});
+
+/// Paywall premium: compara Free / Attra Plus / Attra Pro con cards de producto.
+/// La compra abre la pasarela NATIVA (Google Play / App Store) y la concesión es
+/// SIEMPRE backend (verifyPurchase); el cliente nunca concede tier ni saldo.
+class PaywallScreen extends StatefulWidget {
   const PaywallScreen({
     super.key,
     required this.currentTier,
-    this.onBuyPlus,
-    this.onBuyPro,
-    this.onRestore,
+    this.verifySubscription,
+    this.onPurchased,
+    this.plusProductId = 'attra_plus_monthly',
+    this.proProductId = 'attra_pro_monthly',
   });
 
   final SubscriptionTier currentTier;
-  final VoidCallback? onBuyPlus;
-  final VoidCallback? onBuyPro;
-  final VoidCallback? onRestore;
+
+  /// Verificación server-side (la inyecta home_shell con BoostService).
+  final VerifySubscription? verifySubscription;
+
+  /// Se llama tras conceder el plan (para refrescar entitlements).
+  final VoidCallback? onPurchased;
+
+  final String plusProductId;
+  final String proProductId;
+
+  @override
+  State<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+class _PaywallScreenState extends State<PaywallScreen> {
+  late final IapService _iap;
+  bool _busy = false;
+
+  Set<String> get _ids => <String>{widget.plusProductId, widget.proProductId};
+
+  @override
+  void initState() {
+    super.initState();
+    _iap = IapService()
+      ..deliver = _deliver
+      ..onDelivered = (_) {
+        widget.onPurchased?.call();
+        if (mounted) Navigator.of(context).maybePop();
+      }
+      ..addListener(_onIap);
+    if (widget.verifySubscription != null) {
+      _iap.init(productIds: _ids);
+    }
+  }
+
+  @override
+  void dispose() {
+    _iap.removeListener(_onIap);
+    _iap.dispose();
+    super.dispose();
+  }
+
+  void _onIap() {
+    if (!mounted) return;
+    setState(() => _busy = _iap.isBusy);
+    final String? err = _iap.error;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  String? _platform() {
+    if (kIsWeb) return null;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+        return 'app_store';
+      case TargetPlatform.android:
+        return 'play_store';
+      default:
+        return null;
+    }
+  }
+
+  Future<IapDeliveryResult> _deliver(PurchaseDetails purchase) async {
+    final VerifySubscription? verify = widget.verifySubscription;
+    final String? platform = _platform();
+    if (verify == null || platform == null) {
+      return const IapDeliveryResult(
+          delivered: false, message: 'Verificación no disponible.');
+    }
+    final bool ok = await verify(
+      productId: purchase.productID,
+      platform: platform,
+      verificationData: purchase.verificationData.serverVerificationData,
+      purchaseId: purchase.purchaseID,
+    );
+    return IapDeliveryResult(
+      delivered: ok,
+      message: ok ? null : 'No se pudo verificar la compra.',
+    );
+  }
+
+  Future<void> _buy(String productId) async {
+    if (_busy) return;
+    if (widget.verifySubscription == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Compras disponibles próximamente.')));
+      return;
+    }
+    await _iap.buy(productId);
+  }
+
+  String _priceFor(String productId, String fallback) =>
+      _iap.productById(productId)?.price ?? fallback;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final SubscriptionTier currentTier = widget.currentTier;
     return Scaffold(
       body: AttraGradientBackground(
         child: SafeArea(
@@ -42,9 +147,9 @@ class PaywallScreen extends StatelessWidget {
                       onPressed: () => Navigator.of(context).maybePop(),
                     ),
                     const Spacer(),
-                    if (onRestore != null)
+                    if (widget.verifySubscription != null)
                       TextButton(
-                          onPressed: onRestore,
+                          onPressed: _busy ? null : () => _iap.restore(),
                           child: const Text('Restaurar')),
                   ],
                 ),
@@ -81,7 +186,7 @@ class PaywallScreen extends StatelessWidget {
                     _PlanCard(
                       kind: AttraBadgeKind.plus,
                       title: 'Attra Plus',
-                      price: '9,99 € / mes',
+                      price: _priceFor(widget.plusProductId, '9,99 € / mes'),
                       tagline: 'Ventajas sociales y más alcance',
                       highlightLabel: 'Más popular',
                       features: const <String>[
@@ -98,15 +203,15 @@ class PaywallScreen extends StatelessWidget {
                       ctaLabel: currentTier.atLeast(SubscriptionTier.plus)
                           ? 'Plan actual'
                           : 'Hazte Plus',
-                      onTap: currentTier.atLeast(SubscriptionTier.plus)
+                      onTap: (currentTier.atLeast(SubscriptionTier.plus) || _busy)
                           ? null
-                          : onBuyPlus,
+                          : () => _buy(widget.plusProductId),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     _PlanCard(
                       kind: AttraBadgeKind.pro,
                       title: 'Attra Pro',
-                      price: '19,99 € / mes',
+                      price: _priceFor(widget.proProductId, '19,99 € / mes'),
                       tagline: 'Todo Plus + IA visual flagship',
                       highlightLabel: 'IA avanzada',
                       features: const <String>[
@@ -122,9 +227,9 @@ class PaywallScreen extends StatelessWidget {
                       ctaLabel: currentTier == SubscriptionTier.pro
                           ? 'Plan actual'
                           : 'Hazte Pro',
-                      onTap: currentTier == SubscriptionTier.pro
+                      onTap: (currentTier == SubscriptionTier.pro || _busy)
                           ? null
-                          : onBuyPro,
+                          : () => _buy(widget.proProductId),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     Text(

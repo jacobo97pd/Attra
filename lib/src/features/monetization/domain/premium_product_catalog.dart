@@ -1,6 +1,6 @@
 import 'subscription_tier.dart';
 
-enum PremiumProductType { attraPack, subscription }
+enum PremiumProductType { attraPack, boostPack, swipePack, subscription }
 
 enum BillingPeriod { none, monthly, yearly, lifetime }
 
@@ -13,6 +13,9 @@ class PremiumProductDefinition {
     this.tier,
     this.billingPeriod = BillingPeriod.none,
     this.attraAmount = 0,
+    this.consumableKind,
+    this.consumableAmount = 0,
+    this.badge,
   });
 
   final String id;
@@ -23,8 +26,20 @@ class PremiumProductDefinition {
   final BillingPeriod billingPeriod;
   final int attraAmount;
 
+  /// Etiqueta comercial opcional ("Más comprado", "Ahorro", "Mejor precio"…).
+  /// La fija el catálogo para resaltar packs; la UI solo la pinta.
+  final String? badge;
+
+  /// Para boosts/swipes: el `kind` que espera el backend (`grantConsumable`)
+  /// y cuántas unidades concede esta compra. Única fuente de verdad de las
+  /// cantidades (la UI ya no las escribe a mano).
+  final String? consumableKind;
+  final int consumableAmount;
+
   bool get isSubscription => type == PremiumProductType.subscription;
   bool get isAttraPack => type == PremiumProductType.attraPack;
+  bool get isBoostPack => type == PremiumProductType.boostPack;
+  bool get isSwipePack => type == PremiumProductType.swipePack;
 }
 
 class PremiumProductCatalog {
@@ -45,6 +60,7 @@ class PremiumProductCatalog {
       title: '10 Attras',
       description: 'Pack equilibrado para destacar intereses clave.',
       attraAmount: 10,
+      badge: 'Más comprado',
     ),
     PremiumProductDefinition(
       id: 'attra_pack_25',
@@ -52,6 +68,7 @@ class PremiumProductCatalog {
       title: '25 Attras',
       description: 'Mas margen para destacar sin esperar al siguiente grant.',
       attraAmount: 25,
+      badge: 'Ahorro',
     ),
     PremiumProductDefinition(
       id: 'attra_pack_50',
@@ -59,6 +76,34 @@ class PremiumProductCatalog {
       title: '50 Attras',
       description: 'Pack grande para usuarios frecuentes.',
       attraAmount: 50,
+      badge: 'Mejor precio',
+    ),
+    // ── Consumibles: Boosts y Swipes ───────────────────────────────────────
+    PremiumProductDefinition(
+      id: 'attra_boost_1',
+      type: PremiumProductType.boostPack,
+      title: '1 Boost',
+      description: 'Sube al frente del feed un rato.',
+      consumableKind: 'boost',
+      consumableAmount: 1,
+    ),
+    PremiumProductDefinition(
+      id: 'attra_boost_5',
+      type: PremiumProductType.boostPack,
+      title: '5 Boosts',
+      description: 'Pack ahorro de Boosts.',
+      consumableKind: 'boost',
+      consumableAmount: 5,
+      badge: 'Ahorro',
+    ),
+    PremiumProductDefinition(
+      id: 'attra_swipe_25',
+      type: PremiumProductType.swipePack,
+      title: '25 Attra Swipes',
+      description: 'Likes extra cuando se acaban los del día.',
+      consumableKind: 'swipe',
+      consumableAmount: 25,
+      badge: 'Más comprado',
     ),
     PremiumProductDefinition(
       id: 'attra_plus_monthly',
@@ -67,6 +112,7 @@ class PremiumProductCatalog {
       description: 'Mas control y Attras mensuales sin IA visual avanzada.',
       tier: SubscriptionTier.plus,
       billingPeriod: BillingPeriod.monthly,
+      badge: 'Más popular',
     ),
     PremiumProductDefinition(
       id: 'attra_plus_yearly',
@@ -75,6 +121,7 @@ class PremiumProductCatalog {
       description: 'Plus durante un ano con mejor precio efectivo.',
       tier: SubscriptionTier.plus,
       billingPeriod: BillingPeriod.yearly,
+      badge: 'Ahorro',
     ),
     PremiumProductDefinition(
       id: 'attra_premium_monthly',
@@ -91,6 +138,7 @@ class PremiumProductCatalog {
       description: 'Premium durante un ano con mejor precio efectivo.',
       tier: SubscriptionTier.premium,
       billingPeriod: BillingPeriod.yearly,
+      badge: 'Ahorro',
     ),
     PremiumProductDefinition(
       id: 'attra_pro_monthly',
@@ -107,14 +155,7 @@ class PremiumProductCatalog {
       description: 'Pro IA durante un ano con mejor precio efectivo.',
       tier: SubscriptionTier.pro,
       billingPeriod: BillingPeriod.yearly,
-    ),
-    PremiumProductDefinition(
-      id: 'attra_pro_lifetime',
-      type: PremiumProductType.subscription,
-      title: 'Attra Pro IA lifetime',
-      description: 'Acceso Pro IA sin renovacion. Sujeto al modelo comercial.',
-      tier: SubscriptionTier.pro,
-      billingPeriod: BillingPeriod.lifetime,
+      badge: 'Ahorro',
     ),
   ];
 
@@ -137,5 +178,13 @@ class PremiumProductCatalog {
 
   static List<PremiumProductDefinition> get attraPacks => products
       .where((PremiumProductDefinition product) => product.isAttraPack)
+      .toList(growable: false);
+
+  static List<PremiumProductDefinition> get boostPacks => products
+      .where((PremiumProductDefinition product) => product.isBoostPack)
+      .toList(growable: false);
+
+  static List<PremiumProductDefinition> get swipePacks => products
+      .where((PremiumProductDefinition product) => product.isSwipePack)
       .toList(growable: false);
 }

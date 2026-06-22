@@ -22,11 +22,17 @@ class AppUser {
     this.interestedIn = const <String>[],
     this.latitude,
     this.longitude,
+    this.countryName = '',
+    this.maxDistanceKm,
     this.slowDatingEnabled = false,
     this.relationshipIntent = '',
     this.interests = const <String>[],
     this.boostBalance = 0,
     this.swipeBalance = 0,
+    this.travelActive = false,
+    this.travelIso2 = '',
+    this.travelCity = '',
+    this.travelCountry = '',
   });
 
   final String uid;
@@ -71,6 +77,31 @@ class AppUser {
   final double? latitude;
   final double? longitude;
 
+  /// País del usuario (profile.currentCountryName). Fallback de relevancia
+  /// geográfica cuando no hay coordenadas para calcular distancia.
+  final String countryName;
+
+  /// Radio máximo preferido en km (preferences.maxDistanceKm). null = usa el
+  /// radio por defecto del feed.
+  final int? maxDistanceKm;
+
+  /// Modo viajes (Plus/Pro): si está activo, el feed se centra en el destino
+  /// elegido y tu perfil aparece allí "de viaje". De `users/{uid}.travel`.
+  final bool travelActive;
+  final String travelIso2;
+  final String travelCity;
+  final String travelCountry;
+
+  bool get isTraveling => travelActive && travelCountry.trim().isNotEmpty;
+
+  /// Etiqueta del destino: "Ciudad, País" o solo país.
+  String get travelLabel {
+    final List<String> parts = <String>[travelCity.trim(), travelCountry.trim()]
+        .where((String s) => s.isNotEmpty)
+        .toList(growable: false);
+    return parts.join(', ');
+  }
+
   factory AppUser.fromDocument(
       DocumentSnapshot<Map<String, dynamic>> document) {
     final Map<String, dynamic> data = document.data() ?? <String, dynamic>{};
@@ -79,6 +110,7 @@ class AppUser {
     final Map<String, dynamic> location = _asMap(data['location']);
     final Map<String, dynamic> settings = _asMap(data['settings']);
     final Map<String, dynamic> wallet = _asMap(data['wallet']);
+    final Map<String, dynamic> travel = _asMap(data['travel']);
     return AppUser(
       uid: (data['uid'] as String?) ?? document.id,
       email: data['email'] as String?,
@@ -98,6 +130,10 @@ class AppUser {
       interestedIn: _asStringList(preferences['interestedIn']),
       latitude: _asDouble(location['latitude']),
       longitude: _asDouble(location['longitude']),
+      countryName: (profile['currentCountryName'] as String?) ??
+          (profile['currentCountry'] as String?) ??
+          '',
+      maxDistanceKm: _asIntOrNull(preferences['maxDistanceKm']),
       slowDatingEnabled: _asBool(settings['privacy.slowDating']),
       relationshipIntent: (profile['relationshipIntent'] as String?) ??
           (preferences['relationshipIntent'] as String?) ??
@@ -105,6 +141,10 @@ class AppUser {
       interests: _asStringList(profile['interests']),
       boostBalance: _asInt(wallet['boosts']),
       swipeBalance: _asInt(wallet['swipes']),
+      travelActive: _asBool(travel['active']),
+      travelIso2: ((travel['iso2'] as String?) ?? '').toUpperCase(),
+      travelCity: (travel['city'] as String?) ?? '',
+      travelCountry: (travel['country'] as String?) ?? '',
     );
   }
 
@@ -158,5 +198,11 @@ class AppUser {
       return int.tryParse(value) ?? 0;
     }
     return 0;
+  }
+
+  static int? _asIntOrNull(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 }

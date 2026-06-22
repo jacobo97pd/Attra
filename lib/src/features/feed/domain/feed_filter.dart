@@ -15,6 +15,9 @@ import 'feed_filters.dart';
 class FeedFilter {
   const FeedFilter._();
 
+  /// Radio por defecto (km) cuando el usuario no tiene preferencia explícita.
+  static const int defaultRadiusKm = 100;
+
   static List<SeedProfile> apply({
     required List<SeedProfile> profiles,
     required String myUid,
@@ -24,10 +27,32 @@ class FeedFilter {
     FeedFilters filters = const FeedFilters(),
     double? myLat,
     double? myLng,
+    String myCountry = '',
+    int? defaultMaxKm,
   }) {
     return profiles.where((SeedProfile p) {
       if (p.id == myUid) return false;
       if (excludedUids.contains(p.id)) return false;
+
+      // --- RELEVANCIA GEOGRÁFICA (siempre, salvo modo viajes que pasa
+      //     myLat/myLng = null y myCountry = destino). ---
+      // 1) Si hay coordenadas en ambos lados: distancia real con el radio del
+      //    usuario (o el por defecto).
+      // 2) Si faltan coordenadas (perfiles sin geo): fallback por país.
+      // 3) Si no se puede determinar nada, no se excluye (permisivo).
+      final int maxKm =
+          filters.maxDistanceKm ?? defaultMaxKm ?? defaultRadiusKm;
+      final bool haveBothCoords =
+          myLat != null && myLng != null && p.lat != null && p.lng != null;
+      if (haveBothCoords) {
+        if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
+      } else {
+        final String mine = _canonCountry(myCountry);
+        final String theirs = _canonCountry(p.country);
+        if (mine.isNotEmpty && theirs.isNotEmpty && mine != theirs) {
+          return false;
+        }
+      }
 
       final bool iWantThem = myInterestedIn.isEmpty ||
           p.gender.isEmpty ||
@@ -56,16 +81,7 @@ class FeedFilter {
           (p.age! < filters.minAge || p.age! > filters.maxAge)) {
         return false;
       }
-      // Distancia.
-      final int? maxKm = filters.maxDistanceKm;
-      if (filters.isDealbreaker(FeedFilters.kDistance) &&
-          maxKm != null &&
-          myLat != null &&
-          myLng != null &&
-          p.lat != null &&
-          p.lng != null) {
-        if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
-      }
+      // (La distancia se aplica arriba, en RELEVANCIA GEOGRÁFICA.)
       // Qué busca.
       if (_excludesString(filters, FeedFilters.kGoal,
           filters.relationshipGoal, p.relationshipGoal)) {
@@ -118,6 +134,29 @@ class FeedFilter {
     if (!filters.isDealbreaker(key)) return false;
     if (have.isEmpty) return false; // permisivo si falta el dato
     return have != want;
+  }
+
+  /// Normaliza el nombre de país a un token canónico para comparar pese a
+  /// idioma (los mocks usan español "España"; el picker usa inglés "Spain").
+  /// Países desconocidos: se compara su nombre en minúsculas tal cual.
+  static String _canonCountry(String raw) {
+    final String s = raw.trim().toLowerCase();
+    if (s.isEmpty) return '';
+    const Map<String, String> aliases = <String, String>{
+      'españa': 'es', 'espana': 'es', 'spain': 'es',
+      'italia': 'it', 'italy': 'it',
+      'francia': 'fr', 'france': 'fr',
+      'portugal': 'pt',
+      'alemania': 'de', 'germany': 'de', 'deutschland': 'de',
+      'reino unido': 'gb', 'united kingdom': 'gb', 'inglaterra': 'gb',
+      'estados unidos': 'us', 'united states': 'us', 'usa': 'us',
+      'méxico': 'mx', 'mexico': 'mx',
+      'argentina': 'ar', 'brasil': 'br', 'brazil': 'br',
+      'países bajos': 'nl', 'paises bajos': 'nl', 'netherlands': 'nl',
+      'bélgica': 'be', 'belgica': 'be', 'belgium': 'be',
+      'irlanda': 'ie', 'ireland': 'ie',
+    };
+    return aliases[s] ?? s;
   }
 
   /// Distancia haversine en km.

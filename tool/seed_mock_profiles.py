@@ -114,9 +114,23 @@ LESBIAN_WOMEN = [
 ]
 
 
+# Coordenadas aproximadas por ciudad para que el feed pueda filtrar por
+# distancia (igual que los perfiles reales, que publican geo en discovery).
+CITY_COORDS = {
+    "Madrid": (40.4168, -3.7038),
+    "Barcelona": (41.3874, 2.1686),
+    "Valencia": (39.4699, -0.3763),
+    "Sevilla": (37.3891, -5.9845),
+    "Bilbao": (43.2630, -2.9350),
+    "Málaga": (36.7213, -4.4214),
+    "Zaragoza": (41.6488, -0.8891),
+}
+
+
 def build(idx, name, age, city, country, job, company, bio, interests,
           gender, interested_in, orientation, photo_url):
-    return {
+    lat, lng = CITY_COORDS.get(city, (None, None))
+    doc = {
         "uid": f"mock_t_{slug(name)}",
         "isBot": True,
         "botProfileVersion": 1,
@@ -141,6 +155,11 @@ def build(idx, name, age, city, country, job, company, bio, interests,
             "order": 0,
         }],
     }
+    # geo (para distancia en el feed) y location espejo, solo si conocemos la ciudad.
+    if lat is not None and lng is not None:
+        doc["geo"] = {"lat": lat, "lng": lng}
+        doc["location"] = {"latitude": lat, "longitude": lng}
+    return doc
 
 
 def main():
