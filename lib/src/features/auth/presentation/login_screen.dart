@@ -35,11 +35,19 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   late final TextEditingController _phoneController;
   late final TextEditingController _smsCodeController;
   late final FocusNode _phoneFocus;
   late final FocusNode _smsFocus;
+
+  // Las opciones de inicio empiezan OCULTAS tras el botón "Iniciar sesión" y
+  // aparecen deslizándose de abajo hacia arriba al pulsarlo.
+  late final AnimationController _revealController;
+  late final Animation<Offset> _revealSlide;
+  late final Animation<double> _revealFade;
+  bool _revealed = false;
 
   String _dialCode = '+34';
   String _countryCode = 'ES';
@@ -51,6 +59,38 @@ class _LoginScreenState extends State<LoginScreen> {
     _smsCodeController = TextEditingController();
     _phoneFocus = FocusNode();
     _smsFocus = FocusNode();
+    _revealController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+    );
+    _revealSlide = Tween<Offset>(
+      begin: const Offset(0, 0.28),
+      end: Offset.zero,
+    ).animate(
+        CurvedAnimation(parent: _revealController, curve: Curves.easeOutCubic));
+    _revealFade = CurvedAnimation(
+        parent: _revealController, curve: const Interval(0.1, 1.0));
+    // Si ya hay paso de SMS o un error que mostrar, revela sin animar.
+    if (widget.phoneCodeSent || widget.errorMessage != null) {
+      _revealed = true;
+      _revealController.value = 1;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant LoginScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Si llega el paso de SMS o un error mientras está oculto, lo revelamos.
+    if (!_revealed &&
+        (widget.phoneCodeSent || widget.errorMessage != null)) {
+      _reveal();
+    }
+  }
+
+  void _reveal() {
+    if (_revealed) return;
+    setState(() => _revealed = true);
+    _revealController.forward();
   }
 
   @override
@@ -59,6 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _smsCodeController.dispose();
     _phoneFocus.dispose();
     _smsFocus.dispose();
+    _revealController.dispose();
     super.dispose();
   }
 
@@ -103,42 +144,36 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    // Logo con glow de marca.
                     Center(
-                      child: Container(
-                        width: 116,
-                        height: 116,
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.03),
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusXl),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12)),
-                          boxShadow: <BoxShadow>[
-                            BoxShadow(
-                              color: AppColors.attraRed.withValues(alpha: 0.22),
-                              blurRadius: 32,
-                              spreadRadius: 2,
-                            ),
-                          ],
+                      child: Semantics(
+                        label: 'Attra',
+                        image: true,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 22, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            borderRadius:
+                                BorderRadius.circular(AppSpacing.radiusXl),
+                            boxShadow: <BoxShadow>[
+                              BoxShadow(
+                                color:
+                                    AppColors.attraRed.withValues(alpha: 0.26),
+                                blurRadius: 34,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: Image.asset(
+                            'assets/images/ATTRA.png',
+                            height: 58,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
                         ),
-                        child: Image.asset('assets/images/app_logo.png',
-                            filterQuality: FilterQuality.medium),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'ATTRA',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 6,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 18),
                     Text(
                       'Conecta con personas que van en serio.',
                       textAlign: TextAlign.center,
@@ -147,91 +182,36 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 36),
 
-                    // Google.
-                    _SocialButton(
-                      label: widget.isLoading
-                          ? 'Iniciando sesión...'
-                          : 'Continuar con Google',
-                      loading: widget.isLoading,
-                      onPressed:
-                          widget.isLoading ? null : widget.onGooglePressed,
+                    // CTA "Iniciar sesión" (oculta las opciones hasta pulsarlo).
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 260),
+                      switchInCurve: Curves.easeOut,
+                      switchOutCurve: Curves.easeIn,
+                      transitionBuilder:
+                          (Widget child, Animation<double> anim) =>
+                              FadeTransition(opacity: anim, child: child),
+                      child: _revealed
+                          ? const SizedBox.shrink(key: ValueKey<String>('gap'))
+                          : Padding(
+                              key: const ValueKey<String>('cta'),
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: AttraPrimaryButton(
+                                label: 'Iniciar sesión',
+                                icon: Icons.login_rounded,
+                                onPressed: _reveal,
+                              ),
+                            ),
                     ),
-                    if (showApple) ...<Widget>[
-                      const SizedBox(height: 12),
-                      IgnorePointer(
-                        ignoring: widget.isLoading,
-                        child: Opacity(
-                          opacity: widget.isLoading ? 0.55 : 1,
-                          child: SignInWithAppleButton(
-                            onPressed: widget.onApplePressed,
-                            style: SignInWithAppleButtonStyle.white,
-                            height: 54,
-                            borderRadius: const BorderRadius.all(
-                                Radius.circular(AppSpacing.radiusPill)),
-                            text: 'Continuar con Apple',
-                          ),
+
+                    // Opciones reveladas: aparecen deslizándose de abajo arriba.
+                    if (_revealed)
+                      SlideTransition(
+                        position: _revealSlide,
+                        child: FadeTransition(
+                          opacity: _revealFade,
+                          child: _buildOptions(theme, showApple),
                         ),
                       ),
-                    ],
-
-                    const SizedBox(height: 22),
-                    _Divider(theme: theme),
-                    const SizedBox(height: 22),
-
-                    // ── SECCIÓN TELÉFONO ──────────────────────────────────
-                    if (!widget.phoneCodeSent) ...<Widget>[
-                      // Campo: [🇪🇸 +34] [número]
-                      _PhoneField(
-                        controller: _phoneController,
-                        focusNode: _phoneFocus,
-                        enabled: !widget.isLoading,
-                        dialCode: _dialCode,
-                        countryCode: _countryCode,
-                        onCountryChanged: (CountryCode c) => setState(() {
-                          _dialCode = c.dialCode ?? _dialCode;
-                          _countryCode = c.code ?? _countryCode;
-                        }),
-                        onSubmitted: (_) => _sendCode(),
-                      ),
-                      const SizedBox(height: 14),
-                      AttraPrimaryButton(
-                        label: 'Continuar con teléfono',
-                        icon: Icons.sms_rounded,
-                        loading: widget.isLoading,
-                        onPressed: widget.isLoading ? null : _sendCode,
-                      ),
-                    ] else ...<Widget>[
-                      // Número bloqueado (recap).
-                      _PhoneReadonly(
-                        phone: _fullPhoneNumber,
-                        onEdit: () => widget.onSendPhoneCode(_fullPhoneNumber),
-                      ),
-                      const SizedBox(height: 16),
-                      _SmsCodeField(
-                        controller: _smsCodeController,
-                        focusNode: _smsFocus,
-                        enabled: !widget.isLoading,
-                        onSubmitted: (_) => _verifyCode(),
-                      ),
-                      const SizedBox(height: 14),
-                      AttraPrimaryButton(
-                        label: 'Verificar código',
-                        icon: Icons.check_rounded,
-                        loading: widget.isLoading,
-                        onPressed: widget.isLoading ? null : _verifyCode,
-                      ),
-                      const SizedBox(height: 10),
-                      AttraGhostButton(
-                        label: 'Reenviar código SMS',
-                        onPressed: widget.isLoading ? null : _sendCode,
-                      ),
-                    ],
-
-                    // Error pill.
-                    if (widget.errorMessage != null) ...<Widget>[
-                      const SizedBox(height: 20),
-                      _ErrorPill(message: widget.errorMessage!, theme: theme),
-                    ],
                     const SizedBox(height: 8),
                   ],
                 ),
@@ -240,6 +220,100 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Bloque con las formas de inicio de sesión (Google, Apple, teléfono/SMS).
+  Widget _buildOptions(ThemeData theme, bool showApple) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // Google.
+        _SocialButton(
+          label: widget.isLoading
+              ? 'Iniciando sesión...'
+              : 'Continuar con Google',
+          loading: widget.isLoading,
+          onPressed: widget.isLoading ? null : widget.onGooglePressed,
+        ),
+        if (showApple) ...<Widget>[
+          const SizedBox(height: 12),
+          IgnorePointer(
+            ignoring: widget.isLoading,
+            child: Opacity(
+              opacity: widget.isLoading ? 0.55 : 1,
+              child: SignInWithAppleButton(
+                onPressed: widget.onApplePressed,
+                style: SignInWithAppleButtonStyle.white,
+                height: 54,
+                borderRadius: const BorderRadius.all(
+                    Radius.circular(AppSpacing.radiusPill)),
+                text: 'Continuar con Apple',
+              ),
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 22),
+        _Divider(theme: theme),
+        const SizedBox(height: 22),
+
+        // ── SECCIÓN TELÉFONO ──────────────────────────────────
+        if (!widget.phoneCodeSent) ...<Widget>[
+          // Campo: [🇪🇸 +34] [número]
+          _PhoneField(
+            controller: _phoneController,
+            focusNode: _phoneFocus,
+            enabled: !widget.isLoading,
+            dialCode: _dialCode,
+            countryCode: _countryCode,
+            onCountryChanged: (CountryCode c) => setState(() {
+              _dialCode = c.dialCode ?? _dialCode;
+              _countryCode = c.code ?? _countryCode;
+            }),
+            onSubmitted: (_) => _sendCode(),
+          ),
+          const SizedBox(height: 14),
+          AttraPrimaryButton(
+            label: 'Continuar con teléfono',
+            icon: Icons.sms_rounded,
+            loading: widget.isLoading,
+            onPressed: widget.isLoading ? null : _sendCode,
+          ),
+        ] else ...<Widget>[
+          // Número bloqueado (recap).
+          _PhoneReadonly(
+            phone: _fullPhoneNumber,
+            onEdit: () => widget.onSendPhoneCode(_fullPhoneNumber),
+          ),
+          const SizedBox(height: 16),
+          _SmsCodeField(
+            controller: _smsCodeController,
+            focusNode: _smsFocus,
+            enabled: !widget.isLoading,
+            onSubmitted: (_) => _verifyCode(),
+          ),
+          const SizedBox(height: 14),
+          AttraPrimaryButton(
+            label: 'Verificar código',
+            icon: Icons.check_rounded,
+            loading: widget.isLoading,
+            onPressed: widget.isLoading ? null : _verifyCode,
+          ),
+          const SizedBox(height: 10),
+          AttraGhostButton(
+            label: 'Reenviar código SMS',
+            onPressed: widget.isLoading ? null : _sendCode,
+          ),
+        ],
+
+        // Error pill.
+        if (widget.errorMessage != null) ...<Widget>[
+          const SizedBox(height: 20),
+          _ErrorPill(message: widget.errorMessage!, theme: theme),
+        ],
+      ],
     );
   }
 }
@@ -505,8 +579,7 @@ class _ErrorPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.attraRed.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border:
-            Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
+        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: <Widget>[

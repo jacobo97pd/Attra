@@ -11,7 +11,9 @@ enum MessageType {
   system('system'),
   likeContext('like_context'),
   attraContext('attra_context'),
-  dateProposal('date_proposal');
+  dateProposal('date_proposal'),
+  doubleAnswer('double_answer'),
+  twoTruths('two_truths');
 
   const MessageType(this.wireName);
 
@@ -21,6 +23,10 @@ enum MessageType {
       this == MessageType.likeContext || this == MessageType.attraContext;
 
   bool get isDateProposal => this == MessageType.dateProposal;
+
+  bool get isDoubleAnswer => this == MessageType.doubleAnswer;
+
+  bool get isTwoTruths => this == MessageType.twoTruths;
 
   bool get isImage => this == MessageType.image;
 
@@ -145,6 +151,111 @@ class DateProposal {
   }
 }
 
+enum DoubleAnswerStatus {
+  collecting('collecting'),
+  revealed('revealed');
+
+  const DoubleAnswerStatus(this.wireName);
+  final String wireName;
+
+  static DoubleAnswerStatus fromValue(Object? value) {
+    final String raw = (value ?? '').toString().trim().toLowerCase();
+    for (final DoubleAnswerStatus s in DoubleAnswerStatus.values) {
+      if (s.wireName == raw || s.name == raw) return s;
+    }
+    return DoubleAnswerStatus.collecting;
+  }
+}
+
+class DoubleAnswer {
+  const DoubleAnswer({
+    required this.question,
+    required this.status,
+    required this.startedBy,
+    required this.participants,
+    required this.answeredBy,
+    required this.answers,
+    this.revealedAt,
+  });
+
+  final String question;
+  final DoubleAnswerStatus status;
+  final String startedBy;
+  final List<String> participants;
+  final Map<String, bool> answeredBy;
+  final Map<String, String> answers;
+  final DateTime? revealedAt;
+
+  bool get isRevealed => status == DoubleAnswerStatus.revealed;
+
+  bool hasAnswered(String uid) => answeredBy[uid] ?? false;
+
+  factory DoubleAnswer.fromMap(Map<String, dynamic> map) {
+    return DoubleAnswer(
+      question: (map['question'] as String?) ?? '',
+      status: DoubleAnswerStatus.fromValue(map['status']),
+      startedBy: (map['startedBy'] as String?) ?? '',
+      participants: _stringList(map['participants']),
+      answeredBy: _boolMap(map['answeredBy']),
+      answers: _stringMap(map['answers']),
+      revealedAt: ChatMessage._asDate(map['revealedAt']),
+    );
+  }
+}
+
+enum TwoTruthsStatus {
+  guessing('guessing'),
+  revealed('revealed');
+
+  const TwoTruthsStatus(this.wireName);
+  final String wireName;
+
+  static TwoTruthsStatus fromValue(Object? value) {
+    final String raw = (value ?? '').toString().trim().toLowerCase();
+    for (final TwoTruthsStatus s in TwoTruthsStatus.values) {
+      if (s.wireName == raw || s.name == raw) return s;
+    }
+    return TwoTruthsStatus.guessing;
+  }
+}
+
+class TwoTruths {
+  const TwoTruths({
+    required this.statements,
+    required this.status,
+    required this.startedBy,
+    this.guessedBy,
+    this.guessIndex,
+    this.lieIndex,
+    this.correct,
+    this.revealedAt,
+  });
+
+  final List<String> statements;
+  final TwoTruthsStatus status;
+  final String startedBy;
+  final String? guessedBy;
+  final int? guessIndex;
+  final int? lieIndex;
+  final bool? correct;
+  final DateTime? revealedAt;
+
+  bool get isRevealed => status == TwoTruthsStatus.revealed;
+
+  factory TwoTruths.fromMap(Map<String, dynamic> map) {
+    return TwoTruths(
+      statements: _stringList(map['statements']),
+      status: TwoTruthsStatus.fromValue(map['status']),
+      startedBy: (map['startedBy'] as String?) ?? '',
+      guessedBy: map['guessedBy'] as String?,
+      guessIndex: _asInt(map['guessIndex']),
+      lieIndex: _asInt(map['lieIndex']),
+      correct: map['correct'] as bool?,
+      revealedAt: ChatMessage._asDate(map['revealedAt']),
+    );
+  }
+}
+
 /// Metadatos de un adjunto (imagen o nota de voz). NO contiene rutas locales
 /// del dispositivo: solo `storagePath` (en Firebase Storage) y `downloadUrl`.
 class MediaInfo {
@@ -201,6 +312,8 @@ class ChatMessage {
     this.relatedPhotoUrlSnapshot,
     this.relatedPhotoDeleted = false,
     this.dateProposal,
+    this.doubleAnswer,
+    this.twoTruths,
     this.media,
     this.bomb,
     this.createdAt,
@@ -226,6 +339,12 @@ class ChatMessage {
 
   /// Solo en mensajes `date_proposal`.
   final DateProposal? dateProposal;
+
+  /// Solo en mensajes `double_answer`.
+  final DoubleAnswer? doubleAnswer;
+
+  /// Solo en mensajes `two_truths`.
+  final TwoTruths? twoTruths;
 
   /// Solo en mensajes `image` / `voice_note`.
   final MediaInfo? media;
@@ -256,6 +375,14 @@ class ChatMessage {
       relatedPhotoDeleted: (map['relatedPhotoDeleted'] as bool?) ?? false,
       dateProposal: map['dateProposal'] is Map
           ? DateProposal.fromMap((map['dateProposal'] as Map)
+              .map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
+          : null,
+      doubleAnswer: map['doubleAnswer'] is Map
+          ? DoubleAnswer.fromMap((map['doubleAnswer'] as Map)
+              .map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
+          : null,
+      twoTruths: map['twoTruths'] is Map
+          ? TwoTruths.fromMap((map['twoTruths'] as Map)
               .map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
           : null,
       media: map['media'] is Map
@@ -293,4 +420,37 @@ class ChatMessage {
     if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
     return null;
   }
+}
+
+int? _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+List<String> _stringList(Object? value) {
+  if (value is List) {
+    return value
+        .whereType<String>()
+        .where((String s) => s.trim().isNotEmpty)
+        .toList(growable: false);
+  }
+  return const <String>[];
+}
+
+Map<String, bool> _boolMap(Object? value) {
+  if (value is Map) {
+    return value.map((dynamic k, dynamic v) =>
+        MapEntry(k.toString(), v is bool ? v : false));
+  }
+  return const <String, bool>{};
+}
+
+Map<String, String> _stringMap(Object? value) {
+  if (value is Map) {
+    return value.map((dynamic k, dynamic v) =>
+        MapEntry(k.toString(), v == null ? '' : v.toString()));
+  }
+  return const <String, String>{};
 }

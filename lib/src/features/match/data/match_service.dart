@@ -42,7 +42,8 @@ class MatchService {
     final Map<String, dynamic> data = await _call('sendLike', <String, dynamic>{
       'toUid': toUid,
       ..._targetArgs(targetPhotoId, promptId, promptQuestion, promptAnswer),
-      if (comment != null && comment.trim().isNotEmpty) 'commentText': comment.trim(),
+      if (comment != null && comment.trim().isNotEmpty)
+        'commentText': comment.trim(),
     });
     return MatchFlowResult.fromMap(data);
   }
@@ -55,10 +56,12 @@ class MatchService {
     String? promptQuestion,
     String? promptAnswer,
   }) async {
-    final Map<String, dynamic> data = await _call('sendAttra', <String, dynamic>{
+    final Map<String, dynamic> data =
+        await _call('sendAttra', <String, dynamic>{
       'toUid': toUid,
       ..._targetArgs(targetPhotoId, promptId, promptQuestion, promptAnswer),
-      if (comment != null && comment.trim().isNotEmpty) 'commentText': comment.trim(),
+      if (comment != null && comment.trim().isNotEmpty)
+        'commentText': comment.trim(),
     });
     return MatchFlowResult.fromMap(data);
   }
@@ -87,6 +90,18 @@ class MatchService {
     await _call('passProfile', <String, dynamic>{'toUid': toUid});
   }
 
+  Future<bool> rewindFeedAction({
+    required String targetUid,
+    required String action,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('rewindFeedAction', <String, dynamic>{
+      'targetUid': targetUid,
+      'action': action,
+    });
+    return data['rewound'] == true;
+  }
+
   Future<void> unmatch(String matchId) async {
     await _call('unmatch', <String, dynamic>{'matchId': matchId});
   }
@@ -103,7 +118,8 @@ class MatchService {
     String? chatId,
     String? messageId,
   }) async {
-    final Map<String, dynamic> data = await _call('reportUser', <String, dynamic>{
+    final Map<String, dynamic> data =
+        await _call('reportUser', <String, dynamic>{
       'reportedUid': reportedUid,
       'reason': reason,
       'details': details,
@@ -140,7 +156,8 @@ class MatchService {
       }
       return <String, dynamic>{};
     } on FirebaseFunctionsException catch (error) {
-      throw MatchServiceException(error.message ?? error.code, code: error.code);
+      throw MatchServiceException(error.message ?? error.code,
+          code: error.code);
     }
   }
 }

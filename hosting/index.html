@@ -1,0 +1,1679 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attra - Citas con intención</title>
+  <meta name="description" content="Attra es una app de citas moderna para crear matches con más intención, mejores conversaciones y menos ruido.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e0e10;
+      --ink: #fffefd;
+      --muted: #a7a7ad;
+      --muted-2: #767680;
+      --surface: rgba(26, 26, 29, 0.76);
+      --surface-solid: #1a1a1d;
+      --surface-high: #232327;
+      --line: rgba(255, 255, 255, 0.1);
+      --line-hot: rgba(255, 79, 104, 0.42);
+      --red: #ff4f68;
+      --red-deep: #d71945;
+      --coral: #ff5a6e;
+      --gold: #d8b76e;
+      --shadow: 0 28px 90px rgba(0, 0, 0, 0.36);
+      --max: 1160px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--bg);
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(255, 79, 104, 0.22), transparent 34rem),
+        linear-gradient(180deg, #120a0e 0%, #0e0e10 34%, #0e0e10 100%);
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      pointer-events: none;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+      background-size: 84px 84px;
+      mask-image: radial-gradient(circle at 48% 12%, black 0, transparent 68%);
+    }
+
+    body.menu-open {
+      overflow: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .skip-link {
+      position: fixed;
+      left: 16px;
+      top: 16px;
+      z-index: 50;
+      transform: translateY(-140%);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #111;
+      font-weight: 800;
+      transition: transform 180ms ease;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    #field {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      width: 100%;
+      height: 100%;
+      opacity: 0.7;
+    }
+
+    .noise {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      opacity: 0.055;
+      background-image:
+        linear-gradient(0deg, transparent 0, rgba(255, 255, 255, 0.42) 1px, transparent 2px),
+        linear-gradient(90deg, transparent 0, rgba(255, 255, 255, 0.28) 1px, transparent 2px);
+      background-size: 7px 7px;
+      mix-blend-mode: screen;
+    }
+
+    .nav {
+      position: fixed;
+      inset: 16px 16px auto;
+      z-index: 20;
+      display: flex;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .nav-inner {
+      width: min(var(--max), 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 10px 12px 10px 18px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(14, 14, 16, 0.74);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(18px);
+      pointer-events: auto;
+    }
+
+    .mark {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.98rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .mark-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, var(--red-deep), var(--red), var(--gold));
+      box-shadow: 0 0 0 6px rgba(255, 79, 104, 0.1);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-links a,
+    .nav-cta,
+    .menu-button {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 0;
+      color: var(--muted);
+      background: transparent;
+      padding: 0 14px;
+      font-weight: 780;
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus-visible {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.07);
+      outline: 0;
+    }
+
+    .nav-cta {
+      color: var(--ink);
+      background: linear-gradient(135deg, var(--red-deep), var(--red), var(--coral));
+      box-shadow: 0 12px 28px rgba(255, 79, 104, 0.24);
+    }
+
+    .menu-button {
+      display: none;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+
+    main {
+      position: relative;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 100svh;
+      display: grid;
+      align-items: center;
+      padding: 126px 16px 58px;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 12% auto auto 16%;
+      width: min(720px, 74vw);
+      height: min(720px, 74vw);
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 79, 104, 0.20), rgba(255, 79, 104, 0.08) 34%, transparent 68%);
+      filter: blur(12px);
+      pointer-events: none;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -18% -34% auto;
+      width: min(860px, 88vw);
+      height: min(860px, 88vw);
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(216, 183, 110, 0.14), transparent 66%);
+      pointer-events: none;
+    }
+
+    .hero-stage {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .orbit-card {
+      position: absolute;
+      width: clamp(156px, 22vw, 260px);
+      min-height: 114px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 24px;
+      background: rgba(35, 35, 39, 0.62);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      transform: translate3d(var(--x), var(--y), 0) rotate(var(--r));
+      animation: drift var(--speed) ease-in-out infinite alternate;
+      opacity: 0.78;
+    }
+
+    .orbit-card:nth-child(1) {
+      --x: 7vw;
+      --y: 29vh;
+      --r: -7deg;
+      --speed: 7s;
+    }
+
+    .orbit-card:nth-child(2) {
+      --x: 76vw;
+      --y: 29vh;
+      --r: 6deg;
+      --speed: 8.5s;
+      opacity: 0.46;
+    }
+
+    .orbit-card:nth-child(3) {
+      --x: 73vw;
+      --y: 72vh;
+      --r: -4deg;
+      --speed: 9s;
+      opacity: 0.5;
+    }
+
+    .orbit-card small {
+      color: var(--muted-2);
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .orbit-card p {
+      margin: 8px 0 0;
+      color: var(--ink);
+      font-size: clamp(1rem, 2vw, 1.22rem);
+      font-weight: 900;
+      line-height: 1.18;
+    }
+
+    @keyframes drift {
+      from {
+        translate: 0 -10px;
+      }
+      to {
+        translate: 0 18px;
+      }
+    }
+
+    .hero-inner,
+    .section-inner {
+      width: min(var(--max), 100%);
+      margin: 0 auto;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: minmax(0, 1.02fr) minmax(300px, 0.78fr);
+      gap: clamp(34px, 6vw, 86px);
+      align-items: center;
+    }
+
+    .hero-copy-block {
+      position: relative;
+      max-width: 720px;
+    }
+
+    .hero-copy-block::before {
+      content: "";
+      position: absolute;
+      inset: -36px auto auto -42px;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 79, 104, 0.18), transparent 70%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line-hot);
+      border-radius: 999px;
+      background: rgba(255, 79, 104, 0.11);
+      color: #ffd5dc;
+      font-size: 0.9rem;
+      font-weight: 820;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 0 0 rgba(255, 79, 104, 0.5);
+      animation: pulse 2s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      to {
+        box-shadow: 0 0 0 14px rgba(255, 79, 104, 0);
+      }
+    }
+
+    h1 {
+      margin: 18px 0 0;
+      max-width: 760px;
+      font-size: clamp(3.4rem, 11vw, 8.4rem);
+      line-height: 0.86;
+      letter-spacing: 0;
+    }
+
+    .hero h1 {
+      width: fit-content;
+      background: linear-gradient(90deg, #fffefd 0%, #fffefd 52%, #ffd0d8 74%, #d8b76e 100%);
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+      text-shadow: 0 22px 70px rgba(255, 79, 104, 0.16);
+    }
+
+    .hero-copy {
+      max-width: 620px;
+      margin: 24px 0 0;
+      color: #d4d4d8;
+      font-size: clamp(1.08rem, 2vw, 1.34rem);
+      line-height: 1.48;
+    }
+
+    .hero-actions,
+    .legal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .button {
+      position: relative;
+      overflow: hidden;
+      min-height: 54px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0 20px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.06);
+      font-weight: 880;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+      will-change: transform;
+    }
+
+    .button::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+      transform: translateX(-130%);
+      transition: transform 520ms ease;
+    }
+
+    .button:hover::before,
+    .button:focus-visible::before {
+      transform: translateX(130%);
+    }
+
+    .button span {
+      position: relative;
+      z-index: 1;
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--red-deep), var(--red), var(--coral));
+      box-shadow: 0 18px 40px rgba(255, 79, 104, 0.28);
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.18);
+      outline: 0;
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 38px;
+      max-width: 640px;
+    }
+
+    .metric {
+      position: relative;
+      overflow: hidden;
+      min-height: 104px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(26, 26, 29, 0.66);
+      backdrop-filter: blur(16px);
+    }
+
+    .metric::before {
+      content: "";
+      position: absolute;
+      inset: auto 12px 12px auto;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 79, 104, 0.28), transparent 68%);
+    }
+
+    .metric strong {
+      position: relative;
+      display: block;
+      color: var(--ink);
+      font-size: clamp(1.45rem, 3vw, 2.1rem);
+      line-height: 1;
+    }
+
+    .metric strong::after {
+      content: attr(data-suffix);
+      color: var(--gold);
+      font-size: 0.7em;
+      margin-left: 2px;
+    }
+
+    .metric span {
+      position: relative;
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .phone-wrap {
+      position: relative;
+      min-height: 650px;
+      display: grid;
+      place-items: center;
+      perspective: 1200px;
+    }
+
+    .phone-wrap::before,
+    .phone-wrap::after {
+      content: "";
+      position: absolute;
+      width: min(350px, 72vw);
+      height: min(540px, 112vw);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 42px;
+      background:
+        linear-gradient(145deg, rgba(255, 79, 104, 0.14), rgba(216, 183, 110, 0.07)),
+        rgba(35, 35, 39, 0.36);
+      box-shadow: 0 22px 70px rgba(0, 0, 0, 0.24);
+      transform: translate3d(42px, 8px, -80px) rotate(10deg);
+    }
+
+    .phone-wrap::after {
+      width: min(300px, 66vw);
+      height: min(420px, 92vw);
+      transform: translate3d(-42px, 92px, -100px) rotate(-9deg);
+      opacity: 0.62;
+    }
+
+    .phone-glow {
+      position: absolute;
+      width: 430px;
+      height: 610px;
+      border-radius: 40px;
+      background:
+        radial-gradient(circle at 42% 34%, rgba(255, 79, 104, 0.48), transparent 38%),
+        radial-gradient(circle at 70% 74%, rgba(216, 183, 110, 0.32), transparent 42%);
+      filter: blur(38px);
+      opacity: 0.78;
+    }
+
+    .phone {
+      position: relative;
+      z-index: 2;
+      width: min(390px, 82vw);
+      aspect-ratio: 9 / 18.7;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 46px;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 28%),
+        #08080a;
+      box-shadow:
+        0 50px 110px rgba(0, 0, 0, 0.58),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      transform: rotate(2.2deg) rotateY(-9deg);
+    }
+
+    .phone::before {
+      content: "";
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      width: 92px;
+      height: 23px;
+      border-radius: 999px;
+      background: #050507;
+      transform: translateX(-50%);
+      z-index: 3;
+    }
+
+    .phone::after {
+      content: "";
+      position: absolute;
+      inset: 14px 14px auto auto;
+      width: 38%;
+      height: 68%;
+      border-radius: 0 34px 34px 0;
+      background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.08));
+      pointer-events: none;
+      z-index: 4;
+      opacity: 0.45;
+    }
+
+    .screen {
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 34px;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12), transparent 32%),
+        linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.72)),
+        var(--profile-bg, linear-gradient(135deg, #251015, #60424a));
+      transition: background 550ms ease;
+    }
+
+    .screen-top {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 28px 18px 0;
+      color: var(--ink);
+      font-weight: 900;
+    }
+
+    .screen-top small {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .mock-profile {
+      position: absolute;
+      inset: 76px 16px 100px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+      border-radius: 30px;
+      background:
+        radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.14), transparent 34%),
+        linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.14) 42%, rgba(0, 0, 0, 0.82) 76%),
+        var(--card-bg, linear-gradient(135deg, #3b141d, #9c5360));
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+        0 24px 54px rgba(0, 0, 0, 0.28);
+      transition: transform 500ms ease, background 550ms ease;
+    }
+
+    .mock-profile.switching {
+      transform: translateX(18px) rotate(2deg);
+    }
+
+    .mock-face {
+      position: absolute;
+      inset: 24px 24px auto;
+      height: 53%;
+      overflow: hidden;
+      border-radius: 30px;
+      background:
+        radial-gradient(circle at 51% 36%, rgba(244, 202, 184, 0.95) 0 12%, transparent 12.5%),
+        radial-gradient(ellipse at 51% 34%, rgba(30, 22, 27, 0.95) 0 21%, transparent 22%),
+        radial-gradient(ellipse at 50% 84%, rgba(255, 249, 238, 0.84) 0 26%, transparent 27%),
+        linear-gradient(145deg, rgba(255, 214, 222, 0.38), rgba(255, 255, 255, 0.08) 42%, rgba(0, 0, 0, 0.04));
+      opacity: 0.92;
+    }
+
+    .mock-face::before {
+      content: "";
+      position: absolute;
+      inset: 8% 20% auto;
+      height: 58%;
+      border-radius: 45% 45% 34% 34%;
+      background:
+        radial-gradient(circle at 42% 48%, rgba(30, 22, 27, 0.95) 0 2.2%, transparent 2.4%),
+        radial-gradient(circle at 58% 48%, rgba(30, 22, 27, 0.95) 0 2.2%, transparent 2.4%),
+        radial-gradient(ellipse at 50% 62%, rgba(171, 93, 94, 0.55) 0 7%, transparent 8%),
+        radial-gradient(ellipse at 50% 30%, rgba(31, 20, 26, 0.94) 0 42%, transparent 43%),
+        radial-gradient(ellipse at 50% 56%, rgba(246, 198, 180, 0.95) 0 33%, transparent 34%);
+      filter: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.18));
+    }
+
+    .mock-face::after {
+      content: "";
+      position: absolute;
+      inset: auto 16% -18%;
+      height: 42%;
+      border-radius: 46% 46% 0 0;
+      background:
+        radial-gradient(ellipse at 50% 18%, rgba(244, 202, 184, 0.7) 0 13%, transparent 14%),
+        linear-gradient(135deg, rgba(255, 254, 253, 0.82), rgba(255, 255, 255, 0.20));
+    }
+
+    .photo-sheen {
+      position: absolute;
+      inset: -40% auto auto -20%;
+      width: 50%;
+      height: 180%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+      transform: rotate(20deg);
+      animation: sheen 5.8s ease-in-out infinite;
+    }
+
+    @keyframes sheen {
+      0%, 58% {
+        translate: 0 0;
+      }
+      86%, 100% {
+        translate: 240% 0;
+      }
+    }
+
+    .match-badge {
+      position: absolute;
+      top: 23px;
+      right: 22px;
+      z-index: 3;
+      display: grid;
+      gap: 2px;
+      min-width: 88px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 18px;
+      background: rgba(14, 14, 16, 0.42);
+      backdrop-filter: blur(16px);
+      color: var(--ink);
+      font-size: 0.78rem;
+      font-weight: 900;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+    }
+
+    .match-badge span {
+      color: var(--gold);
+      font-size: 1.18rem;
+      line-height: 1;
+    }
+
+    .mock-profile-content {
+      position: relative;
+      z-index: 2;
+      padding: 0 22px 24px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .chip {
+      padding: 7px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.09);
+      color: #f4f4f5;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .mock-name {
+      margin: 0;
+      font-size: 2.02rem;
+      line-height: 1;
+      font-weight: 950;
+    }
+
+    .mock-prompt {
+      margin: 12px 0 0;
+      color: #e4e4e7;
+      font-size: 0.98rem;
+      line-height: 1.35;
+    }
+
+    .phone-actions {
+      position: absolute;
+      inset: auto 0 20px;
+      z-index: 2;
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+    }
+
+    .phone-action {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.11);
+      color: var(--ink);
+      font-size: 1.3rem;
+      font-weight: 900;
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    .phone-action.hot {
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, var(--red-deep), var(--red), var(--coral));
+      transform: translateY(-8px);
+    }
+
+    .phone-float {
+      position: absolute;
+      z-index: 4;
+      width: 178px;
+      padding: 13px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      background: rgba(26, 26, 29, 0.74);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 20px 46px rgba(0, 0, 0, 0.28);
+      color: var(--ink);
+      font-weight: 900;
+    }
+
+    .phone-float small {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .phone-float.left {
+      left: -34px;
+      top: 20%;
+      transform: rotate(-7deg);
+    }
+
+    .phone-float.right {
+      right: -28px;
+      bottom: 21%;
+      transform: rotate(7deg);
+    }
+
+    section {
+      padding: 86px 16px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    .section-kicker {
+      margin: 0 0 10px;
+      color: var(--red);
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-size: 0.82rem;
+    }
+
+    h2 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(2rem, 5vw, 4.4rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .section-lede {
+      max-width: 470px;
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.58;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .feature {
+      min-height: 240px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(26, 26, 29, 0.72);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.18);
+      transform-style: preserve-3d;
+      transition: transform 260ms ease, border-color 260ms ease, background 260ms ease;
+    }
+
+    .feature:hover {
+      border-color: rgba(255, 79, 104, 0.28);
+      background: rgba(35, 35, 39, 0.84);
+    }
+
+    .feature b {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      margin-bottom: 34px;
+      border-radius: 15px;
+      background: rgba(255, 79, 104, 0.14);
+      color: var(--red);
+      font-size: 1.15rem;
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 1.24rem;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .journey {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .journey-panel,
+    .spark-panel {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: rgba(26, 26, 29, 0.72);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .journey-panel {
+      padding: 28px;
+    }
+
+    .steps {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .step-num {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--red-deep), var(--red));
+      font-weight: 950;
+    }
+
+    .step h3 {
+      margin: 0 0 4px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .spark-panel {
+      position: relative;
+      min-height: 510px;
+      padding: 28px;
+      background:
+        linear-gradient(145deg, rgba(215, 25, 69, 0.18), rgba(216, 183, 110, 0.08)),
+        rgba(26, 26, 29, 0.76);
+    }
+
+    .spark-card {
+      position: absolute;
+      width: min(440px, calc(100% - 56px));
+      left: 28px;
+      right: 28px;
+      bottom: 28px;
+      padding: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 26px;
+      background: rgba(14, 14, 16, 0.62);
+      backdrop-filter: blur(18px);
+    }
+
+    .spark-card h3 {
+      margin: 0;
+      font-size: clamp(1.8rem, 4vw, 3.1rem);
+      line-height: 0.95;
+    }
+
+    .spark-card p {
+      margin: 14px 0 0;
+      color: var(--muted);
+    }
+
+    .spark-timer {
+      position: absolute;
+      top: 28px;
+      right: 28px;
+      display: grid;
+      place-items: center;
+      width: 112px;
+      height: 112px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: conic-gradient(from 180deg, var(--red) var(--progress), rgba(255, 255, 255, 0.09) 0);
+      box-shadow: 0 20px 44px rgba(255, 79, 104, 0.16);
+    }
+
+    .spark-timer span {
+      display: grid;
+      place-items: center;
+      width: 82px;
+      height: 82px;
+      border-radius: 50%;
+      background: #111113;
+      font-size: 1.44rem;
+      font-weight: 950;
+    }
+
+    .spark-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-width: 360px;
+    }
+
+    .spark-tags span {
+      padding: 8px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: 999px;
+      color: #f1f1f2;
+      background: rgba(255, 255, 255, 0.07);
+      font-size: 0.86rem;
+      font-weight: 820;
+    }
+
+    .legal-band {
+      padding-bottom: 110px;
+    }
+
+    .legal-box {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: center;
+      padding: clamp(24px, 5vw, 42px);
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      background:
+        linear-gradient(135deg, rgba(255, 79, 104, 0.16), rgba(216, 183, 110, 0.08)),
+        rgba(26, 26, 29, 0.76);
+      box-shadow: var(--shadow);
+    }
+
+    .legal-box p {
+      max-width: 650px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    footer {
+      padding: 28px 16px 42px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: rgba(14, 14, 16, 0.78);
+    }
+
+    .footer-inner {
+      width: min(var(--max), 100%);
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .footer-links a {
+      color: var(--muted);
+    }
+
+    .footer-links a:hover {
+      color: var(--ink);
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(26px);
+      transition: opacity 700ms ease, transform 700ms ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 920px) {
+      .nav-links {
+        position: fixed;
+        inset: 78px 16px auto;
+        display: none;
+        grid-template-columns: 1fr;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: rgba(14, 14, 16, 0.96);
+      }
+
+      body.menu-open .nav-links {
+        display: grid;
+      }
+
+      .menu-button {
+        display: inline-flex;
+      }
+
+      .hero-inner,
+      .journey,
+      .legal-box {
+        grid-template-columns: 1fr;
+      }
+
+      .phone-wrap {
+        min-height: 560px;
+        order: -1;
+      }
+
+      .phone {
+        transform: rotate(0) rotateY(0);
+      }
+
+      .phone-float.left {
+        left: 4px;
+      }
+
+      .phone-float.right {
+        right: 2px;
+      }
+
+      .section-head {
+        display: grid;
+        align-items: start;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .hero {
+        padding-top: 112px;
+      }
+
+      .nav-inner {
+        border-radius: 24px;
+      }
+
+      .nav-cta {
+        display: none;
+      }
+
+      .hero-meta {
+        grid-template-columns: 1fr;
+      }
+
+      .orbit-card {
+        display: none;
+      }
+
+      .phone-wrap {
+        min-height: 500px;
+      }
+
+      .phone-wrap::before,
+      .phone-wrap::after,
+      .phone-float {
+        display: none;
+      }
+
+      .phone {
+        width: min(334px, 92vw);
+      }
+
+      .mock-name {
+        font-size: 1.72rem;
+      }
+
+      section {
+        padding: 66px 16px;
+      }
+
+      .spark-panel {
+        min-height: 520px;
+      }
+
+      .spark-timer {
+        width: 92px;
+        height: 92px;
+      }
+
+      .spark-timer span {
+        width: 68px;
+        height: 68px;
+        font-size: 1.16rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 1ms !important;
+        scroll-behavior: auto !important;
+        transition-duration: 1ms !important;
+      }
+
+      #field {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="noise" aria-hidden="true"></div>
+
+  <nav class="nav" aria-label="Navegación principal">
+    <div class="nav-inner">
+      <a class="mark" href="/" aria-label="Attra inicio">
+        <span class="mark-dot" aria-hidden="true"></span>
+        Attra
+      </a>
+      <div class="nav-links" id="navLinks">
+        <a href="#feed">Feed</a>
+        <a href="#spark">Spark</a>
+        <a href="#legal">Privacidad</a>
+        <a class="nav-cta" href="mailto:soporte.attra.app@gmail.com">Contacto</a>
+      </div>
+      <button class="menu-button" id="menuButton" type="button" aria-controls="navLinks" aria-expanded="false">Menú</button>
+    </div>
+  </nav>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-stage" aria-hidden="true">
+        <div class="orbit-card">
+          <small>Icebreaker</small>
+          <p>Una pregunta buena vale más que cien "hola".</p>
+        </div>
+        <div class="orbit-card">
+          <small>Match</small>
+          <p>Perfiles con intención, señales claras y menos ruido.</p>
+        </div>
+        <div class="orbit-card">
+          <small>Attra Spark</small>
+          <p>Cinco minutos para romper el hielo sin forzar.</p>
+        </div>
+      </div>
+
+      <div class="hero-inner">
+        <div class="hero-copy-block reveal visible">
+          <div class="eyebrow"><span class="pulse"></span> Citas con intención</div>
+          <h1 id="hero-title">Attra</h1>
+          <p class="hero-copy">Una app de citas moderna para descubrir perfiles reales, crear matches con contexto y empezar conversaciones que no mueren en el primer mensaje.</p>
+          <div class="hero-actions">
+            <a class="button primary magnetic" href="#feed"><span>Ver la experiencia</span></a>
+            <a class="button magnetic" href="/delete-account.html"><span>Control de datos</span></a>
+          </div>
+          <div class="hero-meta" aria-label="Métricas destacadas">
+            <div class="metric">
+              <strong data-count="5" data-suffix="">0</strong>
+              <span>minutos en Spark</span>
+            </div>
+            <div class="metric">
+              <strong data-count="3" data-suffix="+">0</strong>
+              <span>formas de romper el hielo</span>
+            </div>
+            <div class="metric">
+              <strong data-count="0" data-suffix="">0</strong>
+              <span>ruido innecesario</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="phone-wrap reveal visible" aria-label="Vista previa de Attra">
+          <div class="phone-glow" aria-hidden="true"></div>
+          <div class="phone-float left" aria-hidden="true">
+            <small>Match</small>
+            Menudo match!!
+          </div>
+          <div class="phone-float right" aria-hidden="true">
+            <small>Spark</small>
+            5 min para romper el hielo
+          </div>
+          <div class="phone">
+            <div class="screen" id="screen">
+              <div class="screen-top">
+                <span>Attra</span>
+                <small id="screenMode">Creatividad</small>
+              </div>
+              <article class="mock-profile" id="mockProfile">
+                <div class="mock-face" aria-hidden="true">
+                  <span class="photo-sheen"></span>
+                </div>
+                <div class="match-badge" id="matchBadge"><span>92%</span> vibe</div>
+                <div class="mock-profile-content">
+                  <div class="chips" id="chips"></div>
+                  <h2 class="mock-name" id="mockName">Lucía, 29</h2>
+                  <p class="mock-prompt" id="mockPrompt">Mi plan perfecto improvisado sería una cena tarde y una ruta sin mirar el mapa.</p>
+                </div>
+              </article>
+              <div class="phone-actions" aria-hidden="true">
+                <div class="phone-action">×</div>
+                <div class="phone-action">✦</div>
+                <div class="phone-action hot">♥</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="feed" aria-labelledby="feed-title">
+      <div class="section-inner">
+        <div class="section-head reveal">
+          <div>
+            <p class="section-kicker">Feed inteligente</p>
+            <h2 id="feed-title">Un feed que se siente más humano.</h2>
+          </div>
+          <p class="section-lede">Attra mezcla perfiles, respuestas, intención y contexto para que el match llegue con algo de lo que hablar.</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature reveal tilt">
+            <b>01</b>
+            <h3>Perfiles con contexto</h3>
+            <p>Fotos, prompts, audio, vídeo y señales de intención en una experiencia compacta y directa.</p>
+          </article>
+          <article class="feature reveal tilt">
+            <b>02</b>
+            <h3>Likes con intención</h3>
+            <p>Responde a una foto, pregunta o story para que el primer mensaje ya tenga punto de partida.</p>
+          </article>
+          <article class="feature reveal tilt">
+            <b>03</b>
+            <h3>Premium sin romper la magia</h3>
+            <p>Attras, Boosts, Plus y Pro como capas de valor, no como obstáculos molestos.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="spark" aria-labelledby="spark-title">
+      <div class="section-inner journey">
+        <div class="journey-panel reveal">
+          <p class="section-kicker">Match Journey</p>
+          <h2 id="spark-title">Del match al mensaje real.</h2>
+          <div class="steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <div>
+                <h3>Rompe el hielo</h3>
+                <p>Preguntas rápidas, esto o aquello y juegos ligeros cuando el chat necesita chispa.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <div>
+                <h3>Construye una cita</h3>
+                <p>Propuestas de plan con lugar, fecha, hora y nota para pasar de conversación a encuentro.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <div>
+                <h3>Reactiva sin presión</h3>
+                <p>Señales suaves cuando una conversación se enfría, sin convertir la app en ruido.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="spark-panel reveal">
+          <div class="spark-tags">
+            <span>Attra Spark</span>
+            <span>5 rondas</span>
+            <span>Coincidencias</span>
+            <span>Preguntas sugeridas</span>
+          </div>
+          <div class="spark-timer" id="sparkTimer" style="--progress: 72%;">
+            <span id="timerText">4:12</span>
+          </div>
+          <div class="spark-card">
+            <h3 id="sparkQuestion">¿Plan de sofá o escapada improvisada?</h3>
+            <p id="sparkAnswer">Tocad una respuesta, revelad la coincidencia y dejad que el chat empiece con algo menos frío que un "qué tal".</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="legal" class="legal-band" aria-labelledby="legal-title">
+      <div class="section-inner">
+        <div class="legal-box reveal">
+          <div>
+            <p class="section-kicker">Transparencia</p>
+            <h2 id="legal-title">Privacidad visible desde el primer día.</h2>
+            <p>Las páginas públicas de privacidad y eliminación de cuenta están disponibles para usuarios, soporte y Google Play.</p>
+          </div>
+          <div class="legal-actions">
+            <a class="button primary magnetic" href="/privacy.html">Política de privacidad</a>
+            <a class="button magnetic" href="/delete-account.html">Eliminar cuenta</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <strong>Attra</strong>
+      <div class="footer-links">
+        <a href="/privacy.html">Privacidad</a>
+        <a href="/delete-account.html">Eliminar cuenta</a>
+        <a href="mailto:soporte.attra.app@gmail.com">soporte.attra.app@gmail.com</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const canvas = document.getElementById("field");
+      const ctx = canvas.getContext("2d");
+      const pointer = { x: innerWidth / 2, y: innerHeight / 2, active: false };
+      let width = 0;
+      let height = 0;
+      let particles = [];
+
+      function resizeCanvas() {
+        const ratio = Math.min(devicePixelRatio || 1, 2);
+        width = innerWidth;
+        height = innerHeight;
+        canvas.width = Math.floor(width * ratio);
+        canvas.height = Math.floor(height * ratio);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        const count = Math.min(82, Math.max(34, Math.floor(width / 18)));
+        particles = Array.from({ length: count }, (_, index) => ({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.36,
+          vy: (Math.random() - 0.5) * 0.36,
+          r: index % 7 === 0 ? 2.2 : 1.35,
+          hue: index % 5 === 0 ? "216, 183, 110" : "255, 79, 104"
+        }));
+      }
+
+      function drawField() {
+        if (reduceMotion) return;
+        ctx.clearRect(0, 0, width, height);
+        for (const p of particles) {
+          const dx = p.x - pointer.x;
+          const dy = p.y - pointer.y;
+          const d = Math.hypot(dx, dy) || 1;
+          if (pointer.active && d < 150) {
+            p.vx += (dx / d) * 0.012;
+            p.vy += (dy / d) * 0.012;
+          }
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.992;
+          p.vy *= 0.992;
+          if (p.x < -20) p.x = width + 20;
+          if (p.x > width + 20) p.x = -20;
+          if (p.y < -20) p.y = height + 20;
+          if (p.y > height + 20) p.y = -20;
+        }
+
+        for (let i = 0; i < particles.length; i += 1) {
+          const a = particles[i];
+          for (let j = i + 1; j < particles.length; j += 1) {
+            const b = particles[j];
+            const d = Math.hypot(a.x - b.x, a.y - b.y);
+            if (d < 118) {
+              ctx.strokeStyle = `rgba(255, 79, 104, ${0.11 * (1 - d / 118)})`;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        for (const p of particles) {
+          ctx.fillStyle = `rgba(${p.hue}, 0.62)`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        requestAnimationFrame(drawField);
+      }
+
+      resizeCanvas();
+      if (!reduceMotion) requestAnimationFrame(drawField);
+      addEventListener("resize", resizeCanvas);
+      addEventListener("pointermove", (event) => {
+        pointer.x = event.clientX;
+        pointer.y = event.clientY;
+        pointer.active = true;
+      }, { passive: true });
+      addEventListener("pointerleave", () => {
+        pointer.active = false;
+      });
+
+      const menuButton = document.getElementById("menuButton");
+      menuButton.addEventListener("click", () => {
+        const open = !document.body.classList.contains("menu-open");
+        document.body.classList.toggle("menu-open", open);
+        menuButton.setAttribute("aria-expanded", String(open));
+      });
+      document.querySelectorAll(".nav-links a").forEach((link) => {
+        link.addEventListener("click", () => {
+          document.body.classList.remove("menu-open");
+          menuButton.setAttribute("aria-expanded", "false");
+        });
+      });
+
+      const profiles = [
+        {
+          name: "Lucía, 29",
+          mode: "Creatividad",
+          prompt: "Mi plan perfecto improvisado sería una cena tarde y una ruta sin mirar el mapa.",
+          chips: ["Arte", "Madrid", "Plan tranquilo"],
+          score: "92%",
+          bg: "linear-gradient(135deg, #351018, #9d4b5d 54%, #d8b76e)",
+          screen: "linear-gradient(135deg, #1a0e14, #502634 54%, #2a161d)"
+        },
+        {
+          name: "Nora, 31",
+          mode: "Intención",
+          prompt: "Me ganas si propones un plan concreto y te acuerdas de los detalles pequeños.",
+          chips: ["Viajes", "Café", "Honestidad"],
+          score: "88%",
+          bg: "linear-gradient(135deg, #111113, #7e1e38 52%, #ff5a6e)",
+          screen: "linear-gradient(135deg, #111113, #301620, #612234)"
+        },
+        {
+          name: "Valeria, 27",
+          mode: "Spark",
+          prompt: "Dos verdades y una mentira: odio madrugar, canto fatal, siempre llego pronto.",
+          chips: ["Música", "Brunch", "Risas"],
+          score: "95%",
+          bg: "linear-gradient(135deg, #201015, #c74459 48%, #d8b76e)",
+          screen: "linear-gradient(135deg, #170d11, #421925, #705031)"
+        }
+      ];
+
+      const chips = document.getElementById("chips");
+      const name = document.getElementById("mockName");
+      const prompt = document.getElementById("mockPrompt");
+      const mode = document.getElementById("screenMode");
+      const matchBadge = document.getElementById("matchBadge");
+      const mockProfile = document.getElementById("mockProfile");
+      const screen = document.getElementById("screen");
+      let activeProfile = 0;
+
+      function renderProfile(index) {
+        const profile = profiles[index];
+        mockProfile.classList.add("switching");
+        setTimeout(() => {
+          name.textContent = profile.name;
+          prompt.textContent = profile.prompt;
+          mode.textContent = profile.mode;
+          chips.innerHTML = profile.chips.map((chip) => `<span class="chip">${chip}</span>`).join("");
+          matchBadge.innerHTML = `<span>${profile.score}</span> vibe`;
+          mockProfile.style.setProperty("--card-bg", profile.bg);
+          screen.style.setProperty("--profile-bg", profile.screen);
+          mockProfile.classList.remove("switching");
+        }, 180);
+      }
+
+      renderProfile(activeProfile);
+      if (!reduceMotion) {
+        setInterval(() => {
+          activeProfile = (activeProfile + 1) % profiles.length;
+          renderProfile(activeProfile);
+        }, 3600);
+      }
+
+      const sparkQuestions = [
+        ["¿Plan de sofá o escapada improvisada?", "4:12", "72%"],
+        ["¿Café rápido o cena larga?", "3:28", "58%"],
+        ["¿Responderías primero con humor o sinceridad?", "2:44", "46%"],
+        ["¿Museo pequeño o concierto escondido?", "1:59", "33%"]
+      ];
+      const sparkQuestion = document.getElementById("sparkQuestion");
+      const timerText = document.getElementById("timerText");
+      const sparkTimer = document.getElementById("sparkTimer");
+      let activeSpark = 0;
+      if (!reduceMotion) {
+        setInterval(() => {
+          activeSpark = (activeSpark + 1) % sparkQuestions.length;
+          const [question, time, progress] = sparkQuestions[activeSpark];
+          sparkQuestion.animate(
+            [{ opacity: 1, transform: "translateY(0)" }, { opacity: 0, transform: "translateY(8px)" }],
+            { duration: 160, fill: "forwards" }
+          ).finished.then(() => {
+            sparkQuestion.textContent = question;
+            timerText.textContent = time;
+            sparkTimer.style.setProperty("--progress", progress);
+            sparkQuestion.animate(
+              [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }],
+              { duration: 260, fill: "forwards" }
+            );
+          });
+        }, 3400);
+      }
+
+      const revealObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("visible");
+            revealObserver.unobserve(entry.target);
+          }
+        }
+      }, { threshold: 0.18 });
+      document.querySelectorAll(".reveal").forEach((node) => revealObserver.observe(node));
+
+      const counters = document.querySelectorAll("[data-count]");
+      const counterObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const node = entry.target;
+          const target = Number(node.dataset.count || 0);
+          const start = performance.now();
+          const duration = 900;
+          function tick(now) {
+            const t = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - t, 3);
+            node.textContent = Math.round(target * eased);
+            if (t < 1) requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+          counterObserver.unobserve(node);
+        }
+      }, { threshold: 0.9 });
+      counters.forEach((node) => counterObserver.observe(node));
+
+      document.querySelectorAll(".tilt").forEach((card) => {
+        card.addEventListener("pointermove", (event) => {
+          const rect = card.getBoundingClientRect();
+          const x = (event.clientX - rect.left) / rect.width - 0.5;
+          const y = (event.clientY - rect.top) / rect.height - 0.5;
+          card.style.transform = `rotateX(${y * -6}deg) rotateY(${x * 8}deg) translateY(-4px)`;
+        });
+        card.addEventListener("pointerleave", () => {
+          card.style.transform = "";
+        });
+      });
+
+      document.querySelectorAll(".magnetic").forEach((button) => {
+        button.addEventListener("pointermove", (event) => {
+          const rect = button.getBoundingClientRect();
+          const x = event.clientX - rect.left - rect.width / 2;
+          const y = event.clientY - rect.top - rect.height / 2;
+          button.style.transform = `translate(${x * 0.08}px, ${y * 0.12}px)`;
+        });
+        button.addEventListener("pointerleave", () => {
+          button.style.transform = "";
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

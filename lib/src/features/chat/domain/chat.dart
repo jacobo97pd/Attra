@@ -42,6 +42,7 @@ class Chat {
     this.lastMessage,
     this.lastMessageType,
     this.lastMessageSenderId,
+    this.journeyStatus,
     this.hasAttra = false,
     this.lastMessageAt,
     this.createdAt,
@@ -61,6 +62,7 @@ class Chat {
   final String? lastMessage;
   final MessageType? lastMessageType;
   final String? lastMessageSenderId;
+  final String? journeyStatus;
   final bool hasAttra;
   final DateTime? lastMessageAt;
   final DateTime? createdAt;
@@ -97,6 +99,7 @@ class Chat {
           ? null
           : MessageType.fromValue(map['lastMessageType']),
       lastMessageSenderId: map['lastMessageSenderId'] as String?,
+      journeyStatus: map['journeyStatus'] as String?,
       hasAttra: (map['hasAttra'] as bool?) ?? false,
       lastMessageAt: _asDate(map['lastMessageAt']),
       createdAt: _asDate(map['createdAt']),

@@ -1,0 +1,42 @@
+{
+  "@@locale": "en",
+  "navFeed": "Feed",
+  "navLikes": "Likes",
+  "navChats": "Chats",
+  "navProfile": "Profile",
+
+  "feedTitle": "Attra",
+  "feedEmptyTitle": "No more people right now",
+  "feedEmptyBody": "When new compatible profiles show up, they'll appear here. You won't see anyone you already liked or passed again.",
+  "feedReload": "Reload",
+
+  "likesTitle": "Likes",
+  "chatsTitle": "Chats",
+  "settingsTitle": "Settings",
+
+  "matchTitle": "It's a match!",
+  "matchSubtitle": "You've connected. Break the ice before it cools down ✨",
+  "matchOpenChat": "Open chat",
+  "matchKeepBrowsing": "Keep browsing",
+  "matchSendHint": "Send a message…",
+  "matchSuggestionLabel": "Suggested opener",
+
+  "commonCancel": "Cancel",
+  "commonAccept": "Accept",
+  "commonSave": "Save",
+  "commonRetry": "Retry",
+  "commonLogout": "Log out",
+
+  "slowDatingTitle": "Slow Dating",
+  "slowDatingSubtitle": "Dating with calm: fewer profiles but more aligned with you.",
+  "slowDatingActiveTag": "On",
+  "slowDatingActivate": "Turn on",
+  "slowDatingNotNow": "Not now",
+  "slowDatingEnabledToast": "Slow Dating on. Your feed will take it easy 🌿",
+  "slowDatingDisabledToast": "Slow Dating off.",
+
+  "notificationsTitle": "Notifications",
+  "notificationsMarkRead": "Mark as read",
+  "notificationsEmptyTitle": "Nothing new yet",
+  "notificationsEmptyBody": "When someone likes you or messages you, you'll see it here 🔔"
+}

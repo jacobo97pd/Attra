@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../ads/presentation/feed_native_ad_card.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
@@ -16,9 +19,12 @@ import '../../profile/domain/profile_state.dart';
 import '../../monetization/data/boost_service.dart';
 import '../../monetization/domain/boost.dart';
 import '../../stories/data/story_service.dart';
+import '../../stories/domain/story.dart';
 import '../../stories/presentation/stories_bar.dart';
+import '../../stories/presentation/story_viewer_screen.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_image.dart';
 import '../../../widgets/attra_states.dart';
 import '../data/feed_metrics_service.dart';
 import '../domain/boost_ranker.dart';
@@ -43,11 +49,15 @@ class FeedScreen extends StatefulWidget {
     this.reloadToken = 0,
     this.storyService,
     this.isPlus = false,
+    this.canRewind = false,
+    this.rewindUnlimited = false,
+    this.onOpenUpgrade,
     this.aiVisualService,
     this.canUseVisualMatch = false,
     this.canSeeLikedMe = false,
     this.metrics,
     this.boostService,
+    this.adsEnabled = false,
   });
 
   final AppUser? user;
@@ -68,6 +78,12 @@ class FeedScreen extends StatefulWidget {
   /// Si el usuario es Plus (desbloquea filtros avanzados).
   final bool isPlus;
 
+  /// Rewind del feed: Plus/Premium pueden volver un paso; Pro guarda historial
+  /// de la sesion sin limite. Free no puede usarlo.
+  final bool canRewind;
+  final bool rewindUnlimited;
+  final VoidCallback? onOpenUpgrade;
+
   /// IA visual (Pro + consentimiento + referencia) para ordenar por parecido.
   final AiVisualService? aiVisualService;
   final bool canUseVisualMatch;
@@ -82,8 +98,32 @@ class FeedScreen extends StatefulWidget {
   /// Boosts consumibles: lectura de boosts activos + registro de impresiones.
   final BoostService? boostService;
 
+  /// Muestra ad cards nativas en el feed (ya viene resuelto: flag activo Y el
+  /// usuario NO es Plus/Pro). Si false, el feed va sin anuncios.
+  final bool adsEnabled;
+
   @override
   State<FeedScreen> createState() => _FeedScreenState();
+}
+
+enum _FeedActionKind {
+  like('like'),
+  pass('pass');
+
+  const _FeedActionKind(this.wireName);
+  final String wireName;
+}
+
+class _FeedRewindAction {
+  const _FeedRewindAction({
+    required this.index,
+    required this.targetUid,
+    required this.kind,
+  });
+
+  final int index;
+  final String targetUid;
+  final _FeedActionKind kind;
 }
 
 class _FeedScreenState extends State<FeedScreen> {
@@ -96,6 +136,15 @@ class _FeedScreenState extends State<FeedScreen> {
   Set<String> _likedMeUids = const <String>{};
   Map<String, ActiveBoost> _activeBoostsByUid = const <String, ActiveBoost>{};
   bool _storiesEnabled = false;
+  // Stories vivas agrupadas por dueño: para pintar el aro rojizo en la foto
+  // principal del feed y abrir el visor al pulsar.
+  Map<String, List<Story>> _storiesByOwner = const <String, List<Story>>{};
+  StreamSubscription<List<Story>>? _storiesSub;
+  // Stories ya vistas (por id) en esta sesión: el aro pasa a gris pero se puede
+  // reabrir cuantas veces se quiera.
+  final Set<String> _seenStoryIds = <String>{};
+  bool _rewinding = false;
+  List<_FeedRewindAction> _rewindHistory = const <_FeedRewindAction>[];
   FeedFilters _filters = const FeedFilters();
 
   @override
@@ -109,6 +158,7 @@ class _FeedScreenState extends State<FeedScreen> {
   void dispose() {
     // Vuelca impresiones pendientes (no perder telemetría al cerrar).
     widget.metrics?.flush();
+    _storiesSub?.cancel();
     super.dispose();
   }
 
@@ -157,6 +207,54 @@ class _FeedScreenState extends State<FeedScreen> {
   Future<void> _loadStoriesFlag() async {
     final bool enabled = await widget.storyService?.storiesEnabled() ?? false;
     if (mounted) setState(() => _storiesEnabled = enabled);
+    if (enabled) _bindStories();
+  }
+
+  /// Escucha las stories vivas y las agrupa por dueño para resaltar la foto
+  /// principal de quien tiene historia (aro rojizo + visor al pulsar).
+  void _bindStories() {
+    final StoryService? svc = widget.storyService;
+    final String myUid = widget.user?.uid ?? '';
+    if (svc == null) return;
+    _storiesSub?.cancel();
+    _storiesSub = svc.observeLiveStories(excludeUid: myUid).listen(
+      (List<Story> stories) {
+        if (!mounted) return;
+        final Map<String, List<Story>> grouped = <String, List<Story>>{};
+        for (final Story s in stories) {
+          (grouped[s.ownerUid] ??= <Story>[]).add(s);
+        }
+        setState(() => _storiesByOwner = grouped);
+      },
+      onError: (Object _) {/* sin stories: el feed sigue igual */},
+    );
+  }
+
+  /// True si TODAS las stories vivas de [ownerUid] ya se han visto (aro gris).
+  bool _ownerStoriesSeen(String ownerUid) {
+    final List<Story>? stories = _storiesByOwner[ownerUid];
+    if (stories == null || stories.isEmpty) return false;
+    return stories.every((Story s) => _seenStoryIds.contains(s.storyId));
+  }
+
+  void _openStoryFor(String ownerUid) {
+    final StoryService? svc = widget.storyService;
+    final List<Story>? stories = _storiesByOwner[ownerUid];
+    if (svc == null || stories == null || stories.isEmpty) return;
+    // Marca como vistas (el aro pasa a gris); se puede reabrir sin límite.
+    setState(() {
+      for (final Story s in stories) {
+        _seenStoryIds.add(s.storyId);
+      }
+    });
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => StoryViewerScreen(
+        stories: stories,
+        initialIndex: 0,
+        currentUid: widget.user?.uid ?? '',
+        storyService: svc,
+      ),
+    ));
   }
 
   @override
@@ -265,6 +363,9 @@ class _FeedScreenState extends State<FeedScreen> {
         _activeBoostsByUid = activeBoosts;
         _profiles = filtered;
         _index = 0;
+        _pendingAd = false;
+        _rewindHistory = const <_FeedRewindAction>[];
+        _rewinding = false;
         _loading = false;
       });
       _precacheNext();
@@ -282,10 +383,48 @@ class _FeedScreenState extends State<FeedScreen> {
 
   String get _uid => widget.user?.uid ?? '';
 
-  void _advance() {
-    setState(() => _index += 1);
+  /// Un anuncio cada N perfiles vistos (nunca al inicio).
+  static const int _adFrequency = 7;
+  int _swipesSinceAd = 0;
+  bool _pendingAd = false;
+
+  void _advance({
+    _FeedActionKind? rewindAction,
+    bool clearRewindHistory = false,
+  }) {
+    // Tras varios perfiles, inserta una ad card (si procede). No al arrancar.
+    _swipesSinceAd++;
+    final bool showAd = widget.adsEnabled && _swipesSinceAd >= _adFrequency;
+    setState(() {
+      if (clearRewindHistory) {
+        _rewindHistory = const <_FeedRewindAction>[];
+      } else if (rewindAction != null && _index < _profiles.length) {
+        final _FeedRewindAction action = _FeedRewindAction(
+          index: _index,
+          targetUid: _profiles[_index].id,
+          kind: rewindAction,
+        );
+        _rewindHistory = widget.rewindUnlimited
+            ? <_FeedRewindAction>[..._rewindHistory, action]
+            : <_FeedRewindAction>[action];
+      }
+      _index += 1;
+      if (showAd) {
+        _swipesSinceAd = 0;
+        _pendingAd = true;
+      }
+    });
     _precacheNext();
     _recordCurrentImpression();
+  }
+
+  void _removeRewindActionFor(String targetUid) {
+    if (_rewindHistory.isEmpty) return;
+    final List<_FeedRewindAction> next = _rewindHistory
+        .where((_FeedRewindAction action) => action.targetUid != targetUid)
+        .toList(growable: false);
+    if (next.length == _rewindHistory.length) return;
+    setState(() => _rewindHistory = next);
   }
 
   /// Registra como "mostrado" el perfil actualmente visible (impresión).
@@ -307,17 +446,16 @@ class _FeedScreenState extends State<FeedScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final List<String> toWarm = <String>[];
-      final int next = _index + 1;
-      if (next < _profiles.length) {
-        toWarm.add(_profiles[next].primaryPhotoUrl);
-        // También la primera adicional del siguiente (segunda imagen de su galería).
-        final List<String> g = _profiles[next].galleryUrls;
+      // Precalienta las DOS siguientes tarjetas (swipe encadenado fluido).
+      for (int step = 1; step <= 2; step++) {
+        final int n = _index + step;
+        if (n >= _profiles.length) break;
+        toWarm.add(_profiles[n].primaryPhotoUrl);
+        final List<String> g = _profiles[n].galleryUrls;
         if (g.length > 1) toWarm.add(g[1]);
       }
       for (final String url in toWarm) {
-        if (url.isNotEmpty) {
-          precacheImage(NetworkImage(url), context).catchError((_) {});
-        }
+        AttraImage.precache(context, url);
       }
     });
   }
@@ -328,18 +466,67 @@ class _FeedScreenState extends State<FeedScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _onRewind() async {
+    if (!widget.canRewind) {
+      _snack('Volver atras es para Plus y Pro.');
+      widget.onOpenUpgrade?.call();
+      return;
+    }
+    if (_rewinding) return;
+    if (_rewindHistory.isEmpty) {
+      _snack('No hay ningun perfil anterior para volver.');
+      return;
+    }
+
+    final _FeedRewindAction action = _rewindHistory.last;
+    setState(() => _rewinding = true);
+    try {
+      await widget.matchService.rewindFeedAction(
+        targetUid: action.targetUid,
+        action: action.kind.wireName,
+      );
+      if (!mounted) return;
+      setState(() {
+        _pendingAd = false;
+        if (_profiles.isEmpty) {
+          _index = 0;
+        } else {
+          final int maxIndex = _profiles.length - 1;
+          _index = action.index < 0
+              ? 0
+              : action.index > maxIndex
+                  ? maxIndex
+                  : action.index;
+        }
+        _rewindHistory = _rewindHistory
+            .sublist(0, _rewindHistory.length - 1)
+            .toList(growable: false);
+        _excluded = <String>{..._excluded}..remove(action.targetUid);
+        _rewinding = false;
+      });
+      _precacheNext();
+      _recordCurrentImpression();
+    } on MatchServiceException catch (error) {
+      _snack(error.message);
+    } finally {
+      if (mounted && _rewinding) {
+        setState(() => _rewinding = false);
+      }
+    }
+  }
+
   Future<void> _onLikeProfile(SeedProfile profile) async {
-    widget.metrics?.log(FeedMetricsService.likeSent,
-        uid: _uid, targetUid: profile.id);
-    _advance();
+    widget.metrics
+        ?.log(FeedMetricsService.likeSent, uid: _uid, targetUid: profile.id);
+    _advance(rewindAction: _FeedActionKind.like);
     await _sendAndHandle(
         () => widget.matchService.sendLike(profile.id), profile);
   }
 
   Future<void> _onPass(SeedProfile profile) async {
-    widget.metrics?.log(FeedMetricsService.nopeSent,
-        uid: _uid, targetUid: profile.id);
-    _advance();
+    widget.metrics
+        ?.log(FeedMetricsService.nopeSent, uid: _uid, targetUid: profile.id);
+    _advance(rewindAction: _FeedActionKind.pass);
     try {
       await widget.matchService.passProfile(profile.id);
     } catch (_) {
@@ -352,9 +539,9 @@ class _FeedScreenState extends State<FeedScreen> {
       _snack('No tienes Attras suficientes.');
       return;
     }
-    widget.metrics?.log(FeedMetricsService.attraSent,
-        uid: _uid, targetUid: profile.id);
-    _advance();
+    widget.metrics
+        ?.log(FeedMetricsService.attraSent, uid: _uid, targetUid: profile.id);
+    _advance(clearRewindHistory: true);
     await _sendAndHandle(
         () => widget.matchService.sendAttra(profile.id), profile);
   }
@@ -422,6 +609,20 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  /// Intereses en común con [profile] (case-insensitive, conserva el texto del
+  /// otro perfil). Para la pantalla de match.
+  List<String> _sharedInterestsWith(SeedProfile profile) {
+    final Set<String> mine = <String>{
+      for (final String i in widget.user?.interests ?? const <String>[])
+        i.trim().toLowerCase()
+    }..removeWhere((String s) => s.isEmpty);
+    if (mine.isEmpty) return const <String>[];
+    return profile.interests
+        .where((String i) => mine.contains(i.trim().toLowerCase()))
+        .take(4)
+        .toList(growable: false);
+  }
+
   Future<void> _sendAndHandle(
       Future<MatchFlowResult> Function() call, SeedProfile profile) async {
     try {
@@ -429,15 +630,23 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted) return;
       switch (result.outcome) {
         case MatchOutcome.matched:
+          _removeRewindActionFor(profile.id);
           widget.metrics?.log(FeedMetricsService.matchCreated,
               uid: _uid, targetUid: profile.id);
+          final String matchChatId = result.chatId ?? '';
           await showMatchCreatedDialog(
             context,
             name: profile.displayName,
             photoUrl: profile.primaryPhotoUrl,
             hasAttra: false,
+            currentUserPhotoUrl: widget.user?.photoUrl,
+            sharedInterests: _sharedInterestsWith(profile),
             originComment: result.message,
-            onOpenChat: () => _openChat(result.chatId ?? '', profile),
+            onOpenChat: () => _openChat(matchChatId, profile),
+            onSendFirstMessage: matchChatId.isEmpty
+                ? null
+                : (String text) => widget.chatService
+                    .sendMessage(chatId: matchChatId, text: text),
           );
           break;
         case MatchOutcome.limitReached:
@@ -450,8 +659,10 @@ class _FeedScreenState extends State<FeedScreen> {
           _snack('No puedes interactuar con este perfil.');
           break;
         case MatchOutcome.liked:
-        case MatchOutcome.alreadyLiked:
         case MatchOutcome.error:
+          break;
+        case MatchOutcome.alreadyLiked:
+          _removeRewindActionFor(profile.id);
           break;
       }
     } on MatchServiceException catch (error) {
@@ -488,6 +699,8 @@ class _FeedScreenState extends State<FeedScreen> {
       currentName: widget.user?.displayName ?? 'Tú',
       currentPhotoUrl: widget.user?.photoUrl ?? '',
       storyService: svc,
+      // Solo se ven historias de personas con las que hay match.
+      matchService: widget.matchService,
       excludedOwners: _excluded,
     );
   }
@@ -578,8 +791,26 @@ class _FeedScreenState extends State<FeedScreen> {
       );
     }
 
+    // Ad card nativa intercalada (cada N perfiles, solo si adsEnabled).
+    if (_pendingAd) {
+      return SafeArea(
+        child: FeedNativeAdCard(
+          onContinue: () {
+            if (mounted) setState(() => _pendingAd = false);
+          },
+        ),
+      );
+    }
+
     final SeedProfile profile = _profiles[_index];
     final bool likedMe = _likedMeUids.contains(profile.id);
+    final bool rewindEnabled =
+        !widget.canRewind || (_rewindHistory.isNotEmpty && !_rewinding);
+    final String rewindTooltip = widget.canRewind
+        ? widget.rewindUnlimited
+            ? 'Volver atras'
+            : 'Volver atras (1 paso)'
+        : 'Volver atras (Plus/Pro)';
     return SafeArea(
       child: Column(
         children: <Widget>[
@@ -595,6 +826,9 @@ class _FeedScreenState extends State<FeedScreen> {
                 key: _cardKey,
                 profile: profile,
                 likedMe: likedMe,
+                hasStory: _storiesByOwner.containsKey(profile.id),
+                storySeen: _ownerStoriesSeen(profile.id),
+                onOpenStory: () => _openStoryFor(profile.id),
                 onLike: () => _onLikeProfile(profile),
                 onPass: () => _onPass(profile),
                 onRespondToPhoto: (AdditionalPhoto photo) =>
@@ -610,6 +844,22 @@ class _FeedScreenState extends State<FeedScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 _CircleAction(
+                  icon: widget.canRewind
+                      ? Icons.undo_rounded
+                      : Icons.lock_outline_rounded,
+                  size: 48,
+                  iconColor: widget.canRewind
+                      ? AppColors.gold
+                      : AppColors.textSecondary,
+                  borderColor: widget.canRewind
+                      ? AppColors.gold.withValues(alpha: 0.38)
+                      : AppColors.surfaceLine,
+                  tooltip: rewindTooltip,
+                  enabled: rewindEnabled,
+                  onPressed: _onRewind,
+                ),
+                const SizedBox(width: 12),
+                _CircleAction(
                   icon: Icons.close_rounded,
                   size: 58,
                   iconColor: AppColors.textSecondary,
@@ -617,7 +867,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   tooltip: 'Pasar',
                   onPressed: () => _cardKey.currentState?.triggerSwipe(false),
                 ),
-                const SizedBox(width: 24),
+                const SizedBox(width: 16),
                 _CircleAction(
                   icon: Icons.star_rounded,
                   size: 52,
@@ -626,7 +876,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   tooltip: 'Enviar Attra',
                   onPressed: () => _onAttraProfile(profile),
                 ),
-                const SizedBox(width: 24),
+                const SizedBox(width: 16),
                 _CircleAction(
                   icon: Icons.favorite_rounded,
                   size: 66,
@@ -653,10 +903,16 @@ class _SwipeCard extends StatefulWidget {
     required this.onRespondToPhoto,
     required this.onRespondToPrompt,
     this.likedMe = false,
+    this.hasStory = false,
+    this.storySeen = false,
+    this.onOpenStory,
   });
 
   final SeedProfile profile;
   final bool likedMe;
+  final bool hasStory;
+  final bool storySeen;
+  final VoidCallback? onOpenStory;
   final VoidCallback onLike;
   final VoidCallback onPass;
   final void Function(AdditionalPhoto photo) onRespondToPhoto;
@@ -778,6 +1034,9 @@ class _SwipeCardState extends State<_SwipeCard>
                         child: _ProfileDetail(
                           profile: widget.profile,
                           likedMe: widget.likedMe,
+                          hasStory: widget.hasStory,
+                          storySeen: widget.storySeen,
+                          onOpenStory: widget.onOpenStory,
                           onRespondToPhoto: widget.onRespondToPhoto,
                           onRespondToPrompt: widget.onRespondToPrompt,
                         ),
@@ -820,10 +1079,16 @@ class _ProfileDetail extends StatelessWidget {
     required this.onRespondToPhoto,
     required this.onRespondToPrompt,
     this.likedMe = false,
+    this.hasStory = false,
+    this.storySeen = false,
+    this.onOpenStory,
   });
 
   final SeedProfile profile;
   final bool likedMe;
+  final bool hasStory;
+  final bool storySeen;
+  final VoidCallback? onOpenStory;
   final void Function(AdditionalPhoto photo) onRespondToPhoto;
   final void Function(PublicPrompt prompt) onRespondToPrompt;
 
@@ -911,6 +1176,9 @@ class _ProfileDetail extends StatelessWidget {
           photo: primary,
           name: profile.displayName,
           onRespond: onRespondToPhoto,
+          hasStory: hasStory,
+          storySeen: storySeen,
+          onOpenStory: onOpenStory,
           topBadge: likedMe ? const _LikedYouBadge() : null,
           overlay: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1032,6 +1300,9 @@ class _PhotoWithAction extends StatelessWidget {
     required this.onRespond,
     this.overlay,
     this.topBadge,
+    this.hasStory = false,
+    this.storySeen = false,
+    this.onOpenStory,
   });
 
   final AdditionalPhoto? photo;
@@ -1039,13 +1310,23 @@ class _PhotoWithAction extends StatelessWidget {
   final void Function(AdditionalPhoto photo) onRespond;
   final Widget? overlay;
   final Widget? topBadge;
+  final bool hasStory;
+  final bool storySeen;
+  final VoidCallback? onOpenStory;
 
   @override
   Widget build(BuildContext context) {
     final AdditionalPhoto? p = photo;
     return Stack(
       children: <Widget>[
-        _PhotoBox(url: p?.url ?? '', name: name, overlay: overlay),
+        _PhotoBox(
+          url: p?.url ?? '',
+          name: name,
+          overlay: overlay,
+          hasStory: hasStory,
+          storySeen: storySeen,
+          onOpenStory: onOpenStory,
+        ),
         if (topBadge != null) Positioned(top: 14, left: 14, child: topBadge!),
         if (p != null)
           Positioned(
@@ -1071,13 +1352,25 @@ class _PhotoWithAction extends StatelessWidget {
   }
 }
 
-/// Caja de foto con relación 3:4 y degradado opcional para el texto.
+/// Caja de foto con relación 3:4 y degradado opcional para el texto. Si el
+/// perfil tiene story viva ([hasStory]) muestra un aro/borde rojizo con glow y
+/// abre el visor al pulsar.
 class _PhotoBox extends StatelessWidget {
-  const _PhotoBox({required this.url, required this.name, this.overlay});
+  const _PhotoBox({
+    required this.url,
+    required this.name,
+    this.overlay,
+    this.hasStory = false,
+    this.storySeen = false,
+    this.onOpenStory,
+  });
 
   final String url;
   final String name;
   final Widget? overlay;
+  final bool hasStory;
+  final bool storySeen;
+  final VoidCallback? onOpenStory;
 
   @override
   Widget build(BuildContext context) {
@@ -1087,21 +1380,8 @@ class _PhotoBox extends StatelessWidget {
         fit: StackFit.expand,
         children: <Widget>[
           if (url.isNotEmpty)
-            Image.network(
-              url,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              loadingBuilder: (BuildContext context, Widget child,
-                  ImageChunkEvent? progress) {
-                if (progress == null) {
-                  return child;
-                }
-                return const ColoredBox(
-                  color: Color(0xFFE0E0E0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              },
-              errorBuilder: (_, __, ___) => _PhotoFallback(name: name),
+            Positioned.fill(
+              child: AttraImage(url: url, fallbackInitial: name),
             )
           else
             _PhotoFallback(name: name),
@@ -1122,6 +1402,87 @@ class _PhotoBox extends StatelessWidget {
             ),
             Positioned(left: 18, right: 18, bottom: 16, child: overlay!),
           ],
+          // Aro rojizo (sin ver) o gris (ya visto) + badge "Historia" + tap.
+          if (hasStory) ...<Widget>[
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                        color: storySeen
+                            ? AppColors.textMuted
+                            : AppColors.attraRed,
+                        width: 3),
+                    boxShadow: storySeen
+                        ? null
+                        : <BoxShadow>[
+                            BoxShadow(
+                              color: AppColors.attraRed.withValues(alpha: 0.55),
+                              blurRadius: 22,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 14,
+              right: 14,
+              child: _StoryPill(seen: storySeen),
+            ),
+            // Capa de toque: abre el visor sin bloquear el swipe horizontal.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: onOpenStory,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Pastilla "Historia" sobre la foto de quien tiene story viva. En gris si ya
+/// se ha visto (se puede reabrir igualmente).
+class _StoryPill extends StatelessWidget {
+  const _StoryPill({this.seen = false});
+
+  final bool seen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: seen ? Colors.black.withValues(alpha: 0.5) : null,
+        gradient:
+            seen ? null : const LinearGradient(colors: AppColors.action),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        boxShadow: seen
+            ? null
+            : <BoxShadow>[
+                BoxShadow(
+                  color: AppColors.attraRed.withValues(alpha: 0.5),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.play_circle_fill_rounded,
+              color: seen ? AppColors.textMuted : Colors.white, size: 15),
+          const SizedBox(width: 5),
+          Text('Historia',
+              style: TextStyle(
+                  color: seen ? AppColors.textSecondary : Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -1307,16 +1668,18 @@ class _CircleAction extends StatelessWidget {
     this.glow,
     this.iconColor,
     this.borderColor,
+    this.enabled = true,
   });
 
   final IconData icon;
   final String tooltip;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final double size;
   final List<Color>? gradient;
   final Color? glow;
   final Color? iconColor;
   final Color? borderColor;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1324,39 +1687,45 @@ class _CircleAction extends StatelessWidget {
       message: tooltip,
       child: Semantics(
         button: true,
+        enabled: enabled,
         label: tooltip,
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: gradient == null ? AppColors.surfaceHigh : null,
-                gradient: gradient == null
-                    ? null
-                    : LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: gradient!),
-                border: Border.all(
-                    color: borderColor ?? Colors.white.withValues(alpha: 0.08)),
-                boxShadow: glow == null
-                    ? null
-                    : <BoxShadow>[
-                        BoxShadow(
-                          color: glow!.withValues(alpha: 0.45),
-                          blurRadius: 22,
-                          spreadRadius: 1,
-                        ),
-                      ],
+        child: Opacity(
+          opacity: enabled ? 1 : 0.42,
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: enabled ? onPressed : null,
+              child: Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: gradient == null ? AppColors.surfaceHigh : null,
+                  gradient: gradient == null
+                      ? null
+                      : LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: gradient!),
+                  border: Border.all(
+                      color:
+                          borderColor ?? Colors.white.withValues(alpha: 0.08)),
+                  boxShadow: glow == null || !enabled
+                      ? null
+                      : <BoxShadow>[
+                          BoxShadow(
+                            color: glow!.withValues(alpha: 0.45),
+                            blurRadius: 22,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                ),
+                child: Icon(icon,
+                    color: iconColor ?? AppColors.textPrimary,
+                    size: size * 0.46),
               ),
-              child: Icon(icon,
-                  color: iconColor ?? AppColors.textPrimary, size: size * 0.46),
             ),
           ),
         ),

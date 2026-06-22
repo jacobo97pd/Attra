@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
+import '../../../widgets/attra_image.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_summary.dart';
@@ -45,6 +47,11 @@ class ChatDetailScreen extends StatefulWidget {
     this.journeyEnabled = false,
     this.icebreakersEnabled = false,
     this.dateBuilderEnabled = false,
+    this.dateBuilderFull = false,
+    this.thisOrThatEnabled = false,
+    this.doubleAnswerEnabled = false,
+    this.twoTruthsEnabled = false,
+    this.matchReactivationEnabled = false,
   });
 
   final String chatId;
@@ -70,6 +77,11 @@ class ChatDetailScreen extends StatefulWidget {
   final bool journeyEnabled;
   final bool icebreakersEnabled;
   final bool dateBuilderEnabled;
+  final bool dateBuilderFull;
+  final bool thisOrThatEnabled;
+  final bool doubleAnswerEnabled;
+  final bool twoTruthsEnabled;
+  final bool matchReactivationEnabled;
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -127,6 +139,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   String get _uid => widget.currentUid;
+
+  bool get _gamesAvailable =>
+      widget.icebreakersEnabled ||
+      widget.thisOrThatEnabled ||
+      widget.doubleAnswerEnabled ||
+      widget.twoTruthsEnabled ||
+      (widget.sparkEnabled && widget.sparkService != null);
 
   void _useSparkQuestion(String question) {
     _input.text = question;
@@ -335,7 +354,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// Deriva el Match Journey (Fase 8) de las señales del chat. PURO read-model:
   /// sin backend. Detecta propuesta de cita, juego completado (mensaje de
   /// sistema de Spark) y última actividad.
-  MatchJourney _deriveJourney(List<ChatMessage> messages) {
+  MatchJourney _deriveJourney(
+    List<ChatMessage> messages, {
+    String? persistedStatus,
+  }) {
     String? proposalStatus;
     bool hasSystemGame = false;
     DateTime? lastActivity;
@@ -343,17 +365,28 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       if (m.type.isDateProposal && m.dateProposal != null) {
         proposalStatus = m.dateProposal!.status.wireName;
       }
-      if (m.type == MessageType.system) hasSystemGame = true;
+      if (m.type == MessageType.system ||
+          (m.doubleAnswer?.isRevealed ?? false) ||
+          (m.twoTruths?.isRevealed ?? false)) {
+        hasSystemGame = true;
+      }
       final DateTime? c = m.createdAt;
       if (c != null && (lastActivity == null || c.isAfter(lastActivity))) {
         lastActivity = c;
       }
     }
-    return MatchJourney.derive(
+    final MatchJourney derived = MatchJourney.derive(
       realMessageCount: _realMessageCount,
       hasCompletedGame: hasSystemGame,
       dateProposalStatus: proposalStatus,
       lastActivityAt: lastActivity,
+    );
+    return MatchJourney.fromMap(
+      persistedStatus == null
+          ? null
+          : <String, dynamic>{'journeyStatus': persistedStatus},
+      fallback: derived.status,
+      coolingDown: derived.coolingDown,
     );
   }
 
@@ -372,6 +405,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       onSpark: (widget.sparkEnabled && widget.sparkService != null)
           ? _inviteSparkFromJourney
           : null,
+      onDoubleAnswer: widget.doubleAnswerEnabled
+          ? () => _startDoubleAnswerFlow(canSend)
+          : null,
+      onTwoTruths:
+          widget.twoTruthsEnabled ? () => _startTwoTruthsFlow(canSend) : null,
+      showQuickQuestion: widget.icebreakersEnabled,
+      showThisOrThat: widget.thisOrThatEnabled,
     );
   }
 
@@ -401,12 +441,161 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
+  Future<void> _startDoubleAnswerFlow(bool canSend) async {
+    if (!canSend) {
+      _snack('Este chat ya no esta disponible.');
+      return;
+    }
+    final String? question = await _doubleAnswerQuestionDialog();
+    if (question == null || question.trim().isEmpty || !mounted) return;
+    try {
+      await widget.chatService.startDoubleAnswer(
+        chatId: widget.chatId,
+        question: question.trim(),
+      );
+      _logMessageMetrics();
+    } on ChatServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo iniciar Doble Respuesta.');
+    }
+  }
+
+  Future<String?> _doubleAnswerQuestionDialog() async {
+    final TextEditingController controller = TextEditingController(
+      text: IcebreakerCatalog.randomDoubleAnswer(),
+    );
+    final String? value = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Doble respuesta'),
+        content: TextField(
+          controller: controller,
+          maxLength: 180,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Pregunta',
+            hintText: 'Que quereis responder los dos?',
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value;
+  }
+
+  Future<void> _submitDoubleAnswer(ChatMessage message) async {
+    final DoubleAnswer? game = message.doubleAnswer;
+    if (game == null || game.hasAnswered(_uid)) return;
+    final TextEditingController controller = TextEditingController();
+    final String? answer = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Tu respuesta'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(game.question),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLength: 240,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Escribe tu respuesta',
+              ),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (answer == null || answer.trim().isEmpty || !mounted) return;
+    try {
+      await widget.chatService.submitDoubleAnswer(
+        chatId: widget.chatId,
+        messageId: message.id,
+        answer: answer.trim(),
+      );
+    } on ChatServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo guardar la respuesta.');
+    }
+  }
+
+  Future<void> _startTwoTruthsFlow(bool canSend) async {
+    if (!canSend) {
+      _snack('Este chat ya no esta disponible.');
+      return;
+    }
+    final _TwoTruthsInput? input = await showModalBottomSheet<_TwoTruthsInput>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const _TwoTruthsComposerSheet(),
+    );
+    if (input == null || !mounted) return;
+    try {
+      await widget.chatService.startTwoTruths(
+        chatId: widget.chatId,
+        statements: input.statements,
+        lieIndex: input.lieIndex,
+      );
+      _logMessageMetrics();
+    } on ChatServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo iniciar Dos Verdades.');
+    }
+  }
+
+  Future<void> _guessTwoTruths(ChatMessage message, int guessIndex) async {
+    try {
+      await widget.chatService.guessTwoTruths(
+        chatId: widget.chatId,
+        messageId: message.id,
+        guessIndex: guessIndex,
+      );
+    } on ChatServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo responder el juego.');
+    }
+  }
+
   /// Registra `messageSent` y, si es el primer mensaje real del chat,
   /// `conversationStarted` (una sola vez).
   void _logMessageMetrics() {
     final String me = widget.currentUid;
-    widget.metrics
-        ?.log(FeedMetricsService.messageSent, uid: me, targetUid: widget.other.uid);
+    widget.metrics?.log(FeedMetricsService.messageSent,
+        uid: me, targetUid: widget.other.uid);
     if (_realMessageCount == 0 && !_conversationLogged) {
       _conversationLogged = true;
       widget.metrics?.log(FeedMetricsService.conversationStarted,
@@ -503,7 +692,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       _snack('Este chat ya no está disponible.');
       return;
     }
-    final DatePlanSuggestion? plan = await showDateBuilderSheet(context);
+    final DatePlanSuggestion? plan =
+        await showDateBuilderSheet(context, fullMode: widget.dateBuilderFull);
     if (plan == null || !mounted) return;
     await _proposeDate(canSend,
         prefillPlace: plan.placeName, prefillNote: plan.note);
@@ -644,7 +834,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 radius: 18,
                 backgroundColor: const Color(0xFFE0E0E0),
                 backgroundImage: widget.other.photoUrl.isNotEmpty
-                    ? NetworkImage(widget.other.photoUrl)
+                    ? CachedNetworkImageProvider(widget.other.photoUrl)
                     : null,
                 child: widget.other.photoUrl.isEmpty
                     ? Text(widget.other.displayName.isNotEmpty
@@ -698,11 +888,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   onQuickGame:
                       (widget.sparkEnabled && widget.sparkService != null)
                           ? _inviteSparkFromJourney
-                          : (widget.icebreakersEnabled
+                          : (widget.doubleAnswerEnabled ||
+                                  widget.twoTruthsEnabled ||
+                                  widget.icebreakersEnabled
                               ? () => _openIcebreaker(canSend)
                               : null),
-                  onProposePlan: canSend ? () => _proposePlanFlow(canSend) : null,
-                  onReactivate: widget.icebreakersEnabled
+                  onProposePlan:
+                      canSend ? () => _proposePlanFlow(canSend) : null,
+                  onReactivate: widget.matchReactivationEnabled &&
+                          widget.icebreakersEnabled
                       ? () => _openIcebreaker(canSend)
                       : null,
                   onDismiss: () => setState(() => _journeyDismissed = true),
@@ -718,7 +912,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   onReport: () => _report(),
                   onUseQuestion: _useSparkQuestion,
                 ),
-              Expanded(child: _messageList()),
+              Expanded(
+                  child: _messageList(persistedStatus: chat?.journeyStatus)),
               if (_uploadingMedia) const LinearProgressIndicator(minHeight: 2),
               if (!canSend)
                 _ClosedBanner(status: chat?.status)
@@ -734,9 +929,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   focusNode: _inputFocus,
                   sending: false,
                   onSend: () => _send(canSend),
-                  onPropose: () => _proposeDate(canSend),
+                  onPropose: () => _proposePlanFlow(canSend),
                   onPhoto: () => _pickAndSendImage(canSend),
                   onBombPhoto: () => _pickAndSendImage(canSend, bomb: true),
+                  showGames: _gamesAvailable,
+                  onGames: () => _openIcebreaker(canSend),
                   onMic: () => _startRecording(canSend),
                 ),
             ],
@@ -746,7 +943,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _messageList() {
+  Widget _messageList({String? persistedStatus}) {
     return StreamBuilder<List<ChatMessage>>(
       stream: widget.chatService.observeMessages(widget.chatId),
       builder:
@@ -762,15 +959,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             .where((ChatMessage m) =>
                 m.type == MessageType.text ||
                 m.type.isMedia ||
-                m.type.isDateProposal)
+                m.type.isDateProposal ||
+                m.type.isDoubleAnswer ||
+                m.type.isTwoTruths)
             .length;
-        _journey = _deriveJourney(messages);
+        _journey = _deriveJourney(messages, persistedStatus: persistedStatus);
 
         // Reconciliación: el stream confirma los optimistas por su id real.
         final Set<String> streamIds =
             messages.map((ChatMessage m) => m.id).toSet();
-        if (_outgoing.any(
-            (_OutgoingMessage o) => o.realId != null && streamIds.contains(o.realId))) {
+        if (_outgoing.any((_OutgoingMessage o) =>
+            o.realId != null && streamIds.contains(o.realId))) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             setState(() => _outgoing.removeWhere((_OutgoingMessage o) =>
@@ -838,6 +1037,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 mine: mine,
                 onRespond: (String response) =>
                     _respondProposal(m.id, response),
+              );
+            }
+            if (m.type.isDoubleAnswer && m.doubleAnswer != null) {
+              return _DoubleAnswerBubble(
+                game: m.doubleAnswer!,
+                currentUid: widget.currentUid,
+                otherName: widget.other.displayName,
+                mine: mine,
+                onAnswer: () => _submitDoubleAnswer(m),
+              );
+            }
+            if (m.type.isTwoTruths && m.twoTruths != null) {
+              return _TwoTruthsBubble(
+                game: m.twoTruths!,
+                mine: mine,
+                onGuess: (int guess) => _guessTwoTruths(m, guess),
               );
             }
             return _TextBubble(text: m.text, mine: mine);
@@ -919,8 +1134,8 @@ class _TextBubble extends StatelessWidget {
     } else if (pending) {
       status = const Padding(
         padding: EdgeInsets.only(right: 4, bottom: 4),
-        child: Icon(Icons.schedule_rounded,
-            size: 12, color: AppColors.textMuted),
+        child:
+            Icon(Icons.schedule_rounded, size: 12, color: AppColors.textMuted),
       );
     }
 
@@ -933,6 +1148,216 @@ class _TextBubble extends StatelessWidget {
               mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: <Widget>[bubble, if (status != null) status],
         ),
+      ),
+    );
+  }
+}
+
+class _DoubleAnswerBubble extends StatelessWidget {
+  const _DoubleAnswerBubble({
+    required this.game,
+    required this.currentUid,
+    required this.otherName,
+    required this.mine,
+    required this.onAnswer,
+  });
+
+  final DoubleAnswer game;
+  final String currentUid;
+  final String otherName;
+  final bool mine;
+  final VoidCallback onAnswer;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool answered = game.hasAnswered(currentUid);
+    final bool revealed = game.isRevealed;
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.all(14),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.84),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.45)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.question_answer_rounded,
+                    size: 18, color: AppColors.attraRed),
+                const SizedBox(width: 6),
+                Text('Doble respuesta',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(game.question, style: theme.textTheme.bodyLarge),
+            const SizedBox(height: 10),
+            if (revealed)
+              ...game.answers.entries.map((MapEntry<String, String> entry) {
+                final String who = entry.key == currentUid ? 'Tu' : otherName;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: _MiniReveal(label: who, value: entry.value),
+                );
+              })
+            else if (answered)
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.lock_clock_rounded,
+                      size: 16, color: AppColors.textMuted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text('Respuesta guardada. Esperando al reveal.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: AppColors.textMuted)),
+                  ),
+                ],
+              )
+            else
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: onAnswer,
+                  child: const Text('Responder'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TwoTruthsBubble extends StatelessWidget {
+  const _TwoTruthsBubble({
+    required this.game,
+    required this.mine,
+    required this.onGuess,
+  });
+
+  final TwoTruths game;
+  final bool mine;
+  final ValueChanged<int> onGuess;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool canGuess = !mine && !game.isRevealed;
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.all(14),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.84),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.gold.withValues(alpha: 0.5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.psychology_alt_rounded,
+                    size: 18, color: AppColors.gold),
+                const SizedBox(width: 6),
+                Text('Dos verdades y una mentira',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (int i = 0; i < game.statements.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    CircleAvatar(
+                      radius: 12,
+                      child: Text('${i + 1}',
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(game.statements[i])),
+                    if (game.isRevealed && game.lieIndex == i)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 6),
+                        child: Icon(Icons.close_rounded,
+                            size: 18, color: AppColors.danger),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 6),
+            if (game.isRevealed)
+              Chip(
+                label: Text(game.correct == true
+                    ? 'Adivinado'
+                    : 'La mentira era la ${((game.lieIndex ?? 0) + 1)}'),
+              )
+            else if (canGuess)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List<Widget>.generate(
+                  game.statements.length,
+                  (int i) => OutlinedButton(
+                    onPressed: () => onGuess(i),
+                    child: Text('Mentira ${i + 1}'),
+                  ),
+                ),
+              )
+            else
+              Text('Esperando a que responda.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textMuted)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniReveal extends StatelessWidget {
+  const _MiniReveal({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.surfaceLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(label,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: AppColors.textMuted)),
+          const SizedBox(height: 2),
+          Text(value),
+        ],
       ),
     );
   }
@@ -969,24 +1394,20 @@ class _ContextBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               child: photoGone
                   ? Container(
-                      width: 48,
-                      height: 60,
+                      width: 64,
+                      height: 84,
                       color: const Color(0xFFE0E0E0),
                       child: const Icon(Icons.image_not_supported_outlined,
-                          size: 22))
-                  : Image.network(url,
-                      width: 48,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                          width: 48,
-                          height: 60,
-                          color: const Color(0xFFE0E0E0),
-                          child: const Icon(Icons.image_not_supported_outlined,
-                              size: 22))),
+                          size: 24))
+                  : GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) => _FullScreenImage(url: url))),
+                      child: AttraImage(url: url, width: 64, height: 84),
+                    ),
             ),
             const SizedBox(width: 10),
             Flexible(
@@ -1140,6 +1561,123 @@ class _DateProposalBubble extends StatelessWidget {
   }
 }
 
+class _TwoTruthsInput {
+  const _TwoTruthsInput({required this.statements, required this.lieIndex});
+
+  final List<String> statements;
+  final int lieIndex;
+}
+
+class _TwoTruthsComposerSheet extends StatefulWidget {
+  const _TwoTruthsComposerSheet();
+
+  @override
+  State<_TwoTruthsComposerSheet> createState() =>
+      _TwoTruthsComposerSheetState();
+}
+
+class _TwoTruthsComposerSheetState extends State<_TwoTruthsComposerSheet> {
+  final List<TextEditingController> _controllers = <TextEditingController>[
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  int _lieIndex = 0;
+
+  @override
+  void dispose() {
+    for (final TextEditingController controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  bool get _ready =>
+      _controllers.every((TextEditingController c) => c.text.trim().isNotEmpty);
+
+  void _submit() {
+    if (!_ready) return;
+    Navigator.of(context).pop(_TwoTruthsInput(
+      statements: _controllers
+          .map((TextEditingController c) => c.text.trim())
+          .toList(growable: false),
+      lieIndex: _lieIndex,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 14, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLine,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('Dos verdades y una mentira',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('Escribe tres frases y marca cual es la mentira.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 14),
+            for (int i = 0; i < _controllers.length; i++) ...<Widget>[
+              TextField(
+                controller: _controllers[i],
+                maxLength: 140,
+                decoration: InputDecoration(
+                  labelText: 'Frase ${i + 1}',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 4),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: List<Widget>.generate(
+                _controllers.length,
+                (int i) => ChoiceChip(
+                  label: Text('Mentira ${i + 1}'),
+                  selected: _lieIndex == i,
+                  onSelected: (_) => setState(() => _lieIndex = i),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('La frase marcada sera la mentira.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textMuted)),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _ready ? _submit : null,
+                icon: const Icon(Icons.psychology_alt_rounded),
+                label: const Text('Crear juego'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
@@ -1149,6 +1687,8 @@ class _Composer extends StatelessWidget {
     required this.onPropose,
     required this.onPhoto,
     required this.onBombPhoto,
+    required this.showGames,
+    required this.onGames,
     required this.onMic,
   });
 
@@ -1159,6 +1699,8 @@ class _Composer extends StatelessWidget {
   final VoidCallback onPropose;
   final VoidCallback onPhoto;
   final VoidCallback onBombPhoto;
+  final bool showGames;
+  final VoidCallback onGames;
   final VoidCallback onMic;
 
   @override
@@ -1184,6 +1726,12 @@ class _Composer extends StatelessWidget {
               onPressed: onPropose,
               icon: const Icon(Icons.event),
             ),
+            if (showGames)
+              IconButton(
+                tooltip: 'Juegos',
+                onPressed: onGames,
+                icon: const Icon(Icons.casino_outlined),
+              ),
             Expanded(
               child: TextField(
                 controller: controller,
@@ -1398,26 +1946,7 @@ class _ImageBubble extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxW, maxHeight: 320),
-              child: Image.network(
-                media.downloadUrl,
-                fit: BoxFit.cover,
-                loadingBuilder: (BuildContext context, Widget child,
-                    ImageChunkEvent? progress) {
-                  if (progress == null) return child;
-                  return Container(
-                    width: maxW,
-                    height: 220,
-                    color: const Color(0xFFE0E0E0),
-                    child: const Center(child: CircularProgressIndicator()),
-                  );
-                },
-                errorBuilder: (_, __, ___) => Container(
-                  width: maxW,
-                  height: 160,
-                  color: const Color(0xFFE0E0E0),
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
-              ),
+              child: AttraImage(url: media.downloadUrl, width: maxW),
             ),
           ),
         ),

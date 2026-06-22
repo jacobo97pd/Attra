@@ -80,11 +80,13 @@ class SessionGate extends StatelessWidget {
               boostService: controller.boostService,
               sparkService: controller.sparkService,
               feedMetricsService: controller.feedMetricsService,
+              notificationService: controller.notificationService,
               profileSummaryRepository: controller.profileSummaryRepository,
               integrationConnector: controller.integrationConnector,
               storyService: controller.storyService,
               aiVisualService: controller.aiVisualService,
               onSetAiConsent: controller.setAiVisualConsent,
+              onSetSlowDating: controller.setSlowDatingEnabled,
               onLoadProfileByUid: controller.loadProfileByUid,
             );
             break;

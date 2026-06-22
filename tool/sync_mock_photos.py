@@ -20,7 +20,19 @@ PROJ = "attra-database"
 BUCKET = "attra-database.firebasestorage.app"
 HDR = {"Authorization": f"Bearer {TOKEN}", "x-goog-user-project": PROJ}
 
-DOCS = ["mock_lucia", "mock_sara", "mock_diego", "mock_marcos"]
+DOCS = [
+    "mock_lucia",
+    "mock_sara",
+    "mock_diego",
+    "mock_marcos",
+    "mock_sofia_martin",
+    "mock_like_lucia_romero",
+    "mock_like_carla_navaro",
+    "mock_like_martina_vidal",
+    "mock_like_nerea_castro",
+    "mock_like_ines_molina",
+    "mock_like_paula_santos",
+]
 
 
 def list_images(prefix):

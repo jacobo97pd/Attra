@@ -20,6 +20,7 @@ import '../../profile/domain/profile_prompt.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_trait.dart';
 import '../../feed/data/feed_metrics_service.dart';
+import '../../notifications/data/notification_service.dart';
 import '../../settings/data/settings_repository.dart';
 import '../../spark/data/spark_service.dart';
 import '../data/auth_service.dart';
@@ -43,11 +44,13 @@ class SessionController extends ChangeNotifier {
     BoostService? boostService,
     SparkService? sparkService,
     FeedMetricsService? feedMetricsService,
+    NotificationService? notificationService,
     IntegrationConnector? integrationConnector,
   })  : _authService = authService,
         _sparkService = sparkService,
         _boostService = boostService,
         _feedMetricsService = feedMetricsService,
+        _notificationService = notificationService,
         _integrationConnector = integrationConnector,
         _storyService = storyService,
         _aiVisualService = aiVisualService,
@@ -80,6 +83,10 @@ class SessionController extends ChangeNotifier {
   final SparkService? _sparkService;
   final BoostService? _boostService;
   final FeedMetricsService? _feedMetricsService;
+  final NotificationService? _notificationService;
+
+  /// Bandeja de notificaciones in-app. Null si no se inyecta.
+  NotificationService? get notificationService => _notificationService;
 
   /// Servicio de Attra Spark (juego de 5 min). Null si no se inyecta.
   SparkService? get sparkService => _sparkService;
@@ -104,6 +111,16 @@ class SessionController extends ChangeNotifier {
     final String? uid = _state.user?.uid;
     if (uid == null) return;
     await _userRepository.setAiVisualConsent(uid: uid, granted: granted);
+    await _refreshAuthenticatedUser(uid);
+  }
+
+  /// Activa/desactiva Slow Dating (ajuste `privacy.slowDating`). Refresca el
+  /// usuario para que el feed reaccione (lee `AppUser.slowDatingEnabled`).
+  Future<void> setSlowDatingEnabled(bool value) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _settingsRepository
+        .patchValues(uid, <String, Object?>{'privacy.slowDating': value});
     await _refreshAuthenticatedUser(uid);
   }
 

@@ -5,10 +5,10 @@ import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../domain/date_builder.dart';
 
-/// Date Builder (Fase 7): el usuario elige preferencias de plan y obtiene una
-/// propuesta estructurada. Devuelve [DatePlanSuggestion] (place + note) que el
-/// chat pasa al sheet de propuesta de cita para que la edite y envíe.
-Future<DatePlanSuggestion?> showDateBuilderSheet(BuildContext context) {
+Future<DatePlanSuggestion?> showDateBuilderSheet(
+  BuildContext context, {
+  bool fullMode = true,
+}) {
   return showModalBottomSheet<DatePlanSuggestion>(
     context: context,
     isScrollControlled: true,
@@ -16,12 +16,14 @@ Future<DatePlanSuggestion?> showDateBuilderSheet(BuildContext context) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (_) => const _DateBuilderBody(),
+    builder: (_) => _DateBuilderBody(fullMode: fullMode),
   );
 }
 
 class _DateBuilderBody extends StatefulWidget {
-  const _DateBuilderBody();
+  const _DateBuilderBody({required this.fullMode});
+
+  final bool fullMode;
 
   @override
   State<_DateBuilderBody> createState() => _DateBuilderBodyState();
@@ -29,6 +31,10 @@ class _DateBuilderBody extends StatefulWidget {
 
 class _DateBuilderBodyState extends State<_DateBuilderBody> {
   DatePreferences _prefs = const DatePreferences();
+
+  bool get _ready => widget.fullMode
+      ? _prefs.isComplete
+      : _prefs.planType != null && _prefs.moment != null;
 
   @override
   Widget build(BuildContext context) {
@@ -58,11 +64,14 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
                 style: theme.textTheme.titleLarge
                     ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
-            Text('Elige lo que te apetece y te propongo una cita.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.textSecondary)),
+            Text(
+              widget.fullMode
+                  ? 'Elige lo que te apetece y te propongo una cita.'
+                  : 'Version basica: elige plan y momento.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textSecondary),
+            ),
             const SizedBox(height: 14),
-
             _Group<PlanType>(
               title: 'Tipo de plan',
               values: PlanType.values,
@@ -79,33 +88,41 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
               onSelect: (DateMoment v) =>
                   setState(() => _prefs = _prefs.copyWith(moment: v)),
             ),
-            _Group<DateBudget>(
-              title: 'Presupuesto',
-              values: DateBudget.values,
-              selected: _prefs.budget,
-              labelOf: (DateBudget v) => v.phrase,
-              onSelect: (DateBudget v) =>
-                  setState(() => _prefs = _prefs.copyWith(budget: v)),
-            ),
-            _Group<DateDuration>(
-              title: 'Duración',
-              values: DateDuration.values,
-              selected: _prefs.duration,
-              labelOf: (DateDuration v) => v.phrase,
-              onSelect: (DateDuration v) =>
-                  setState(() => _prefs = _prefs.copyWith(duration: v)),
-            ),
-            _Group<DateVibe>(
-              title: 'Vibe',
-              values: DateVibe.values,
-              selected: _prefs.vibe,
-              labelOf: (DateVibe v) => v.phrase,
-              onSelect: (DateVibe v) =>
-                  setState(() => _prefs = _prefs.copyWith(vibe: v)),
-            ),
-
+            if (widget.fullMode) ...<Widget>[
+              _Group<DateBudget>(
+                title: 'Presupuesto',
+                values: DateBudget.values,
+                selected: _prefs.budget,
+                labelOf: (DateBudget v) => v.phrase,
+                onSelect: (DateBudget v) =>
+                    setState(() => _prefs = _prefs.copyWith(budget: v)),
+              ),
+              _Group<DateDuration>(
+                title: 'Duracion',
+                values: DateDuration.values,
+                selected: _prefs.duration,
+                labelOf: (DateDuration v) => v.phrase,
+                onSelect: (DateDuration v) =>
+                    setState(() => _prefs = _prefs.copyWith(duration: v)),
+              ),
+              _Group<DateVibe>(
+                title: 'Vibe',
+                values: DateVibe.values,
+                selected: _prefs.vibe,
+                labelOf: (DateVibe v) => v.phrase,
+                onSelect: (DateVibe v) =>
+                    setState(() => _prefs = _prefs.copyWith(vibe: v)),
+              ),
+            ] else
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Plus desbloquea presupuesto, duracion y vibe.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textMuted),
+                ),
+              ),
             const SizedBox(height: 8),
-            // Sugerencia (se actualiza al elegir).
             if (_prefs.planType != null)
               Container(
                 padding: const EdgeInsets.all(14),
@@ -130,17 +147,20 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
             AttraPrimaryButton(
               label: 'Proponer esta cita',
               icon: Icons.calendar_today_rounded,
-              onPressed: _prefs.isComplete
-                  ? () => Navigator.of(context).pop(suggestion)
-                  : null,
+              onPressed:
+                  _ready ? () => Navigator.of(context).pop(suggestion) : null,
             ),
-            if (!_prefs.isComplete)
+            if (!_ready)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text('Elige una opción de cada apartado.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.textMuted)),
+                child: Text(
+                  widget.fullMode
+                      ? 'Elige una opcion de cada apartado.'
+                      : 'Elige tipo de plan y momento.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textMuted),
+                ),
               ),
           ],
         ),
@@ -181,25 +201,29 @@ class _Group<T> extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: values.map((T v) {
-              final bool sel = v == selected;
+              final bool selectedValue = v == selected;
               return GestureDetector(
                 onTap: () => onSelect(v),
                 child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: sel
+                    color: selectedValue
                         ? AppColors.attraRed.withValues(alpha: 0.18)
                         : AppColors.surfaceHigh,
                     borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
                     border: Border.all(
-                        color: sel ? AppColors.attraRed : AppColors.surfaceLine),
+                        color: selectedValue
+                            ? AppColors.attraRed
+                            : AppColors.surfaceLine),
                   ),
                   child: Text(labelOf(v),
                       style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 13,
-                          fontWeight: sel ? FontWeight.w700 : FontWeight.w500)),
+                          fontWeight: selectedValue
+                              ? FontWeight.w700
+                              : FontWeight.w500)),
                 ),
               );
             }).toList(growable: false),

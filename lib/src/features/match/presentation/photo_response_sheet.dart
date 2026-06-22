@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/attra_image.dart';
+
 /// Que accion eligio el usuario en el sheet de respuesta a una foto.
 enum PhotoResponseKind { like, attra }
 
@@ -114,11 +116,7 @@ class _PhotoResponseSheetState extends State<PhotoResponseSheet> {
                 child: SizedBox(
                   width: 72,
                   height: 96,
-                  child: widget.photoUrl.isEmpty
-                      ? const ColoredBox(color: Color(0xFFE0E0E0))
-                      : Image.network(widget.photoUrl, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const ColoredBox(color: Color(0xFFE0E0E0))),
+                  child: AttraImage(url: widget.photoUrl),
                 ),
               ),
               const SizedBox(width: 12),

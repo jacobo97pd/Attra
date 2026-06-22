@@ -2,6 +2,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../../../l10n/app_localizations.dart';
+import '../../../theme/app_colors.dart';
+
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
 import '../../auth/domain/app_user.dart';
@@ -9,6 +12,9 @@ import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/presentation/feed_screen.dart';
+import '../../notifications/data/notification_router.dart';
+import '../../notifications/data/notification_service.dart';
+import '../../notifications/presentation/notifications_screen.dart';
 import '../../integrations/domain/integration_connector.dart';
 import '../../match/data/match_service.dart';
 import '../../match/presentation/likes_received_screen.dart';
@@ -16,6 +22,7 @@ import '../../stories/data/story_service.dart';
 import '../../monetization/data/boost_service.dart';
 import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
+import '../../monetization/domain/premium_feature.dart';
 import '../../monetization/domain/subscription_tier.dart';
 import '../../monetization/presentation/boost_store_sheet.dart';
 import '../../monetization/presentation/entitlement_controller.dart';
@@ -62,10 +69,12 @@ class HomeShell extends StatefulWidget {
     this.boostService,
     this.sparkService,
     this.feedMetricsService,
+    this.notificationService,
     required this.profileSummaryRepository,
     required this.storyService,
     required this.aiVisualService,
     required this.onSetAiConsent,
+    required this.onSetSlowDating,
     required this.onLoadProfileByUid,
     this.integrationConnector,
     this.user,
@@ -121,10 +130,12 @@ class HomeShell extends StatefulWidget {
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;
+  final NotificationService? notificationService;
   final ProfileSummaryRepository profileSummaryRepository;
   final StoryService storyService;
   final AiVisualService aiVisualService;
   final Future<void> Function(bool granted) onSetAiConsent;
+  final Future<void> Function(bool value) onSetSlowDating;
   final Future<SeedProfile?> Function(String uid) onLoadProfileByUid;
   final IntegrationConnector? integrationConnector;
 
@@ -142,6 +153,17 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _maybeBuildSessionControllers();
+    // Routing de notificaciones push: consume una ruta pendiente (tap con la
+    // app cerrada) y escucha futuros taps (background).
+    NotificationRouter.instance.pendingRoute.addListener(_onPushRoute);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onPushRoute());
+  }
+
+  void _onPushRoute() {
+    final String? route = NotificationRouter.instance.consume();
+    if (route == null) return;
+    final int? tab = _tabForRoute(route);
+    if (tab != null && mounted) setState(() => _tab = tab);
   }
 
   @override
@@ -194,12 +216,14 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    NotificationRouter.instance.pendingRoute.removeListener(_onPushRoute);
     _disposeSessionControllers();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final AppLocalizations l10n = AppLocalizations.of(context);
     final String uid = widget.user?.uid ?? '';
     final int attrasBalance = _entitlementController?.attrasBalance ?? 0;
 
@@ -218,6 +242,12 @@ class _HomeShellState extends State<HomeShell> {
               )
             : const _AttraTitleLogo(),
         actions: <Widget>[
+          if (widget.notificationService != null && uid.isNotEmpty)
+            NotificationBell(
+              service: widget.notificationService!,
+              uid: uid,
+              onTap: _openNotifications,
+            ),
           if (widget.boostService != null)
             IconButton(
               tooltip: 'Boosts y Swipes',
@@ -233,11 +263,6 @@ class _HomeShellState extends State<HomeShell> {
                   style: TextStyle(
                       color: Color(0xFFB8860B), fontWeight: FontWeight.w700)),
             ),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout),
-            onPressed: widget.onLogout,
-          ),
         ],
       ),
       body: FeedScreen(
@@ -250,6 +275,10 @@ class _HomeShellState extends State<HomeShell> {
         reloadToken: _feedReloadToken,
         storyService: widget.storyService,
         isPlus: _entitlementController?.isPlusActive ?? false,
+        canRewind:
+            _entitlementController?.hasFeature(PremiumFeature.rewind) ?? false,
+        rewindUnlimited: _entitlementController?.isProActive ?? false,
+        onOpenUpgrade: _openPaywall,
         aiVisualService: widget.aiVisualService,
         canUseVisualMatch:
             (_entitlementController?.canUseAiVisualMatching ?? false) &&
@@ -257,11 +286,46 @@ class _HomeShellState extends State<HomeShell> {
         canSeeLikedMe: _entitlementController?.canSeeAllLikes ?? false,
         metrics: widget.feedMetricsService,
         boostService: widget.boostService,
+        // Anuncios: flag activo Y el usuario NO es Plus/Pro (premium sin ads).
+        adsEnabled: (_entitlementController?.flags.adsEnabled ?? false) &&
+            !(_entitlementController?.isPlusActive ?? false),
       ),
     );
 
+    final bool likesProtected = !(_entitlementController?.canSeeAllLikes ?? false);
     final Widget likesTab = Scaffold(
-      appBar: AppBar(title: const Text('Likes')),
+      appBar: AppBar(
+        title: Text(l10n.likesTitle),
+        actions: <Widget>[
+          if (likesProtected)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.shield_outlined,
+                      size: 16, color: AppColors.attraRed),
+                  const SizedBox(width: 6),
+                  RichText(
+                    text: const TextSpan(
+                      style: TextStyle(fontSize: 12.5),
+                      children: <TextSpan>[
+                        TextSpan(
+                            text: 'Tus likes están\n',
+                            style: TextStyle(color: AppColors.textSecondary)),
+                        TextSpan(
+                            text: 'protegidos',
+                            style: TextStyle(
+                                color: AppColors.attraRed,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
       body: uid.isEmpty
           ? const SizedBox.shrink()
           : LikesReceivedScreen(
@@ -270,14 +334,20 @@ class _HomeShellState extends State<HomeShell> {
               chatService: widget.chatService,
               summaries: widget.profileSummaryRepository,
               canSeeAll: _entitlementController?.canSeeAllLikes ?? false,
+              showCompatibility: _entitlementController?.isProActive ?? false,
+              currentUserInterests: widget.user?.interests ?? const <String>[],
+              onImproveProfile: () => setState(() => _tab = 3),
               onUpgrade: _openPaywall,
+              // Plus/Pro pueden abrir el perfil de quien les dio like.
+              loadProfile: widget.onLoadProfileByUid,
               sparkService: widget.sparkService,
               sparkEnabled: _entitlementController?.sparkEnabled ?? false,
+              currentUserPhotoUrl: widget.user?.photoUrl,
             ),
     );
 
     final Widget chatsTab = Scaffold(
-      appBar: AppBar(title: const Text('Chats')),
+      appBar: AppBar(title: Text(l10n.chatsTitle)),
       body: uid.isEmpty
           ? const SizedBox.shrink()
           : ChatsScreen(
@@ -296,6 +366,23 @@ class _HomeShellState extends State<HomeShell> {
                   _entitlementController?.flags.icebreakersEnabled ?? false,
               dateBuilderEnabled:
                   _entitlementController?.flags.dateBuilderEnabled ?? false,
+              dateBuilderFull:
+                  _entitlementController?.journeyLimits.dateBuilderFull ??
+                      false,
+              thisOrThatEnabled:
+                  _entitlementController?.flags.thisOrThatEnabled ?? false,
+              doubleAnswerEnabled:
+                  (_entitlementController?.flags.miniGamesEnabled ?? false) &&
+                      (_entitlementController?.flags.doubleAnswerEnabled ??
+                          false),
+              twoTruthsEnabled:
+                  (_entitlementController?.flags.miniGamesEnabled ?? false) &&
+                      (_entitlementController?.flags.twoTruthsEnabled ?? false),
+              matchReactivationEnabled:
+                  (_entitlementController?.flags.matchReactivationEnabled ??
+                          false) &&
+                      (_entitlementController?.journeyLimits.canReactivate ??
+                          false),
             ),
     );
 
@@ -326,6 +413,7 @@ class _HomeShellState extends State<HomeShell> {
           (_entitlementController?.tier ?? SubscriptionTier.free).label,
       isProUser: isPro,
       onOpenAiVisual: _openAiVisual,
+      onSetSlowDating: widget.onSetSlowDating,
     );
 
     return Scaffold(
@@ -345,26 +433,26 @@ class _HomeShellState extends State<HomeShell> {
           if (index == 0 && _tab != 0) _feedReloadToken++;
           _tab = index;
         }),
-        destinations: const <NavigationDestination>[
+        destinations: <NavigationDestination>[
           NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore),
-            label: 'Feed',
+            icon: const Icon(Icons.explore_outlined),
+            selectedIcon: const Icon(Icons.explore),
+            label: l10n.navFeed,
           ),
           NavigationDestination(
-            icon: Icon(Icons.favorite_border),
-            selectedIcon: Icon(Icons.favorite),
-            label: 'Likes',
+            icon: const Icon(Icons.favorite_border),
+            selectedIcon: const Icon(Icons.favorite),
+            label: l10n.navLikes,
           ),
           NavigationDestination(
-            icon: Icon(Icons.forum_outlined),
-            selectedIcon: Icon(Icons.forum),
-            label: 'Chats',
+            icon: const Icon(Icons.forum_outlined),
+            selectedIcon: const Icon(Icons.forum),
+            label: l10n.navChats,
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Perfil',
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: l10n.navProfile,
           ),
         ],
       ),
@@ -403,6 +491,44 @@ class _HomeShellState extends State<HomeShell> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$what: disponible próximamente.')),
     );
+  }
+
+  void _openNotifications() {
+    final NotificationService? service = widget.notificationService;
+    final String uid = widget.user?.uid ?? '';
+    if (service == null || uid.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => NotificationsScreen(
+        service: service,
+        uid: uid,
+        onOpenRoute: _handleNotifRoute,
+      ),
+    ));
+  }
+
+  /// Pestaña destino para una ruta lógica de notificación.
+  int? _tabForRoute(String route) {
+    switch (route.split(':').first) {
+      case 'feed':
+        return 0;
+      case 'likes':
+        return 1;
+      case 'chats':
+      case 'chat':
+        return 2;
+      case 'profile':
+        return 3;
+    }
+    return null;
+  }
+
+  /// Desde la bandeja in-app: cierra la bandeja y cambia de pestaña.
+  void _handleNotifRoute(String route) {
+    final int? tab = _tabForRoute(route);
+    if (tab != null && mounted) {
+      Navigator.of(context).maybePop(); // cierra la bandeja
+      setState(() => _tab = tab);
+    }
   }
 
   void _openBoostStore() {
