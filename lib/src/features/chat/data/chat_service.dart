@@ -257,6 +257,56 @@ class ChatService {
     });
   }
 
+  Future<String> startDoubleAnswer({
+    required String chatId,
+    required String question,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('startDoubleAnswer', <String, dynamic>{
+      'chatId': chatId,
+      'question': question,
+    });
+    return (data['messageId'] as String?) ?? '';
+  }
+
+  Future<void> submitDoubleAnswer({
+    required String chatId,
+    required String messageId,
+    required String answer,
+  }) async {
+    await _call('submitDoubleAnswer', <String, dynamic>{
+      'chatId': chatId,
+      'messageId': messageId,
+      'answer': answer,
+    });
+  }
+
+  Future<String> startTwoTruths({
+    required String chatId,
+    required List<String> statements,
+    required int lieIndex,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('startTwoTruths', <String, dynamic>{
+      'chatId': chatId,
+      'statements': statements,
+      'lieIndex': lieIndex,
+    });
+    return (data['messageId'] as String?) ?? '';
+  }
+
+  Future<void> guessTwoTruths({
+    required String chatId,
+    required String messageId,
+    required int guessIndex,
+  }) async {
+    await _call('guessTwoTruths', <String, dynamic>{
+      'chatId': chatId,
+      'messageId': messageId,
+      'guessIndex': guessIndex,
+    });
+  }
+
   Future<void> setTyping(String chatId, bool isTyping) async {
     await _call('setTyping', <String, dynamic>{
       'chatId': chatId,

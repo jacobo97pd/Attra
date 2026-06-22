@@ -1,0 +1,43 @@
+{
+  "@@locale": "es",
+  "navFeed": "Feed",
+  "@navFeed": { "description": "Etiqueta de la pestaña de descubrimiento" },
+  "navLikes": "Likes",
+  "navChats": "Chats",
+  "navProfile": "Perfil",
+
+  "feedTitle": "Attra",
+  "feedEmptyTitle": "No hay más personas por el momento",
+  "feedEmptyBody": "Cuando entren nuevos perfiles compatibles aparecerán aquí. No volverás a ver a quien ya likeaste o pasaste.",
+  "feedReload": "Recargar",
+
+  "likesTitle": "Likes",
+  "chatsTitle": "Chats",
+  "settingsTitle": "Ajustes",
+
+  "matchTitle": "¡Menudo match!",
+  "matchSubtitle": "Habéis conectado. Rompe el hielo antes de que se enfríe ✨",
+  "matchOpenChat": "Abrir chat",
+  "matchKeepBrowsing": "Seguir descubriendo",
+  "matchSendHint": "Envía un mensaje…",
+  "matchSuggestionLabel": "Apertura sugerida",
+
+  "commonCancel": "Cancelar",
+  "commonAccept": "Aceptar",
+  "commonSave": "Guardar",
+  "commonRetry": "Reintentar",
+  "commonLogout": "Cerrar sesión",
+
+  "slowDatingTitle": "Slow Dating",
+  "slowDatingSubtitle": "Citas con calma: menos perfiles pero más afines a ti.",
+  "slowDatingActiveTag": "Activo",
+  "slowDatingActivate": "Activar",
+  "slowDatingNotNow": "Ahora no",
+  "slowDatingEnabledToast": "Slow Dating activado. Tu feed irá con calma 🌿",
+  "slowDatingDisabledToast": "Slow Dating desactivado.",
+
+  "notificationsTitle": "Notificaciones",
+  "notificationsMarkRead": "Marcar leídas",
+  "notificationsEmptyTitle": "Sin novedades por ahora",
+  "notificationsEmptyBody": "Cuando alguien te dé like o te escriba, lo verás aquí 🔔"
+}

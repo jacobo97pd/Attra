@@ -21,6 +21,7 @@ class MonetizationFeatureFlags {
     this.twoTruthsEnabled = false,
     this.dateBuilderEnabled = false,
     this.matchReactivationEnabled = false,
+    this.adsEnabled = false,
     this.weeklyFreeAttras = 0,
     this.plusMonthlyAttras = 3,
     this.premiumMonthlyAttras = 10,
@@ -46,6 +47,7 @@ class MonetizationFeatureFlags {
         twoTruthsEnabled = false,
         dateBuilderEnabled = false,
         matchReactivationEnabled = false,
+        adsEnabled = false,
         weeklyFreeAttras = 0,
         plusMonthlyAttras = 0,
         premiumMonthlyAttras = 0,
@@ -75,6 +77,10 @@ class MonetizationFeatureFlags {
   final bool twoTruthsEnabled;
   final bool dateBuilderEnabled;
   final bool matchReactivationEnabled;
+
+  /// Anuncios (AdMob native cards en el feed). OPT-IN, default false. Aunque
+  /// esté true, NO se muestran a Plus/Pro (se decide en la UI con el tier).
+  final bool adsEnabled;
 
   final int weeklyFreeAttras;
   final int plusMonthlyAttras;
@@ -121,6 +127,7 @@ class MonetizationFeatureFlags {
           'date_builder_enabled', readBool('dateBuilderEnabled', false)),
       matchReactivationEnabled: readBool('match_reactivation_enabled',
           readBool('matchReactivationEnabled', false)),
+      adsEnabled: readBool('ads_enabled', readBool('adsEnabled', false)),
       weeklyFreeAttras: readInt('weeklyFreeAttras', 0),
       plusMonthlyAttras: readInt('plusMonthlyAttras', 3),
       premiumMonthlyAttras: readInt('premiumMonthlyAttras', 10),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// Aro de story: avatar con anillo degradado si hay story viva. Si [isAdd]
@@ -55,8 +56,9 @@ class StoryRing extends StatelessWidget {
                   CircleAvatar(
                     radius: size / 2,
                     backgroundColor: const Color(0xFFE0E0E0),
-                    backgroundImage:
-                        imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                    backgroundImage: imageUrl.isNotEmpty
+                        ? CachedNetworkImageProvider(imageUrl)
+                        : null,
                     child: imageUrl.isEmpty
                         ? Text(initial,
                             style: const TextStyle(fontWeight: FontWeight.bold))

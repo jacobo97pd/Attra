@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../widgets/attra_image.dart';
 import '../../auth/domain/app_user.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_state.dart';
@@ -13,6 +15,26 @@ import '../../profile/presentation/intro_media_editor.dart';
 import '../../profile/presentation/profile_prompts_editor_screen.dart';
 import '../../profile/presentation/profile_strength_card.dart';
 import '../../profile/presentation/profile_view_screen.dart';
+
+/// Fila con icono + texto para el diálogo explicativo de Slow Dating.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent = Theme.of(context).colorScheme.primary;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(icon, size: 18, color: accent),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text)),
+      ],
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -38,6 +60,7 @@ class HomeScreen extends StatefulWidget {
     this.onOpenSettings,
     this.onOpenUpgrade,
     this.onOpenAiVisual,
+    this.onSetSlowDating,
     this.currentPlanLabel = 'Free',
     this.isProUser = false,
     this.user,
@@ -88,6 +111,10 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenUpgrade;
   final VoidCallback? onOpenAiVisual;
+
+  /// Activa/desactiva Slow Dating (toggle destacado en el perfil).
+  final Future<void> Function(bool value)? onSetSlowDating;
+
   final String currentPlanLabel;
   final bool isProUser;
 
@@ -99,7 +126,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final ImagePicker _imagePicker = ImagePicker();
 
   ProfileCompletionState? _profile;
-  List<SeedProfile> _seedProfiles = const <SeedProfile>[];
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -158,13 +184,11 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       final ProfileCompletionState profile = await widget.onLoadProfileState();
-      final List<SeedProfile> seeds = await widget.onLoadSeedProfiles();
       if (!mounted) {
         return;
       }
       setState(() {
         _profile = profile;
-        _seedProfiles = seeds;
         _loading = false;
       });
     } catch (error) {
@@ -377,11 +401,6 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Actualizar',
             icon: const Icon(Icons.refresh),
           ),
-          IconButton(
-            onPressed: _busy ? null : widget.onLogout,
-            tooltip: 'Cerrar sesion',
-            icon: const Icon(Icons.logout),
-          ),
         ],
       ),
       body: SafeArea(
@@ -407,6 +426,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildSettingsCard(theme),
                     const SizedBox(height: 12),
                   ],
+                  if (widget.onSetSlowDating != null) ...<Widget>[
+                    _buildSlowDatingCard(theme),
+                    const SizedBox(height: 12),
+                  ],
                   _buildChecklistCard(theme, profile),
                   const SizedBox(height: 12),
                   _buildRewardsCard(theme, profile),
@@ -423,7 +446,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onDeleteVideo: widget.onDeleteIntroVideo,
                   ),
                   const SizedBox(height: 12),
-                  _buildSeedProfilesCard(theme),
+                  _buildLogoutButton(theme),
                   const SizedBox(height: 12),
                   _buildDangerZoneCard(theme),
                   if (_error != null ||
@@ -460,7 +483,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 CircleAvatar(
                   radius: 28,
                   backgroundImage: (widget.user?.photoUrl?.isNotEmpty ?? false)
-                      ? NetworkImage(widget.user!.photoUrl!)
+                      ? CachedNetworkImageProvider(widget.user!.photoUrl!)
                       : null,
                   child: (widget.user?.photoUrl?.isNotEmpty ?? false)
                       ? null
@@ -580,6 +603,111 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: const Text('Privacidad, notificaciones, cuenta…'),
         trailing: const Icon(Icons.chevron_right),
         onTap: widget.onOpenSettings,
+      ),
+    );
+  }
+
+  /// Toggle DESTACADO de Slow Dating en el perfil. Al activarlo, explica en qué
+  /// consiste; al confirmar, persiste el ajuste y el feed cambia su lógica.
+  Widget _buildSlowDatingCard(ThemeData theme) {
+    final bool active = widget.user?.slowDatingEnabled ?? false;
+    final Color accent = theme.colorScheme.primary;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+            color: active
+                ? accent.withValues(alpha: 0.6)
+                : theme.colorScheme.outline.withValues(alpha: 0.4)),
+      ),
+      child: SwitchListTile(
+        value: active,
+        onChanged: _busy ? null : _toggleSlowDating,
+        secondary: CircleAvatar(
+          backgroundColor: accent.withValues(alpha: 0.16),
+          child: Icon(Icons.spa_rounded, color: accent),
+        ),
+        title: Row(
+          children: <Widget>[
+            const Flexible(child: Text('Slow Dating')),
+            const SizedBox(width: 8),
+            if (active)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text('Activo',
+                    style: TextStyle(
+                        color: accent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ],
+        ),
+        subtitle: const Text(
+            'Citas con calma: menos perfiles pero más afines a ti.'),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+    );
+  }
+
+  Future<void> _toggleSlowDating(bool value) async {
+    final Future<void> Function(bool)? cb = widget.onSetSlowDating;
+    if (cb == null) return;
+    if (value) {
+      final bool? ok = await _showSlowDatingInfo();
+      if (ok != true) return;
+    }
+    setState(() => _busy = true);
+    try {
+      await cb(value);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(value
+              ? 'Slow Dating activado. Tu feed irá con calma 🌿'
+              : 'Slow Dating desactivado.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<bool?> _showSlowDatingInfo() {
+    final ThemeData theme = Theme.of(context);
+    return showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        icon: Icon(Icons.spa_rounded, color: theme.colorScheme.primary, size: 36),
+        title: const Text('Slow Dating', textAlign: TextAlign.center),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Citas con calma, no deslizar sin parar. Si lo activas:'),
+            SizedBox(height: 12),
+            _InfoRow(icon: Icons.tune_rounded, text: 'Ves MENOS perfiles, pero más afines a ti (intereses y lo que buscáis).'),
+            SizedBox(height: 8),
+            _InfoRow(icon: Icons.favorite_rounded, text: 'Prioriza conexiones intencionales sobre el match masivo.'),
+            SizedBox(height: 8),
+            _InfoRow(icon: Icons.toggle_off_rounded, text: 'Puedes desactivarlo cuando quieras. No borra a nadie.'),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Ahora no'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Activar'),
+          ),
+        ],
       ),
     );
   }
@@ -708,14 +836,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: profile.additionalPhotos.map((AdditionalPhoto photo) {
                   return Stack(
                     children: <Widget>[
-                      ClipRRect(
+                      AttraImage(
+                        url: photo.url,
+                        width: 96,
+                        height: 96,
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          photo.url,
-                          width: 96,
-                          height: 96,
-                          fit: BoxFit.cover,
-                        ),
                       ),
                       Positioned(
                         right: 2,
@@ -804,43 +929,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) _reload(); // refresca el espejo legacy y el score
   }
 
-  Widget _buildSeedProfilesCard(ThemeData theme) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Seed profiles (testing interno)',
-                style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              'Perfiles sinteticos coherentes para pruebas de feed y matching futuro.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            if (_seedProfiles.isEmpty)
-              const Text('No hay seed profiles cargados en Firestore.')
-            else
-              ..._seedProfiles.take(5).map((SeedProfile seed) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  leading: const Icon(Icons.smart_toy_outlined),
-                  title: Text(
-                    '${seed.displayName} - ${seed.city}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    'scenario: ${seed.botScenario} - quality: ${seed.seedQualityScore}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                );
-              }),
-          ],
-        ),
+  Widget _buildLogoutButton(ThemeData theme) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: _busy ? null : widget.onLogout,
+        child: const Text('Cerrar sesión'),
       ),
     );
   }

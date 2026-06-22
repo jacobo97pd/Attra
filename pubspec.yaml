@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.2+3
 
 environment:
   sdk: ^3.5.4
@@ -30,24 +30,32 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Internacionalización: la app sigue el idioma del sistema (es/en…).
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
 
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # Caché de imágenes en disco (perfiles/fotos): evita re-descargar y acelera
+  # scroll y reentradas. Ver AttraImage.
+  cached_network_image: ^3.4.1
   firebase_core: ^4.6.0
   firebase_auth: ^6.3.0
   cloud_firestore: ^6.2.0
   cloud_functions: ^6.0.0
   firebase_storage: ^13.0.1
+  firebase_messaging: ^16.0.1
   google_sign_in: ^6.2.2
   sign_in_with_apple: ^6.1.1
   crypto: ^3.0.6
   image_picker: ^1.1.2
   geolocator: ^13.0.2
-  flutter_web_auth_2: ^3.1.2
+  flutter_web_auth_2: ^5.0.3
   image: ^4.2.0
-  record: ^5.1.2
+  record: ^6.2.1
   just_audio: ^0.9.42
   video_player: ^2.9.2
   video_compress: ^3.1.3
@@ -55,6 +63,9 @@ dependencies:
   # / detección). No-op en web y escritorio. Ver ScreenGuard.
   screen_protector: ^1.4.2
   country_code_picker: ^3.0.0
+  # Anuncios nativos (AdMob) como cards en el feed. Detrás de feature flag y
+  # ocultos a Plus/Pro. Nunca en chats.
+  google_mobile_ads: ^5.3.1
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +88,8 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  # Genera AppLocalizations desde los .arb de lib/l10n (ver l10n.yaml).
+  generate: true
   assets:
     - assets/images/app_logo.png
     - assets/images/ATTRA.png

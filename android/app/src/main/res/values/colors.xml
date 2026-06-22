@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Rojo coral de marca Attra (#FF4F68), para el acento de las notificaciones. -->
+    <color name="attra_notification_color">#FF4F68</color>
+</resources>

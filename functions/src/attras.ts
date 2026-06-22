@@ -40,7 +40,11 @@ function hasContent(c: ContextMessageParams): boolean {
 /// sendAttra: like destacado consumible, opcionalmente sobre una foto y con
 /// comentario. Consume 1 Attra (transaccion atomica = sin perdida ni refund
 /// manual) y, si hay reciprocidad, crea match con mensaje de apertura.
-export const sendAttra = onCall({ region: REGION }, async (request): Promise<AttraResult> => {
+// minInstances: 1 mantiene la función caliente (sin cold start) en la ruta del
+// Attra → el match aparece antes.
+export const sendAttra = onCall(
+  { region: REGION, minInstances: 1 },
+  async (request): Promise<AttraResult> => {
   const fromUid = requireAuthUid(request.auth);
   const toUid = requireStringArg(request.data?.toUid, "toUid");
   if (fromUid === toUid) {

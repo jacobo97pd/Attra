@@ -1,14 +1,42 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue } from "firebase-admin/firestore";
+import { DocumentData, FieldValue, Transaction } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { REGION, STORAGE_BUCKET, db } from "./firebase";
 import {
+  JourneyStatus,
   MAX_MESSAGE_LENGTH,
   col,
   existsBlockBetween,
+  nextJourneyStatus,
   requireAuthUid,
   requireStringArg,
 } from "./common";
+
+const CONVERSATION_THRESHOLD = 6;
+
+function numberField(data: DocumentData, key: string): number {
+  const value = data[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function journeyPatch(
+  tx: Transaction,
+  matchId: string,
+  current: unknown,
+  candidate: JourneyStatus,
+  now: FieldValue
+): Record<string, unknown> {
+  const journeyStatus = nextJourneyStatus(current, candidate);
+  const patch = { journeyStatus, journeyUpdatedAt: now };
+  tx.set(col.matches.doc(matchId), patch, { merge: true });
+  return patch;
+}
+
+function messageCandidate(nextCount: number): JourneyStatus {
+  return nextCount >= CONVERSATION_THRESHOLD
+    ? "conversation_active"
+    : "icebreaker_started";
+}
 
 /// sendMessage: valida pertenencia + chat activo + no-bloqueo, crea el mensaje
 /// y actualiza el chat (lastMessage + unreadCount del receptor) atomicamente.
@@ -51,8 +79,17 @@ export const sendMessage = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
     }
     const receiverId = users.find((u) => u !== senderId) ?? "";
+    const matchId = (chat.matchId ?? chatId).toString();
+    const nextCount = numberField(chat, "realMessageCount") + 1;
 
     const now = FieldValue.serverTimestamp();
+    const journey = journeyPatch(
+      tx,
+      matchId,
+      chat.journeyStatus,
+      messageCandidate(nextCount),
+      now
+    );
     tx.set(messageRef, {
       senderId,
       receiverId,
@@ -67,6 +104,8 @@ export const sendMessage = onCall({ region: REGION }, async (request) => {
       lastMessageSenderId: senderId,
       lastMessageAt: now,
       updatedAt: now,
+      realMessageCount: FieldValue.increment(1),
+      ...journey,
       [`unreadCountByUser.${receiverId}`]: FieldValue.increment(1),
     });
     return messageRef.id;
@@ -177,7 +216,16 @@ export const sendMediaMessage = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
     }
     const receiverId = users.find((u) => u !== senderId) ?? "";
+    const matchId = (chat.matchId ?? chatId).toString();
+    const nextCount = numberField(chat, "realMessageCount") + 1;
     const now = FieldValue.serverTimestamp();
+    const journey = journeyPatch(
+      tx,
+      matchId,
+      chat.journeyStatus,
+      messageCandidate(nextCount),
+      now
+    );
 
     tx.set(chatRef.collection("messages").doc(messageId), {
       senderId,
@@ -212,6 +260,8 @@ export const sendMediaMessage = onCall({ region: REGION }, async (request) => {
       lastMessageSenderId: senderId,
       lastMessageAt: now,
       updatedAt: now,
+      realMessageCount: FieldValue.increment(1),
+      ...journey,
       [`unreadCountByUser.${receiverId}`]: FieldValue.increment(1),
     });
   });
@@ -424,8 +474,16 @@ export const sendDateProposal = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
     }
     const receiverId = users.find((u) => u !== senderId) ?? "";
+    const matchId = (chat.matchId ?? chatId).toString();
 
     const now = FieldValue.serverTimestamp();
+    const journey = journeyPatch(
+      tx,
+      matchId,
+      chat.journeyStatus,
+      "date_proposed",
+      now
+    );
     tx.set(messageRef, {
       senderId,
       receiverId,
@@ -449,6 +507,8 @@ export const sendDateProposal = onCall({ region: REGION }, async (request) => {
       lastMessageSenderId: senderId,
       lastMessageAt: now,
       updatedAt: now,
+      realMessageCount: FieldValue.increment(1),
+      ...journey,
       [`unreadCountByUser.${receiverId}`]: FieldValue.increment(1),
     });
     return messageRef.id;
@@ -493,10 +553,25 @@ export const respondDateProposal = onCall({ region: REGION }, async (request) =>
     if (msg.senderId === uid) {
       throw new HttpsError("failed-precondition", "No puedes responder tu propia propuesta.");
     }
+    const now = FieldValue.serverTimestamp();
     tx.update(messageRef, {
       "dateProposal.status": response,
-      "dateProposal.respondedAt": FieldValue.serverTimestamp(),
+      "dateProposal.respondedAt": now,
     });
+    if (response === "accepted") {
+      const matchId = (chat.matchId ?? chatId).toString();
+      const journey = journeyPatch(
+        tx,
+        matchId,
+        chat.journeyStatus,
+        "date_accepted",
+        now
+      );
+      tx.update(chatRef, {
+        updatedAt: now,
+        ...journey,
+      });
+    }
   });
 
   return { ok: true };

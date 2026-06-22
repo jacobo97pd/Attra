@@ -49,6 +49,7 @@ class UserMatch {
     this.originPhotoId,
     this.originPhotoUrlSnapshot,
     this.originCommentText,
+    this.journeyStatus,
     this.createdAt,
     this.updatedAt,
     this.lastMessageAt,
@@ -71,6 +72,7 @@ class UserMatch {
   final String? originPhotoId;
   final String? originPhotoUrlSnapshot;
   final String? originCommentText;
+  final String? journeyStatus;
 
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -107,6 +109,7 @@ class UserMatch {
       originPhotoId: map['originPhotoId'] as String?,
       originPhotoUrlSnapshot: map['originPhotoUrlSnapshot'] as String?,
       originCommentText: map['originCommentText'] as String?,
+      journeyStatus: map['journeyStatus'] as String?,
       createdAt: _asDate(map['createdAt']),
       updatedAt: _asDate(map['updatedAt']),
       lastMessageAt: _asDate(map['lastMessageAt']),

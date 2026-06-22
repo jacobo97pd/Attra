@@ -1,214 +1,271 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/attra_image.dart';
+import '../domain/like.dart';
 
-/// Overlay "Nuevo match". Si el match nacio de un comentario a una foto,
-/// muestra la miniatura y el comentario de apertura. CTA: abrir chat.
+/// Pantalla "¡Es un match!" con los colores corporativos de Attra: dos fotos
+/// circulares con halo coral, intereses en común y CTAs (enviar mensaje / seguir
+/// viendo). Backward compatible: mantiene `showMatchCreatedDialog`.
 Future<void> showMatchCreatedDialog(
   BuildContext context, {
   required String name,
-  required String photoUrl,
+  required String? photoUrl,
   required bool hasAttra,
+  String? currentUserPhotoUrl,
+  List<String> sharedInterests = const <String>[],
   String? originComment,
   String? originPhotoUrl,
-  required VoidCallback onOpenChat,
+  LikeTargetType? originType,
+  VoidCallback? onOpenChat,
   VoidCallback? onPlaySpark,
+  Future<void> Function(String text)? onSendFirstMessage,
 }) {
-  return showDialog<void>(
-    context: context,
-    barrierDismissible: true,
-    builder: (BuildContext context) => _MatchCreatedDialog(
+  for (final String? url in <String?>[photoUrl, currentUserPhotoUrl]) {
+    AttraImage.precache(context, url);
+  }
+  // Transición rápida tipo "pop" (fade + escala) en vez del slide lento.
+  return Navigator.of(context).push(PageRouteBuilder<void>(
+    opaque: true,
+    fullscreenDialog: true,
+    transitionDuration: const Duration(milliseconds: 200),
+    reverseTransitionDuration: const Duration(milliseconds: 140),
+    pageBuilder: (_, __, ___) => _MatchCelebrationScreen(
       name: name,
       photoUrl: photoUrl,
       hasAttra: hasAttra,
-      originComment: originComment,
-      originPhotoUrl: originPhotoUrl,
+      currentUserPhotoUrl: currentUserPhotoUrl,
+      sharedInterests: sharedInterests,
       onOpenChat: onOpenChat,
       onPlaySpark: onPlaySpark,
     ),
-  );
+    transitionsBuilder: (_, Animation<double> animation, __, Widget child) {
+      final Animation<double> curved =
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  ));
 }
 
-class _MatchCreatedDialog extends StatelessWidget {
-  const _MatchCreatedDialog({
+class _MatchCelebrationScreen extends StatelessWidget {
+  const _MatchCelebrationScreen({
     required this.name,
     required this.photoUrl,
     required this.hasAttra,
-    required this.originComment,
-    required this.originPhotoUrl,
-    required this.onOpenChat,
+    this.currentUserPhotoUrl,
+    this.sharedInterests = const <String>[],
+    this.onOpenChat,
     this.onPlaySpark,
   });
 
   final String name;
-  final String photoUrl;
+  final String? photoUrl;
   final bool hasAttra;
-  final String? originComment;
-  final String? originPhotoUrl;
-  final VoidCallback onOpenChat;
+  final String? currentUserPhotoUrl;
+  final List<String> sharedInterests;
+  final VoidCallback? onOpenChat;
   final VoidCallback? onPlaySpark;
+
+  void _close(BuildContext context) => Navigator.of(context).maybePop();
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool fromPhoto =
-        (originComment != null && originComment!.trim().isNotEmpty) ||
-            (originPhotoUrl != null && originPhotoUrl!.isNotEmpty);
+    final List<String> interests = sharedInterests
+        .map((String s) => s.trim())
+        .where((String s) => s.isNotEmpty)
+        .map(_capitalize)
+        .toList(growable: false);
 
-    return Dialog(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            // Halo con el gradiente emocional de match (deseo → emoción → premio).
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: AppColors.match,
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.wineRed.withValues(alpha: 0.45),
-                    blurRadius: 28,
-                    spreadRadius: 1,
-                  ),
-                ],
-              ),
-              child: Icon(hasAttra ? Icons.star_rounded : Icons.favorite_rounded,
-                  size: 44, color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: 14),
-            Text('¡Nuevo match!',
-                style: theme.textTheme.headlineSmall,
-                textAlign: TextAlign.center),
-            const SizedBox(height: 4),
-            Text(
-              hasAttra ? 'Tienes un nuevo match destacado' : 'Habéis conectado',
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.outline),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            CircleAvatar(
-              radius: 44,
-              backgroundColor: const Color(0xFFE0E0E0),
-              backgroundImage:
-                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-              child: photoUrl.isEmpty
-                  ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                      style: const TextStyle(fontSize: 32))
-                  : null,
-            ),
-            const SizedBox(height: 10),
-            Text(name, style: theme.textTheme.titleMedium),
-            if (fromPhoto) ...<Widget>[
-              const SizedBox(height: 16),
-              _OriginCard(
-                comment: originComment,
-                photoUrl: originPhotoUrl,
-              ),
-            ],
-            if (onPlaySpark != null) ...<Widget>[
-              const SizedBox(height: 18),
-              Text(
-                '¿Queréis jugar 5 minutos para romper el hielo?',
-                style: theme.textTheme.bodyMedium,
+    return Scaffold(
+      backgroundColor: AppColors.black,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: <Widget>[
+              const Spacer(flex: 2),
+              // Corazones.
+              const _HeartsTop(),
+              const SizedBox(height: 14),
+              // Título "¡Es un match!".
+              RichText(
                 textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    onPlaySpark!();
-                  },
-                  icon: const Icon(Icons.bolt_rounded),
-                  label: const Text('Jugar 5 minutos'),
+                text: TextSpan(
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w900),
+                  children: const <TextSpan>[
+                    TextSpan(text: '¡Es un '),
+                    TextSpan(
+                        text: 'match!',
+                        style: TextStyle(color: AppColors.attraRed)),
+                  ],
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    onOpenChat();
-                  },
-                  child: const Text('Abrir chat'),
-                ),
+              Text('A ti y a $name les gusta mutuamente',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 28),
+              // Fotos circulares con halo + badge de corazón.
+              _MatchPhotos(
+                currentUserPhotoUrl: currentUserPhotoUrl,
+                matchedUserPhotoUrl: photoUrl,
+                matchedName: name,
+                hasAttra: hasAttra,
               ),
-            ] else ...<Widget>[
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    onOpenChat();
-                  },
-                  child: const Text('Abrir chat'),
+              const SizedBox(height: 28),
+              // Info rows.
+              if (interests.isNotEmpty)
+                _InfoRow(
+                  icon: Icons.favorite_rounded,
+                  title:
+                      'Tienen ${interests.length} ${interests.length == 1 ? "interés" : "intereses"} en común',
+                  subtitle: _joinNatural(interests),
                 ),
+              if (interests.isNotEmpty) const SizedBox(height: 14),
+              const _InfoRow(
+                icon: Icons.chat_bubble_rounded,
+                title: 'Listos para comenzar a chatear',
+                subtitle: 'Conózcanse mejor y conecten 👋',
               ),
+              const Spacer(flex: 3),
+              // CTAs.
+              AttraPrimaryButton(
+                label: 'Enviar mensaje',
+                icon: Icons.chat_bubble_rounded,
+                onPressed: () {
+                  _close(context);
+                  onOpenChat?.call();
+                },
+              ),
+              const SizedBox(height: 10),
+              if (onPlaySpark != null) ...<Widget>[
+                AttraSecondaryButton(
+                  label: 'Jugar 5 min para romper el hielo',
+                  onPressed: () {
+                    _close(context);
+                    onPlaySpark!();
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
+              AttraGhostButton(
+                label: 'Seguir viendo',
+                onPressed: () => _close(context),
+              ),
+              const SizedBox(height: 8),
             ],
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Seguir descubriendo'),
-            ),
-          ],
+          ),
         ),
+      ),
+    );
+  }
+
+  static String _capitalize(String s) =>
+      s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  static String _joinNatural(List<String> items) {
+    if (items.isEmpty) return '';
+    if (items.length == 1) return items.first;
+    return '${items.sublist(0, items.length - 1).join(', ')} y ${items.last}';
+  }
+}
+
+class _HeartsTop extends StatelessWidget {
+  const _HeartsTop();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          const Icon(Icons.favorite_rounded,
+              color: AppColors.attraRed, size: 34),
+          Positioned(
+            right: MediaQuery.of(context).size.width / 2 - 60,
+            top: 0,
+            child: const Icon(Icons.favorite_rounded,
+                color: AppColors.coral, size: 22),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _OriginCard extends StatelessWidget {
-  const _OriginCard({required this.comment, required this.photoUrl});
+/// Dos fotos CIRCULARES superpuestas con halo coral + badge de corazón.
+class _MatchPhotos extends StatelessWidget {
+  const _MatchPhotos({
+    required this.currentUserPhotoUrl,
+    required this.matchedUserPhotoUrl,
+    required this.matchedName,
+    required this.hasAttra,
+  });
 
-  final String? comment;
-  final String? photoUrl;
+  final String? currentUserPhotoUrl;
+  final String? matchedUserPhotoUrl;
+  final String matchedName;
+  final bool hasAttra;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    const double d = 150;
+    const double overlap = 26;
+    return SizedBox(
+      height: d + 8,
+      width: d * 2 - overlap + 8,
+      child: Stack(
+        alignment: Alignment.center,
         children: <Widget>[
-          if (photoUrl != null && photoUrl!.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(photoUrl!,
-                  width: 44, height: 56, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const _DeletedPhotoThumb()),
-            )
-          else
-            const _DeletedPhotoThumb(),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text('Respondió a tu foto',
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: theme.colorScheme.primary)),
-                if (comment != null && comment!.trim().isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 2),
-                  Text(comment!, style: theme.textTheme.bodyMedium),
+          Positioned(
+            left: 0,
+            child: _Bubble(url: currentUserPhotoUrl, fallback: 'Tú', size: d),
+          ),
+          Positioned(
+            right: 0,
+            child: _Bubble(
+              url: matchedUserPhotoUrl,
+              fallback:
+                  matchedName.isNotEmpty ? matchedName[0].toUpperCase() : '?',
+              size: d,
+            ),
+          ),
+          // Badge de corazón al centro-abajo, entre las dos fotos.
+          Positioned(
+            bottom: 0,
+            child: Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(colors: AppColors.action),
+                border: Border.all(color: AppColors.black, width: 3),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: AppColors.attraRed.withValues(alpha: 0.55),
+                    blurRadius: 20,
+                    spreadRadius: 1,
+                  ),
                 ],
-              ],
+              ),
+              child: Icon(
+                hasAttra ? Icons.star_rounded : Icons.favorite_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
           ),
         ],
@@ -217,16 +274,81 @@ class _OriginCard extends StatelessWidget {
   }
 }
 
-class _DeletedPhotoThumb extends StatelessWidget {
-  const _DeletedPhotoThumb();
+class _Bubble extends StatelessWidget {
+  const _Bubble(
+      {required this.url, required this.fallback, required this.size});
+
+  final String? url;
+  final String fallback;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
+    final String? u = url?.trim();
     return Container(
-      width: 44,
-      height: 56,
-      color: const Color(0xFFE0E0E0),
-      child: const Icon(Icons.image_not_supported_outlined, size: 20),
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.attraRed, width: 3),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.attraRed.withValues(alpha: 0.45),
+            blurRadius: 26,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: AttraImage(url: u, fallbackInitial: fallback),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.attraRed.withValues(alpha: 0.14),
+          ),
+          child: Icon(icon, color: AppColors.attraRed, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(title,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(subtitle,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: AppColors.textSecondary)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

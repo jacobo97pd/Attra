@@ -193,6 +193,13 @@ service cloud.firestore {
       allow read, write: if isOwner(uid);
     }
 
+    // Bandeja de notificaciones in-app. PRIVADA del dueño: solo él lee y
+    // gestiona las suyas (marcar leído/borrar). El backend (Admin SDK) también
+    // escribe aquí cuando llega un like/match/mensaje.
+    match /notifications/{uid}/items/{itemId} {
+      allow read, write: if isOwner(uid);
+    }
+
     // Entitlements autoritativos por usuario.
     match /userEntitlements/{uid} {
       allow read: if isOwner(uid);
@@ -307,6 +314,13 @@ service cloud.firestore {
           get(/databases/$(database)/documents/chats/$(chatId)).data.get('users', [])
         );
         allow write: if false;
+      }
+
+      // Respuestas privadas de minijuegos (Doble Respuesta / Dos Verdades).
+      // Solo Cloud Functions con Admin SDK puede leer/escribir aqui. El cliente
+      // recibe el resultado publico cuando ambos han respondido o se revela.
+      match /privateAnswers/{answerId} {
+        allow read, write: if false;
       }
     }
 

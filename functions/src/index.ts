@@ -19,6 +19,7 @@ setGlobalOptions({
 
 export { sendLike, passProfile } from "./likes";
 export { sendAttra } from "./attras";
+export { rewindFeedAction } from "./rewind";
 export {
   sendMessage,
   sendMediaMessage,
@@ -48,6 +49,12 @@ export {
 } from "./stories";
 export { completeSparkSession } from "./spark";
 export {
+  startDoubleAnswer,
+  submitDoubleAnswer,
+  startTwoTruths,
+  guessTwoTruths,
+} from "./journey_games";
+export {
   activateBoost,
   expireBoosts,
   getActiveBoostForUser,
@@ -55,3 +62,11 @@ export {
   recordBoostImpression,
 } from "./boosts";
 export { grantConsumable } from "./consumables";
+export {
+  onLikeCreated,
+  onMatchCreated,
+  onMessageCreated,
+  sendComeBackNotifications,
+  registerPushToken,
+  unregisterPushToken,
+} from "./notifications";

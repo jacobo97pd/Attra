@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/attra_image.dart';
 import '../domain/profile_state.dart';
 import 'intro_media_view.dart';
 
@@ -45,12 +46,7 @@ class ProfileViewScreen extends StatelessWidget {
     if (photos.isNotEmpty) {
       items.add(AspectRatio(
         aspectRatio: 3 / 4,
-        child: Image.network(
-          photos.first.url,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-              const ColoredBox(color: Color(0xFF1A1A1A)),
-        ),
+        child: AttraImage(url: photos.first.url),
       ));
     }
 
@@ -133,12 +129,7 @@ class ProfileViewScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
             aspectRatio: 3 / 4,
-            child: Image.network(
-              photo.url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  const ColoredBox(color: Color(0xFF1A1A1A)),
-            ),
+            child: AttraImage(url: photo.url),
           ),
         ),
       ));

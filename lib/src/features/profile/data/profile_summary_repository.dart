@@ -12,22 +12,44 @@ class ProfileSummaryRepository {
 
   final FirebaseFirestore _firestore;
   final Map<String, ProfileSummary> _cache = <String, ProfileSummary>{};
+  // Peticiones en vuelo: cuando un grid pinta N tarjetas del mismo uid a la vez,
+  // se comparte UNA sola lectura en lugar de lanzar N idénticas.
+  final Map<String, Future<ProfileSummary>> _inFlight =
+      <String, Future<ProfileSummary>>{};
 
-  Future<ProfileSummary> fetch(String uid) async {
-    if (uid.isEmpty) return ProfileSummary.unknown;
+  /// Lectura síncrona de la caché (sin red). Útil para pintar al instante y
+  /// evitar el parpadeo de "Alguien" cuando el dato ya se conoce.
+  ProfileSummary? peek(String uid) => _cache[uid];
+
+  Future<ProfileSummary> fetch(String uid) {
+    if (uid.isEmpty) return Future<ProfileSummary>.value(ProfileSummary.unknown);
     final ProfileSummary? cached = _cache[uid];
-    if (cached != null) return cached;
+    if (cached != null) return Future<ProfileSummary>.value(cached);
 
-    final ProfileSummary summary =
-        await _fromCollection('discovery', uid) ??
-            await _fromCollection('seed_profiles', uid) ??
-            ProfileSummary.unknown.copyWith(uid: uid);
-    // Solo cachea si se resolvio (evita fijar "Alguien" si discovery aun no
-    // estaba sincronizado en el momento de la primera lectura).
-    if (summary.displayName != 'Alguien') {
-      _cache[uid] = summary;
+    // Reusa la lectura en vuelo si ya hay una para este uid.
+    final Future<ProfileSummary>? pending = _inFlight[uid];
+    if (pending != null) return pending;
+
+    final Future<ProfileSummary> future = _load(uid);
+    _inFlight[uid] = future;
+    return future;
+  }
+
+  Future<ProfileSummary> _load(String uid) async {
+    try {
+      final ProfileSummary summary =
+          await _fromCollection('discovery', uid) ??
+              await _fromCollection('seed_profiles', uid) ??
+              ProfileSummary.unknown.copyWith(uid: uid);
+      // Solo cachea si se resolvio (evita fijar "Alguien" si discovery aun no
+      // estaba sincronizado en el momento de la primera lectura).
+      if (summary.displayName != 'Alguien') {
+        _cache[uid] = summary;
+      }
+      return summary;
+    } finally {
+      _inFlight.remove(uid);
     }
-    return summary;
   }
 
   Future<ProfileSummary?> _fromCollection(String collection, String uid) async {
@@ -41,7 +63,34 @@ class ProfileSummaryRepository {
           ? data['displayName'] as String
           : 'Alguien',
       photoUrl: _photoFrom(data),
+      age: _asInt(data['age']),
+      // discovery publica `jobTitle`; seed_profiles también lo trae.
+      headline: (data['jobTitle'] as String?)?.trim() ?? '',
+      // discovery: currentCity/currentCountryName · seed_profiles: city/country.
+      city: ((data['currentCity'] ?? data['city']) as String?)?.trim() ?? '',
+      country: ((data['currentCountryName'] ?? data['country']) as String?)
+              ?.trim() ??
+          '',
+      verified: data['verified'] == true,
+      interests: _stringList(data['interests']),
     );
+  }
+
+  static int? _asInt(Object? v) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  static List<String> _stringList(Object? v) {
+    if (v is List) {
+      return v
+          .whereType<String>()
+          .map((String s) => s.trim())
+          .where((String s) => s.isNotEmpty)
+          .toList(growable: false);
+    }
+    return const <String>[];
   }
 
   String _photoFrom(Map<String, dynamic> data) {

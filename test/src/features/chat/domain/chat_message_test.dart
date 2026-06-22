@@ -134,4 +134,64 @@ void main() {
       expect(m.media, isNull);
     });
   });
+
+  group('ChatMessage journey games', () {
+    test('parsea double_answer oculto y revelado', () {
+      final ChatMessage hidden = ChatMessage.fromMap('d1', <String, dynamic>{
+        'type': 'double_answer',
+        'doubleAnswer': <String, dynamic>{
+          'question': 'Plan ideal?',
+          'status': 'collecting',
+          'startedBy': 'a',
+          'participants': <String>['a', 'b'],
+          'answeredBy': <String, bool>{'a': true, 'b': false},
+          'answers': <String, String>{},
+        },
+      });
+      expect(hidden.type.isDoubleAnswer, isTrue);
+      expect(hidden.doubleAnswer!.question, 'Plan ideal?');
+      expect(hidden.doubleAnswer!.isRevealed, isFalse);
+      expect(hidden.doubleAnswer!.hasAnswered('a'), isTrue);
+
+      final ChatMessage revealed = ChatMessage.fromMap('d2', <String, dynamic>{
+        'type': 'double_answer',
+        'doubleAnswer': <String, dynamic>{
+          'question': 'Plan ideal?',
+          'status': 'revealed',
+          'answers': <String, String>{'a': 'Cafe', 'b': 'Paseo'},
+        },
+      });
+      expect(revealed.doubleAnswer!.isRevealed, isTrue);
+      expect(revealed.doubleAnswer!.answers['b'], 'Paseo');
+    });
+
+    test('parsea two_truths sin exponer lieIndex hasta reveal', () {
+      final ChatMessage guessing = ChatMessage.fromMap('tt1', <String, dynamic>{
+        'type': 'two_truths',
+        'twoTruths': <String, dynamic>{
+          'statements': <String>['Uno', 'Dos', 'Tres'],
+          'status': 'guessing',
+          'startedBy': 'a',
+          'lieIndex': null,
+        },
+      });
+      expect(guessing.type.isTwoTruths, isTrue);
+      expect(guessing.twoTruths!.isRevealed, isFalse);
+      expect(guessing.twoTruths!.lieIndex, isNull);
+
+      final ChatMessage revealed = ChatMessage.fromMap('tt2', <String, dynamic>{
+        'type': 'two_truths',
+        'twoTruths': <String, dynamic>{
+          'statements': <String>['Uno', 'Dos', 'Tres'],
+          'status': 'revealed',
+          'guessIndex': 1,
+          'lieIndex': 1,
+          'correct': true,
+        },
+      });
+      expect(revealed.twoTruths!.isRevealed, isTrue);
+      expect(revealed.twoTruths!.correct, isTrue);
+      expect(revealed.twoTruths!.lieIndex, 1);
+    });
+  });
 }

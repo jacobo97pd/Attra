@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
 import { REGION } from "./firebase";
-import { col, requireAuthUid, requireStringArg } from "./common";
+import { col, nextJourneyStatus, requireAuthUid, requireStringArg } from "./common";
 
 /// completeSparkSession: al terminar una partida de Attra Spark, inserta el
 /// mensaje de SISTEMA del resumen en el chat (los mensajes de chat son
@@ -74,12 +74,28 @@ export const completeSparkSession = onCall({ region: REGION }, async (request) =
     { merge: true }
   );
 
+  const currentJourney = nextJourneyStatus(
+    matchSnap.data()?.journeyStatus,
+    "game_completed"
+  );
+
   await col.chats.doc(matchId).set(
     {
       lastMessage: text,
       lastMessageType: "system",
       lastMessageSenderId: "system",
       lastMessageAt: now,
+      journeyStatus: currentJourney,
+      journeyUpdatedAt: now,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  await col.matches.doc(matchId).set(
+    {
+      journeyStatus: currentJourney,
+      journeyUpdatedAt: now,
       updatedAt: now,
     },
     { merge: true }

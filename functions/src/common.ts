@@ -9,6 +9,51 @@ export const MAX_MESSAGE_LENGTH = 2000;
 /// config/featureFlags (`freeDailyLikes`) para control remoto.
 export const FREE_DAILY_LIKES = 25;
 
+export type JourneyStatus =
+  | "new_match"
+  | "icebreaker_suggested"
+  | "icebreaker_started"
+  | "game_started"
+  | "game_completed"
+  | "conversation_active"
+  | "date_proposed"
+  | "date_accepted"
+  | "date_completed"
+  | "archived";
+
+const JOURNEY_RANK: Record<JourneyStatus, number> = {
+  new_match: 0,
+  icebreaker_suggested: 1,
+  icebreaker_started: 2,
+  game_started: 3,
+  game_completed: 4,
+  conversation_active: 5,
+  date_proposed: 6,
+  date_accepted: 7,
+  date_completed: 8,
+  archived: 9,
+};
+
+export function normalizeJourneyStatus(value: unknown): JourneyStatus | null {
+  const raw = (value ?? "").toString().trim().toLowerCase();
+  const statuses = Object.keys(JOURNEY_RANK) as JourneyStatus[];
+  for (const status of statuses) {
+    if (status === raw) return status;
+  }
+  return null;
+}
+
+export function nextJourneyStatus(
+  current: unknown,
+  candidate: JourneyStatus
+): JourneyStatus {
+  const normalized = normalizeJourneyStatus(current);
+  if (!normalized) return candidate;
+  return JOURNEY_RANK[candidate] >= JOURNEY_RANK[normalized]
+    ? candidate
+    : normalized;
+}
+
 /// Colecciones (centralizadas para no escribir strings sueltos).
 export const col = {
   users: db.collection("users"),

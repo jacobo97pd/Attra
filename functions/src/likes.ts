@@ -71,7 +71,11 @@ export function parsePromptTarget(data: unknown): {
 /// sendLike: intencion unilateral, opcionalmente dirigida a una foto y con
 /// comentario. Crea match transaccional si hay reciprocidad y, si el like
 /// llevaba comentario/foto, inserta el mensaje de apertura en el chat.
-export const sendLike = onCall({ region: REGION }, async (request): Promise<FlowResult> => {
+// minInstances mantiene 1 instancia "caliente": evita el cold start (~varios
+// segundos) en la ruta crítica del like → la pantalla de match aparece antes.
+export const sendLike = onCall(
+  { region: REGION, minInstances: 1 },
+  async (request): Promise<FlowResult> => {
   const fromUid = requireAuthUid(request.auth);
   const toUid = requireStringArg(request.data?.toUid, "toUid");
   if (fromUid === toUid) {

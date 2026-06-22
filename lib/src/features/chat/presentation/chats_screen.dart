@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../match/data/match_service.dart';
@@ -31,6 +32,11 @@ class ChatsScreen extends StatelessWidget {
     this.journeyEnabled = false,
     this.icebreakersEnabled = false,
     this.dateBuilderEnabled = false,
+    this.dateBuilderFull = false,
+    this.thisOrThatEnabled = false,
+    this.doubleAnswerEnabled = false,
+    this.twoTruthsEnabled = false,
+    this.matchReactivationEnabled = false,
   });
 
   final String currentUid;
@@ -45,6 +51,11 @@ class ChatsScreen extends StatelessWidget {
   final bool journeyEnabled;
   final bool icebreakersEnabled;
   final bool dateBuilderEnabled;
+  final bool dateBuilderFull;
+  final bool thisOrThatEnabled;
+  final bool doubleAnswerEnabled;
+  final bool twoTruthsEnabled;
+  final bool matchReactivationEnabled;
 
   void _openStory(BuildContext context, Story story) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -64,7 +75,10 @@ class ChatsScreen extends StatelessWidget {
       c.lastMessageType == MessageType.dateProposal ||
       c.lastMessageType == MessageType.image ||
       c.lastMessageType == MessageType.bombImage ||
-      c.lastMessageType == MessageType.voiceNote;
+      c.lastMessageType == MessageType.voiceNote ||
+      c.lastMessageType == MessageType.system ||
+      c.lastMessageType == MessageType.doubleAnswer ||
+      c.lastMessageType == MessageType.twoTruths;
 
   Future<void> _open(BuildContext context, Chat chat) async {
     final ProfileSummary other =
@@ -84,6 +98,11 @@ class ChatsScreen extends StatelessWidget {
         journeyEnabled: journeyEnabled,
         icebreakersEnabled: icebreakersEnabled,
         dateBuilderEnabled: dateBuilderEnabled,
+        dateBuilderFull: dateBuilderFull,
+        thisOrThatEnabled: thisOrThatEnabled,
+        doubleAnswerEnabled: doubleAnswerEnabled,
+        twoTruthsEnabled: twoTruthsEnabled,
+        matchReactivationEnabled: matchReactivationEnabled,
       ),
     ));
   }
@@ -205,7 +224,8 @@ class _RingAvatar extends StatelessWidget {
     final Widget avatar = CircleAvatar(
       radius: radius,
       backgroundColor: const Color(0xFFE0E0E0),
-      backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+      backgroundImage:
+          photoUrl.isNotEmpty ? CachedNetworkImageProvider(photoUrl) : null,
       child: photoUrl.isEmpty ? Text(_initial(name)) : null,
     );
     final Story? s = story;
