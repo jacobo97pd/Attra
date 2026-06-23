@@ -208,17 +208,18 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
-  /// Umbral de parecido (similitud coseno) para el filtro de IA visual.
-  /// Solo se muestran candidatos con score >= este valor. El embedding de Vertex
-  /// es ESTÉTICO (no identidad), así que las similitudes suelen ser altas; este
-  /// valor se ajusta viendo los scores reales (se imprimen en debug abajo).
-  static const double _kVisualMatchThreshold = 0.62;
+  /// Umbral de parecido (similitud coseno) para considerar a alguien "similar".
+  /// El embedding multimodal de Vertex es ESTÉTICO (composición, estilo…): dos
+  /// fotos de la misma persona suelen rondar 0.5-0.8 y el mismo "tipo" 0.45-0.6.
+  /// 0.50 da precisión con holgura (más laxo que el 0.62 anterior).
+  static const double _kVisualThreshold = 0.50;
 
-  /// FILTRA la lista dejando SOLO los que se parecen a la foto de referencia
-  /// (IA visual de Pro), ordenados de más a menos parecido.
+  /// FILTRA el feed dejando SOLO los que se parecen a la foto de referencia
+  /// (>= [_kVisualThreshold]), ordenados de más a menos parecido.
   ///
-  /// Best-effort: si el motor no está disponible (ranking vacío), devuelve la
-  /// lista original sin filtrar para no dejar el feed en blanco por un fallo.
+  /// Best-effort: si el motor no está disponible (ranking vacío = Vertex
+  /// apagado o sin referencia), devuelve la lista original sin tocar para no
+  /// vaciar el feed por un fallo de infraestructura.
   Future<List<SeedProfile>> _sortByVisualReference(
       List<SeedProfile> profiles) async {
     try {
@@ -236,14 +237,12 @@ class _FeedScreenState extends State<FeedScreen> {
       final Map<String, SeedProfile> byId = <String, SeedProfile>{
         for (final SeedProfile p in profiles) p.id: p,
       };
-      // Solo los que superan el umbral, en orden de parecido (ranking ya viene
-      // ordenado de mayor a menor score desde el backend).
-      final List<SeedProfile> matches = <SeedProfile>[];
-      for (final VisualMatch m in ranking) {
-        if (m.score < _kVisualMatchThreshold) continue;
-        final SeedProfile? p = byId[m.uid];
-        if (p != null) matches.add(p);
-      }
+      // Solo los que superan el umbral, en orden de parecido (desc).
+      final List<SeedProfile> matches = <SeedProfile>[
+        for (final VisualMatch m in ranking)
+          if (m.score >= _kVisualThreshold && byId.containsKey(m.uid))
+            byId[m.uid]!,
+      ];
       return matches;
     } catch (_) {
       return profiles;
@@ -254,20 +253,35 @@ class _FeedScreenState extends State<FeedScreen> {
   /// elegido y pone delante los de la ciudad. Sin país no filtra (devuelve tal
   /// cual). Comparaciones case-insensitive.
   List<SeedProfile> _applyTravel(List<SeedProfile> profiles) {
-    final String country = (widget.user?.travelCountry ?? '').trim().toLowerCase();
-    final String city = (widget.user?.travelCity ?? '').trim().toLowerCase();
+    // País normalizado (Italy=Italia, Spain=España…) para no vaciar el feed por
+    // diferencias de idioma entre el destino y los perfiles.
+    final String country = FeedFilter.canonCountry(widget.user?.travelCountry ?? '');
+    final String city = _canonCity(widget.user?.travelCity ?? '');
     if (country.isEmpty) return profiles;
     final List<SeedProfile> inCountry = profiles
-        .where((SeedProfile p) => p.country.trim().toLowerCase() == country)
+        .where((SeedProfile p) => FeedFilter.canonCountry(p.country) == country)
         .toList(growable: false);
     if (city.isEmpty) return inCountry;
     inCountry.sort((SeedProfile a, SeedProfile b) {
-      final bool aCity = a.city.trim().toLowerCase() == city;
-      final bool bCity = b.city.trim().toLowerCase() == city;
+      final bool aCity = _canonCity(a.city) == city;
+      final bool bCity = _canonCity(b.city) == city;
       if (aCity == bCity) return 0;
       return aCity ? -1 : 1;
     });
     return inCountry;
+  }
+
+  /// Normaliza ciudad para comparar pese al idioma (Rome=Roma, etc.).
+  static String _canonCity(String raw) {
+    final String s = raw.trim().toLowerCase();
+    const Map<String, String> aliases = <String, String>{
+      'roma': 'rome', 'rome': 'rome',
+      'milán': 'milan', 'milan': 'milan', 'milano': 'milan',
+      'londres': 'london', 'london': 'london',
+      'lisboa': 'lisbon', 'lisbon': 'lisbon',
+      'munich': 'munich', 'múnich': 'munich', 'münchen': 'munich',
+    };
+    return aliases[s] ?? s;
   }
 
   Future<void> _loadStoriesFlag() async {
@@ -354,9 +368,15 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted) {
         return;
       }
+      // Búsqueda visual (Pro): buscar tu "tipo" es GLOBAL → no restringe por
+      // ubicación ni curación de Slow Dating; la IA evalúa a todos los candidatos.
+      final bool visualSearch = _filters.sortByVisualReference &&
+          widget.canUseVisualMatch &&
+          widget.aiVisualService != null;
       // Modo viajes: cuando viajas, el feed se CENTRA en el destino (se ignora
       // la distancia real y se usa el PAÍS de destino para la relevancia).
-      final bool traveling = widget.user?.isTraveling ?? false;
+      final bool traveling =
+          !visualSearch && (widget.user?.isTraveling ?? false);
       List<SeedProfile> filtered = FeedFilter.apply(
         profiles: all,
         myUid: myUid,
@@ -364,13 +384,15 @@ class _FeedScreenState extends State<FeedScreen> {
         myInterestedIn: widget.user?.interestedIn ?? const <String>[],
         excludedUids: excluded,
         filters: _filters,
-        // En viaje no hay "mi" lat/lng: la relevancia es por país de destino.
-        myLat: traveling ? null : _effectiveLat,
-        myLng: traveling ? null : _effectiveLng,
-        myCountry: traveling
-            ? (widget.user?.travelCountry ?? '')
-            : (widget.user?.countryName ?? ''),
-        defaultMaxKm: widget.user?.maxDistanceKm,
+        // En viaje/búsqueda visual no hay "mi" lat/lng (no filtra por distancia).
+        myLat: (traveling || visualSearch) ? null : _effectiveLat,
+        myLng: (traveling || visualSearch) ? null : _effectiveLng,
+        myCountry: visualSearch
+            ? ''
+            : (traveling
+                ? (widget.user?.travelCountry ?? '')
+                : (widget.user?.countryName ?? '')),
+        defaultMaxKm: visualSearch ? null : widget.user?.maxDistanceKm,
       );
       if (traveling) {
         filtered = _applyTravel(filtered);
@@ -397,17 +419,15 @@ class _FeedScreenState extends State<FeedScreen> {
               activeBoosts: activeBoosts,
             );
       // Slow Dating (opt-in): cura el feed (menos perfiles, más afines e
-      // intencionales). Solo altera ranking/visibilidad si el modo está activo.
-      if (widget.user?.slowDatingEnabled ?? false) {
+      // intencionales). No se aplica en búsqueda visual (que es global).
+      if (!visualSearch && (widget.user?.slowDatingEnabled ?? false)) {
         filtered = SlowDatingRanker.curate(
           profiles: filtered,
           me: widget.user,
         );
       }
-      // IA visual (Pro): reordena por parecido a la foto de referencia.
-      if (_filters.sortByVisualReference &&
-          widget.canUseVisualMatch &&
-          widget.aiVisualService != null) {
+      // IA visual (Pro): ordena por parecido a la foto de referencia.
+      if (visualSearch) {
         filtered = await _sortByVisualReference(filtered);
       }
       // Plus/Pro: quién te ha dado like -> badge + prioridad al frente del feed.

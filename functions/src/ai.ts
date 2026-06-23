@@ -38,13 +38,24 @@ async function embedImage(bytes: Buffer): Promise<number[] | null> {
         instances: [{ image: { bytesBase64Encoded: bytes.toString("base64") } }],
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Diagnóstico: la causa más común es la API sin habilitar o el service
+      // account sin rol aiplatform.user (403). Se ve en los logs de la función.
+      const body = await res.text().catch(() => "");
+      console.error(`[Vertex] embedImage HTTP ${res.status}: ${body.slice(0, 300)}`);
+      return null;
+    }
     const json = (await res.json()) as {
       predictions?: { imageEmbedding?: number[] }[];
     };
     const emb = json.predictions?.[0]?.imageEmbedding;
-    return Array.isArray(emb) ? emb : null;
-  } catch {
+    if (!Array.isArray(emb)) {
+      console.error("[Vertex] respuesta sin imageEmbedding");
+      return null;
+    }
+    return emb;
+  } catch (e) {
+    console.error(`[Vertex] embedImage error: ${(e as Error).message}`);
     return null;
   }
 }
@@ -248,6 +259,12 @@ export const getVisualMatches = onCall({ region: REGION }, async (request) => {
     (x): x is { uid: string; score: number } => x !== null
   );
   ranking.sort((a, b) => b.score - a.score);
+  // Diagnóstico: cuántos candidatos llegaron a tener embedding (si es 0 con
+  // candidatos > 0, las fotos no se pudieron embeber → revisar Vertex/URLs).
+  console.log(
+    `[Vertex] getVisualMatches: ${ranking.length}/${candidateUids.length} ` +
+      `con embedding. top=${ranking[0]?.score?.toFixed(3) ?? "-"}`
+  );
   return { ranking };
 });
 
