@@ -34,7 +34,11 @@ class IapService extends ChangeNotifier {
   final Set<String> _consumableIds;
 
   StreamSubscription<List<PurchaseDetails>>? _sub;
-  final Map<String, ProductDetails> _products = <String, ProductDetails>{};
+  // Ofertas por id. Una suscripción de Play con varios PLANES BÁSICOS
+  // (mensual/anual) devuelve VARIOS ProductDetails con el mismo id; por eso se
+  // guarda una lista, no uno solo. Los consumibles tienen una sola oferta.
+  final Map<String, List<ProductDetails>> _offers =
+      <String, List<ProductDetails>>{};
 
   bool _available = false;
   bool _busy = false;
@@ -50,8 +54,24 @@ class IapService extends ChangeNotifier {
   bool get isAvailable => _available;
   bool get isBusy => _busy;
   String? get error => _error;
-  ProductDetails? productById(String id) => _products[id];
-  bool get hasProducts => _products.isNotEmpty;
+  /// Primera oferta de [id] (la única en consumibles). Para suscripciones con
+  /// varios planes básicos, usa [offersFor].
+  ProductDetails? productById(String id) {
+    final List<ProductDetails>? list = _offers[id];
+    return (list != null && list.isNotEmpty) ? list.first : null;
+  }
+
+  /// Todas las ofertas de [id] (planes básicos) ordenadas por precio ascendente:
+  /// la más barata suele ser la MENSUAL y la más cara la ANUAL.
+  List<ProductDetails> offersFor(String id) {
+    final List<ProductDetails> list =
+        List<ProductDetails>.from(_offers[id] ?? const <ProductDetails>[]);
+    list.sort((ProductDetails a, ProductDetails b) =>
+        a.rawPrice.compareTo(b.rawPrice));
+    return list;
+  }
+
+  bool get hasProducts => _offers.isNotEmpty;
 
   /// Inicializa: comprueba disponibilidad y se suscribe al flujo de compras.
   /// No-op en plataformas sin tienda (web/escritorio): la app sigue funcionando.
@@ -80,8 +100,12 @@ class IapService extends ChangeNotifier {
     if (!_available || ids.isEmpty) return;
     try {
       final ProductDetailsResponse resp = await _iap.queryProductDetails(ids);
+      // Reagrupa por id (una suscripción puede traer varias ofertas/planes).
+      for (final String id in ids) {
+        _offers.remove(id);
+      }
       for (final ProductDetails p in resp.productDetails) {
-        _products[p.id] = p;
+        (_offers[p.id] ??= <ProductDetails>[]).add(p);
       }
       if (resp.notFoundIDs.isNotEmpty && kDebugMode) {
         debugPrint('[IAP] Productos no encontrados en la tienda: '
@@ -97,21 +121,29 @@ class IapService extends ChangeNotifier {
   /// (tienda no disponible o producto no dado de alta). El resultado real llega
   /// de forma asíncrona por el flujo de compras.
   Future<bool> buy(String productId) async {
-    if (!_available) {
-      _error = 'Las compras no están disponibles en este dispositivo.';
+    final ProductDetails? product = productById(productId);
+    if (product == null) {
+      _error = !_available
+          ? 'Las compras no están disponibles en este dispositivo.'
+          : 'Producto no disponible en la tienda ($productId).';
       notifyListeners();
       return false;
     }
-    final ProductDetails? product = _products[productId];
-    if (product == null) {
-      _error = 'Producto no disponible en la tienda ($productId).';
+    return buyProduct(product);
+  }
+
+  /// Compra una OFERTA concreta (para suscripciones con planes básicos, pasa la
+  /// oferta elegida de [offersFor]; cada ProductDetails ya lleva su plan/oferta).
+  Future<bool> buyProduct(ProductDetails product) async {
+    if (!_available) {
+      _error = 'Las compras no están disponibles en este dispositivo.';
       notifyListeners();
       return false;
     }
     final PurchaseParam param = PurchaseParam(productDetails: product);
     _setBusy(true);
     try {
-      if (_consumableIds.contains(productId)) {
+      if (_consumableIds.contains(product.id)) {
         // En Android consume automáticamente para poder recomprar.
         return await _iap.buyConsumable(purchaseParam: param);
       }

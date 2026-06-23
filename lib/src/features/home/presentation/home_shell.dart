@@ -516,12 +516,14 @@ class _HomeShellState extends State<HomeShell> {
                 required String platform,
                 required String verificationData,
                 String? purchaseId,
+                String? period,
               }) =>
                 widget.boostService!.verifySubscription(
                   productId: productId,
                   platform: platform,
                   verificationData: verificationData,
                   purchaseId: purchaseId,
+                  period: period,
                 ),
         onPurchased: () => _entitlementController?.load(),
       ),
