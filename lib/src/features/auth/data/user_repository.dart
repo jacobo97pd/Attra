@@ -367,14 +367,18 @@ class UserRepository {
   }) async {
     final DocumentReference<Map<String, dynamic>> ref =
         _usersCollection.doc(uid);
+    // Vive bajo `settings.travel`: `settings` ya es escribible por el dueño, así
+    // que NO requiere desplegar reglas (igual que el ajuste de Slow Dating).
     await ref.set(
       _withRequiredUserFields(uid, <String, dynamic>{
-        'travel': <String, dynamic>{
-          'active': active,
-          'iso2': iso2.toUpperCase(),
-          'city': city,
-          'country': country,
-          'updatedAt': FieldValue.serverTimestamp(),
+        'settings': <String, dynamic>{
+          'travel': <String, dynamic>{
+            'active': active,
+            'iso2': iso2.toUpperCase(),
+            'city': city,
+            'country': country,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
         },
         'updatedAt': FieldValue.serverTimestamp(),
       }),

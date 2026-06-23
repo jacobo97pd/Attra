@@ -42,6 +42,7 @@ service cloud.firestore {
         'profileVisibility',
         'settings',
         'location',
+        'travel',
         'photos',
         'profileCompletionPercent',
         'profileCompletionChecklist',

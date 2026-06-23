@@ -90,7 +90,8 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
   bool get _canActivate => _hasDestination && !_busy;
 
   /// Aplica el estado al backend. [close] cierra la hoja (botón); el toggle lo
-  /// deja abierto para seguir ajustando el destino.
+  /// deja abierto para seguir ajustando el destino. Si falla, lo muestra y
+  /// revierte el toggle (no se queda "a medias" en silencio).
   Future<void> _apply(bool active, {bool close = true}) async {
     setState(() => _busy = true);
     try {
@@ -100,7 +101,21 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
         city: active ? (_city ?? '') : '',
         country: active ? (_country ?? '') : '',
       );
-      if (mounted && close) Navigator.of(context).maybePop();
+      if (!mounted) return;
+      if (close) {
+        Navigator.of(context).maybePop();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(active ? 'Modo viajes activado.' : 'Modo viajes desactivado.'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _active = active ? false : true); // revierte el toggle
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('No se pudo guardar el modo viajes: $e'),
+        ));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

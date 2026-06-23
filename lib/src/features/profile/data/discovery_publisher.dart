@@ -32,7 +32,11 @@ class DiscoveryPublisher {
 
     // Modo viajes: si está activo, el perfil aparece en el DESTINO elegido (no
     // en su ciudad real) y se marca `traveling` para mostrar el distintivo.
-    final Map<String, dynamic> travel = _map(userData['travel']);
+    // Vive bajo `settings.travel` (compat: o `travel` arriba en docs antiguos).
+    final Map<String, dynamic> settings = _map(userData['settings']);
+    final Map<String, dynamic> travel = _map(settings['travel']).isNotEmpty
+        ? _map(settings['travel'])
+        : _map(userData['travel']);
     final bool traveling = travel['active'] == true &&
         (travel['country'] ?? '').toString().trim().isNotEmpty;
     final String realCity =

@@ -120,12 +120,12 @@ def profile_data(photos):
             "Arquitecta, amante del cine italiano y de perderme por Roma "
             "buscando la mejor carbonara."
         ),
-        "currentCity": "Roma",
-        "currentCityNormalized": "roma",
-        "city": "Roma",
+        "currentCity": "Rome",
+        "currentCityNormalized": "rome",
+        "city": "Rome",
         "currentCountryCode": "IT",
-        "currentCountryName": "Italia",
-        "country": "Italia",
+        "currentCountryName": "Italy",
+        "country": "Italy",
         "jobTitle": "Arquitecta",
         "company": "Studio Forma",
         "educationLevel": "master",

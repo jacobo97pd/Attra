@@ -110,7 +110,11 @@ class AppUser {
     final Map<String, dynamic> location = _asMap(data['location']);
     final Map<String, dynamic> settings = _asMap(data['settings']);
     final Map<String, dynamic> wallet = _asMap(data['wallet']);
-    final Map<String, dynamic> travel = _asMap(data['travel']);
+    // Modo viajes vive bajo `settings.travel` (settings ya es escribible por el
+    // dueño, sin tocar reglas). Compat: si quedara algún doc con `travel` arriba.
+    final Map<String, dynamic> travel = _asMap(settings['travel']).isNotEmpty
+        ? _asMap(settings['travel'])
+        : _asMap(data['travel']);
     return AppUser(
       uid: (data['uid'] as String?) ?? document.id,
       email: data['email'] as String?,

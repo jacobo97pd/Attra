@@ -47,8 +47,8 @@ class FeedFilter {
       if (haveBothCoords) {
         if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
       } else {
-        final String mine = _canonCountry(myCountry);
-        final String theirs = _canonCountry(p.country);
+        final String mine = canonCountry(myCountry);
+        final String theirs = canonCountry(p.country);
         if (mine.isNotEmpty && theirs.isNotEmpty && mine != theirs) {
           return false;
         }
@@ -139,7 +139,7 @@ class FeedFilter {
   /// Normaliza el nombre de país a un token canónico para comparar pese a
   /// idioma (los mocks usan español "España"; el picker usa inglés "Spain").
   /// Países desconocidos: se compara su nombre en minúsculas tal cual.
-  static String _canonCountry(String raw) {
+  static String canonCountry(String raw) {
     final String s = raw.trim().toLowerCase();
     if (s.isEmpty) return '';
     const Map<String, String> aliases = <String, String>{
