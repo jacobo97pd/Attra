@@ -17,6 +17,7 @@ typedef VerifySubscription = Future<bool> Function({
   required String platform,
   required String verificationData,
   String? purchaseId,
+  String? period,
 });
 
 /// Paywall premium: compara Free / Attra Plus / Attra Pro con cards de producto.
@@ -28,8 +29,8 @@ class PaywallScreen extends StatefulWidget {
     required this.currentTier,
     this.verifySubscription,
     this.onPurchased,
-    this.plusProductId = 'attra_plus_monthly',
-    this.proProductId = 'attra_pro_monthly',
+    this.plusProductId = 'attra_plus',
+    this.proProductId = 'attra_pro',
   });
 
   final SubscriptionTier currentTier;
@@ -50,8 +51,19 @@ class PaywallScreen extends StatefulWidget {
 class _PaywallScreenState extends State<PaywallScreen> {
   late final IapService _iap;
   bool _busy = false;
+  // Periodo elegido (planes básicos de Play): false = mensual, true = anual.
+  bool _yearly = false;
 
   Set<String> get _ids => <String>{widget.plusProductId, widget.proProductId};
+
+  /// Oferta (plan básico) de [productId] según el periodo: la más barata es la
+  /// mensual y la más cara la anual. Null si la tienda no la tiene aún.
+  ProductDetails? _offerFor(String productId) {
+    final List<ProductDetails> offers = _iap.offersFor(productId);
+    if (offers.isEmpty) return null;
+    if (offers.length == 1) return offers.first;
+    return _yearly ? offers.last : offers.first;
+  }
 
   @override
   void initState() {
@@ -108,6 +120,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
       platform: platform,
       verificationData: purchase.verificationData.serverVerificationData,
       purchaseId: purchase.purchaseID,
+      period: _yearly ? 'yearly' : 'monthly',
     );
     return IapDeliveryResult(
       delivered: ok,
@@ -122,11 +135,19 @@ class _PaywallScreenState extends State<PaywallScreen> {
           content: Text('Compras disponibles próximamente.')));
       return;
     }
-    await _iap.buy(productId);
+    final ProductDetails? offer = _offerFor(productId);
+    if (offer == null) {
+      await _iap.buy(productId); // deja que IapService informe del error
+      return;
+    }
+    await _iap.buyProduct(offer);
   }
 
-  String _priceFor(String productId, String fallback) =>
-      _iap.productById(productId)?.price ?? fallback;
+  String _priceFor(String productId, String fallback) {
+    final ProductDetails? offer = _offerFor(productId);
+    if (offer == null) return fallback;
+    return _yearly ? '${offer.price} / año' : '${offer.price} / mes';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -182,7 +203,13 @@ class _PaywallScreenState extends State<PaywallScreen> {
                             style: theme.textTheme.labelLarge),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xl),
+                    const SizedBox(height: AppSpacing.lg),
+                    // Selector mensual / anual (planes básicos de Play).
+                    _PeriodToggle(
+                      yearly: _yearly,
+                      onChanged: (bool v) => setState(() => _yearly = v),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
                     _PlanCard(
                       kind: AttraBadgeKind.plus,
                       title: 'Attra Plus',
@@ -243,6 +270,57 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Conmutador Mensual / Anual (planes básicos de la suscripción).
+class _PeriodToggle extends StatelessWidget {
+  const _PeriodToggle({required this.yearly, required this.onChanged});
+
+  final bool yearly;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        border: Border.all(color: AppColors.surfaceLine),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: _segment('Mensual', !yearly, () => onChanged(false))),
+          Expanded(
+              child: _segment('Anual · ahorra', yearly, () => onChanged(true))),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment(String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: active
+              ? const LinearGradient(colors: AppColors.action)
+              : null,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.white : AppColors.textSecondary,
+            fontWeight: FontWeight.w700,
+            fontSize: 13.5,
           ),
         ),
       ),

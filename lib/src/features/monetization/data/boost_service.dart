@@ -56,12 +56,14 @@ class BoostService {
     required String platform, // 'app_store' | 'play_store'
     required String verificationData,
     String? purchaseId,
+    String? period, // 'monthly' | 'yearly'
   }) async {
     final Map<String, dynamic> data = await _call('verifyPurchase', <String, dynamic>{
       'productId': productId,
       'platform': platform,
       'verificationData': verificationData,
       if (purchaseId != null) 'purchaseId': purchaseId,
+      if (period != null) 'period': period,
     });
     return data['ok'] == true;
   }
