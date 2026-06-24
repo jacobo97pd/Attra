@@ -36,22 +36,24 @@ class FeedFilter {
 
       // --- RELEVANCIA GEOGRÁFICA (siempre, salvo modo viajes que pasa
       //     myLat/myLng = null y myCountry = destino). ---
-      // 1) Si hay coordenadas en ambos lados: distancia real con el radio del
-      //    usuario (o el por defecto).
-      // 2) Si faltan coordenadas (perfiles sin geo): fallback por país.
-      // 3) Si no se puede determinar nada, no se excluye (permisivo).
+      // A) PAÍS: NUNCA de otro país (salvo modo viajes, donde myCountry es el
+      //    destino). Se aplica SIEMPRE que se conozcan ambos países, tengan o
+      //    no coordenadas (un perfil de otro país aunque esté cerca queda fuera).
+      final String mine = canonCountry(myCountry);
+      final String theirs = canonCountry(p.country);
+      if (mine.isNotEmpty && theirs.isNotEmpty && mine != theirs) {
+        return false;
+      }
+      // B) RADIO: si hay coordenadas en ambos lados, respeta el radio elegido
+      //    por el usuario (o el por defecto). Sin coordenadas no se puede medir
+      //    distancia → se queda en la regla de país de arriba.
       final int maxKm =
           filters.maxDistanceKm ?? defaultMaxKm ?? defaultRadiusKm;
-      final bool haveBothCoords =
-          myLat != null && myLng != null && p.lat != null && p.lng != null;
-      if (haveBothCoords) {
+      if (myLat != null &&
+          myLng != null &&
+          p.lat != null &&
+          p.lng != null) {
         if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
-      } else {
-        final String mine = canonCountry(myCountry);
-        final String theirs = canonCountry(p.country);
-        if (mine.isNotEmpty && theirs.isNotEmpty && mine != theirs) {
-          return false;
-        }
       }
 
       final bool iWantThem = myInterestedIn.isEmpty ||
