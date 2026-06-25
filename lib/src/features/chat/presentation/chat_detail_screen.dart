@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
 import '../../../widgets/attra_image.dart';
+import '../../chat_game/domain/chat_game.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_summary.dart';
@@ -52,6 +53,7 @@ class ChatDetailScreen extends StatefulWidget {
     this.doubleAnswerEnabled = false,
     this.twoTruthsEnabled = false,
     this.matchReactivationEnabled = false,
+    this.chatGameEnabled = false,
   });
 
   final String chatId;
@@ -82,6 +84,9 @@ class ChatDetailScreen extends StatefulWidget {
   final bool doubleAnswerEnabled;
   final bool twoTruthsEnabled;
   final bool matchReactivationEnabled;
+
+  /// "Duelo de Química" (reto de 5 min con resultado IA). Opt-in por flag.
+  final bool chatGameEnabled;
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -117,6 +122,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Duration _recordElapsed = Duration.zero;
   Timer? _recordTimer;
 
+  // Duelo de Química activo: para etiquetar mensajes con su sesión y cerrar el
+  // reto cuando vence el tiempo (lo dispara el cliente; el backend es idempotente).
+  String? _activeGameSessionId;
+  DateTime? _activeGameEndsAt;
+  bool _finishingGame = false;
+
+  /// La burbuja del reto reporta su estado activo. Al vencer, cierra el reto.
+  void _onGameActive(String? sessionId, DateTime? endsAt) {
+    if (_activeGameSessionId == sessionId && _activeGameEndsAt == endsAt) return;
+    setState(() {
+      _activeGameSessionId = sessionId;
+      _activeGameEndsAt = endsAt;
+    });
+  }
+
+  Future<void> _finishGame(String sessionId) async {
+    if (_finishingGame) return;
+    _finishingGame = true;
+    try {
+      await widget.chatService
+          .finishChatGame(chatId: widget.chatId, sessionId: sessionId);
+    } catch (_) {/* idempotente: reintenta el otro participante */} finally {
+      _finishingGame = false;
+    }
+  }
+
   // Codec elegido para grabar (depende de soporte de plataforma/navegador).
   String _recordContentType = 'audio/mp4';
   String _recordExt = 'm4a';
@@ -145,6 +176,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       widget.thisOrThatEnabled ||
       widget.doubleAnswerEnabled ||
       widget.twoTruthsEnabled ||
+      widget.chatGameEnabled ||
       (widget.sparkEnabled && widget.sparkService != null);
 
   void _useSparkQuestion(String question) {
@@ -410,9 +442,54 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           : null,
       onTwoTruths:
           widget.twoTruthsEnabled ? () => _startTwoTruthsFlow(canSend) : null,
+      onChatGame: widget.chatGameEnabled
+          ? () => _startChatGameFlow(canSend, mode: 'normal')
+          : null,
+      onCoffeeChallenge: widget.chatGameEnabled
+          ? () => _startChatGameFlow(canSend, mode: 'coffee_challenge')
+          : null,
       showQuickQuestion: widget.icebreakersEnabled,
       showThisOrThat: widget.thisOrThatEnabled,
     );
+  }
+
+  /// Inicia el "Duelo de Química". El Reto Café pide consentimiento explícito.
+  Future<void> _startChatGameFlow(bool canSend, {required String mode}) async {
+    if (!canSend) {
+      _snack('Este chat ya no está disponible.');
+      return;
+    }
+    if (mode == 'coffee_challenge') {
+      final bool ok = await showDialog<bool>(
+            context: context,
+            builder: (BuildContext ctx) => AlertDialog(
+              backgroundColor: AppColors.surface,
+              title: const Text('Reto Café ☕'),
+              content: const Text(
+                'Si hay ganador, el que pierde invita al primer café. Si hay '
+                'empate, a medias.\n\nEsto es solo una dinámica divertida. Nadie '
+                'está obligado a pagar nada fuera de la app.',
+              ),
+              actions: <Widget>[
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancelar')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Acepto y reto')),
+              ],
+            ),
+          ) ??
+          false;
+      if (!ok || !mounted) return;
+    }
+    try {
+      await widget.chatService.startChatGame(chatId: widget.chatId, mode: mode);
+    } on ChatServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo iniciar el reto.');
+    }
   }
 
   Future<void> _inviteSparkFromJourney() async {
@@ -607,8 +684,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _deliver(_OutgoingMessage out) async {
     if (mounted) setState(() => out.failed = false);
     try {
-      final String id = await widget.chatService
-          .sendMessage(chatId: widget.chatId, text: out.text);
+      // Si hay un Duelo de Química activo, el mensaje se etiqueta con la sesión
+      // (la IA solo analiza esos 5 min). Si no, mensaje normal.
+      final String? gameSession =
+          (_activeGameSessionId != null && _activeGameEndsAt != null &&
+                  _activeGameEndsAt!.isAfter(DateTime.now()))
+              ? _activeGameSessionId
+              : null;
+      final String id = await widget.chatService.sendMessage(
+          chatId: widget.chatId, text: out.text, gameSessionId: gameSession);
       // Guarda el id real: el stream lo confirmará y se podará el optimista.
       if (mounted) setState(() => out.realId = id);
     } on ChatServiceException catch (e) {
@@ -1055,12 +1139,331 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 onGuess: (int guess) => _guessTwoTruths(m, guess),
               );
             }
+            if (m.type.isChatGame && (m.gameSessionId ?? '').isNotEmpty) {
+              return _ChatGameBubble(
+                chatId: widget.chatId,
+                sessionId: m.gameSessionId!,
+                currentUid: widget.currentUid,
+                chatService: widget.chatService,
+                onActive: _onGameActive,
+                onTimeUp: _finishGame,
+                onAbandon: (String sid) => widget.chatService
+                    .abandonChatGame(chatId: widget.chatId, sessionId: sid),
+              );
+            }
             return _TextBubble(text: m.text, mine: mine);
           },
         );
       },
     );
   }
+}
+
+/// Tarjeta del "Duelo de Química" dentro del chat. Observa la sesión en vivo y
+/// pinta el estado: invitación (aceptar/rechazar), reto activo (cuenta atrás) y
+/// resultado de la IA. Reporta el estado activo al padre (para etiquetar
+/// mensajes) y dispara el cierre cuando vence el tiempo.
+class _ChatGameBubble extends StatefulWidget {
+  const _ChatGameBubble({
+    required this.chatId,
+    required this.sessionId,
+    required this.currentUid,
+    required this.chatService,
+    required this.onActive,
+    required this.onTimeUp,
+    required this.onAbandon,
+  });
+
+  final String chatId;
+  final String sessionId;
+  final String currentUid;
+  final ChatService chatService;
+  final void Function(String? sessionId, DateTime? endsAt) onActive;
+  final Future<void> Function(String sessionId) onTimeUp;
+  final Future<void> Function(String sessionId) onAbandon;
+
+  @override
+  State<_ChatGameBubble> createState() => _ChatGameBubbleState();
+}
+
+class _ChatGameBubbleState extends State<_ChatGameBubble> {
+  ChatGameSession? _session;
+  StreamSubscription<ChatGameSession?>? _sub;
+  Timer? _ticker;
+  bool _responding = false;
+  bool _timeUpSent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = widget.chatService
+        .observeGameSession(widget.chatId, widget.sessionId)
+        .listen(_onSession);
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final ChatGameSession? s = _session;
+      if (s != null && s.status.isActive) {
+        setState(() {});
+        if (s.secondsLeft() <= 0 && !_timeUpSent) {
+          _timeUpSent = true;
+          widget.onTimeUp(s.id);
+        }
+      }
+    });
+  }
+
+  void _onSession(ChatGameSession? s) {
+    if (!mounted) return;
+    setState(() => _session = s);
+    // Reporta al padre el estado activo (para etiquetar mensajes / cerrar).
+    final bool active = s != null && s.status.isActive;
+    widget.onActive(active ? s.id : null, active ? s.endsAt : null);
+    if (s == null || !s.status.isActive) _timeUpSent = false;
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _respond(bool accept) async {
+    if (_responding) return;
+    setState(() => _responding = true);
+    try {
+      await widget.chatService.respondChatGame(
+          chatId: widget.chatId, sessionId: widget.sessionId, accept: accept);
+    } catch (_) {/* el stream reflejará el estado */} finally {
+      if (mounted) setState(() => _responding = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ChatGameSession? s = _session;
+    if (s == null) return const SizedBox.shrink();
+    final bool mine = s.creatorUserId == widget.currentUid;
+    final ThemeData theme = Theme.of(context);
+
+    Widget shell(List<Widget> children) => Container(
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                AppColors.attraRed.withValues(alpha: 0.18),
+                AppColors.surface,
+              ],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
+          ),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: children),
+        );
+
+    final Widget header = Row(
+      children: <Widget>[
+        const Icon(Icons.bolt_rounded, color: AppColors.attraRed, size: 20),
+        const SizedBox(width: 8),
+        Text(s.mode.isCoffee ? 'Reto Café · Duelo de Química' : 'Duelo de Química',
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w800)),
+      ],
+    );
+
+    switch (s.status) {
+      case ChatGameStatus.pending:
+      case ChatGameStatus.accepted:
+        final bool iAccepted = s.hasAccepted(widget.currentUid);
+        return shell(<Widget>[
+          header,
+          const SizedBox(height: 8),
+          Text(
+            mine
+                ? 'Has retado a un duelo de 5 min. Esperando que acepte…'
+                : '¡Te retan a un duelo de conversación de 5 minutos! La IA '
+                    'analizará solo esos 5 min y dictará el resultado.',
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (!mine && !iAccepted) ...<Widget>[
+            const SizedBox(height: 12),
+            Row(children: <Widget>[
+              Expanded(
+                child: FilledButton(
+                  onPressed: _responding ? null : () => _respond(true),
+                  child: const Text('Aceptar reto'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                onPressed: _responding ? null : () => _respond(false),
+                child: const Text('Ahora no'),
+              ),
+            ]),
+          ] else if (iAccepted && !mine) ...<Widget>[
+            const SizedBox(height: 8),
+            Text('Has aceptado. Empezando…',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textSecondary)),
+          ],
+        ]);
+
+      case ChatGameStatus.active:
+        final int secs = s.secondsLeft();
+        final String mm = (secs ~/ 60).toString();
+        final String ss = (secs % 60).toString().padLeft(2, '0');
+        return shell(<Widget>[
+          Row(children: <Widget>[
+            Expanded(child: header),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.attraRed,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text('$mm:$ss',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Text(s.themeTitle.isNotEmpty ? s.themeTitle : 'Hablad sin parar 😄',
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text('Escribid en el chat. La IA analizará estos 5 minutos.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => widget.onAbandon(s.id),
+              child: const Text('Salir del reto'),
+            ),
+          ),
+        ]);
+
+      case ChatGameStatus.completed:
+        return _ChatGameResult(session: s, currentUid: widget.currentUid);
+
+      case ChatGameStatus.cancelled:
+      case ChatGameStatus.abandoned:
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceHigh,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            s.status == ChatGameStatus.cancelled
+                ? 'Reto no aceptado.'
+                : 'Reto cancelado. Sin problema 😊',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: AppColors.textSecondary),
+          ),
+        );
+    }
+  }
+}
+
+/// Card de resultado de la IA (ganador/empate, química, mejor momento, plan).
+class _ChatGameResult extends StatelessWidget {
+  const _ChatGameResult({required this.session, required this.currentUid});
+
+  final ChatGameSession session;
+  final String currentUid;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ChatGameResult? r = session.result;
+    if (r == null) return const SizedBox.shrink();
+    final bool iWon = r.winnerUserId != null && r.winnerUserId == currentUid;
+    final String headline = r.noWinner
+        ? 'Sin ganador esta vez'
+        : r.isDraw
+            ? '¡Empate de química! 💞'
+            : (iWon ? '¡Has ganado! 🎉' : 'Resultado del duelo');
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: AppColors.action),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(children: <Widget>[
+            const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Text(headline,
+                style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white, fontWeight: FontWeight.w900)),
+          ]),
+          const SizedBox(height: 8),
+          if (r.reason.isNotEmpty)
+            Text(r.reason,
+                style: const TextStyle(color: Colors.white, height: 1.3)),
+          const SizedBox(height: 10),
+          _chip('💘 Química ${r.chemistryScore}/100'),
+          if (r.bestMoment.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 6),
+            _chip('🌟 "${r.bestMoment}"'),
+          ],
+          if (r.suggestedDatePlan != null) ...<Widget>[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Plan sugerido · ${r.suggestedDatePlan!.title}',
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 2),
+                  Text(r.suggestedDatePlan!.description,
+                      style: const TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+          ],
+          if (r.followUpMessage.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            Text(r.followUpMessage,
+                style: const TextStyle(
+                    color: Colors.white, fontStyle: FontStyle.italic)),
+          ],
+          const SizedBox(height: 8),
+          const Text(
+            'Solo una dinámica divertida. Quedad siempre en un lugar público.',
+            style: TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String text) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(text, style: const TextStyle(color: Colors.white)),
+      );
 }
 
 /// Mensaje de texto saliente pintado de forma optimista (antes de que el

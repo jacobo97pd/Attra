@@ -37,6 +37,7 @@ class ChatsScreen extends StatelessWidget {
     this.doubleAnswerEnabled = false,
     this.twoTruthsEnabled = false,
     this.matchReactivationEnabled = false,
+    this.chatGameEnabled = false,
   });
 
   final String currentUid;
@@ -56,6 +57,7 @@ class ChatsScreen extends StatelessWidget {
   final bool doubleAnswerEnabled;
   final bool twoTruthsEnabled;
   final bool matchReactivationEnabled;
+  final bool chatGameEnabled;
 
   void _openStory(BuildContext context, Story story) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -103,6 +105,7 @@ class ChatsScreen extends StatelessWidget {
         doubleAnswerEnabled: doubleAnswerEnabled,
         twoTruthsEnabled: twoTruthsEnabled,
         matchReactivationEnabled: matchReactivationEnabled,
+        chatGameEnabled: chatGameEnabled,
       ),
     ));
   }

@@ -45,6 +45,12 @@ export const sendMessage = onCall({ region: REGION }, async (request) => {
   const chatId = requireStringArg(request.data?.chatId, "chatId");
   const rawText = requireStringArg(request.data?.text, "text");
   const text = rawText.slice(0, MAX_MESSAGE_LENGTH);
+  // Reto de 5 min: si el mensaje se envía durante una sesión, se marca para que
+  // la IA solo analice esos mensajes. No cambia el tipo (sigue siendo "text").
+  const gameSessionId =
+    typeof request.data?.gameSessionId === "string" && request.data.gameSessionId.trim()
+      ? request.data.gameSessionId.trim().slice(0, 80)
+      : null;
 
   const chatRef = col.chats.doc(chatId);
   const messageRef = chatRef.collection("messages").doc();
@@ -97,6 +103,7 @@ export const sendMessage = onCall({ region: REGION }, async (request) => {
       text,
       status: "sent",
       createdAt: now,
+      ...(gameSessionId ? { gameSessionId } : {}),
     });
     tx.update(chatRef, {
       lastMessage: text,

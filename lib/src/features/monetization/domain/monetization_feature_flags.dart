@@ -19,6 +19,7 @@ class MonetizationFeatureFlags {
     this.doubleAnswerEnabled = false,
     this.thisOrThatEnabled = false,
     this.twoTruthsEnabled = false,
+    this.chatGameEnabled = false,
     this.dateBuilderEnabled = false,
     this.matchReactivationEnabled = false,
     this.adsEnabled = false,
@@ -45,6 +46,7 @@ class MonetizationFeatureFlags {
         doubleAnswerEnabled = false,
         thisOrThatEnabled = false,
         twoTruthsEnabled = false,
+        chatGameEnabled = false,
         dateBuilderEnabled = false,
         matchReactivationEnabled = false,
         adsEnabled = false,
@@ -73,6 +75,9 @@ class MonetizationFeatureFlags {
   final bool icebreakersEnabled;
   final bool miniGamesEnabled;
   final bool doubleAnswerEnabled;
+
+  /// "Duelo de Química" (reto de 5 min con resultado IA) en el chat.
+  final bool chatGameEnabled;
   final bool thisOrThatEnabled;
   final bool twoTruthsEnabled;
   final bool dateBuilderEnabled;
@@ -123,6 +128,8 @@ class MonetizationFeatureFlags {
           'this_or_that_enabled', readBool('thisOrThatEnabled', false)),
       twoTruthsEnabled: readBool(
           'two_truths_enabled', readBool('twoTruthsEnabled', false)),
+      chatGameEnabled: readBool(
+          'chat_game_enabled', readBool('chatGameEnabled', false)),
       dateBuilderEnabled: readBool(
           'date_builder_enabled', readBool('dateBuilderEnabled', false)),
       matchReactivationEnabled: readBool('match_reactivation_enabled',
