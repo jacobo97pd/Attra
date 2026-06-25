@@ -6,6 +6,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image/image.dart' as img;
 
+import '../../chat_game/domain/chat_game.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
 import 'chat_repository.dart';
@@ -54,11 +55,13 @@ class ChatService {
   Future<String> sendMessage({
     required String chatId,
     required String text,
+    String? gameSessionId,
   }) async {
     final Map<String, dynamic> data =
         await _call('sendMessage', <String, dynamic>{
       'chatId': chatId,
       'text': text,
+      if (gameSessionId != null) 'gameSessionId': gameSessionId,
     });
     return (data['messageId'] as String?) ?? '';
   }
@@ -313,6 +316,63 @@ class ChatService {
       'isTyping': isTyping,
     });
   }
+
+  // --- Duelo de Química (reto de 5 min) ---
+
+  /// Crea el reto e inserta la tarjeta de invitación en el chat. [mode] =
+  /// 'normal' | 'coffee_challenge' (este último requiere consentimiento de ambos).
+  /// Devuelve el id de la sesión.
+  Future<String> startChatGame({
+    required String chatId,
+    String mode = 'normal',
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('startChatGame', <String, dynamic>{
+      'chatId': chatId,
+      'mode': mode,
+    });
+    return (data['sessionId'] as String?) ?? '';
+  }
+
+  /// El invitado acepta/rechaza. Si ambos aceptan, arranca el reto (tema + 5 min).
+  /// Para 'coffee_challenge', [accept] true implica aceptar la regla del café.
+  Future<void> respondChatGame({
+    required String chatId,
+    required String sessionId,
+    required bool accept,
+  }) async {
+    await _call('respondChatGame', <String, dynamic>{
+      'chatId': chatId,
+      'sessionId': sessionId,
+      'accept': accept,
+    });
+  }
+
+  /// Cierra el reto al agotarse el tiempo: la IA analiza SOLO los mensajes de
+  /// esos 5 minutos y emite el resultado. Idempotente (si ya está cerrado, no-op).
+  Future<void> finishChatGame({
+    required String chatId,
+    required String sessionId,
+  }) async {
+    await _call('finishChatGame', <String, dynamic>{
+      'chatId': chatId,
+      'sessionId': sessionId,
+    });
+  }
+
+  /// Abandona el reto en curso (sin penalización): lo deja en `abandoned`.
+  Future<void> abandonChatGame({
+    required String chatId,
+    required String sessionId,
+  }) async {
+    await _call('abandonChatGame', <String, dynamic>{
+      'chatId': chatId,
+      'sessionId': sessionId,
+    });
+  }
+
+  Stream<ChatGameSession?> observeGameSession(String chatId, String sessionId) =>
+      _repository.observeGameSession(chatId, sessionId);
 
   // --- Lecturas ---
 

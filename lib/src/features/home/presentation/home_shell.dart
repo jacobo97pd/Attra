@@ -390,6 +390,9 @@ class _HomeShellState extends State<HomeShell> {
               twoTruthsEnabled:
                   (_entitlementController?.flags.miniGamesEnabled ?? false) &&
                       (_entitlementController?.flags.twoTruthsEnabled ?? false),
+              chatGameEnabled:
+                  (_entitlementController?.flags.miniGamesEnabled ?? false) &&
+                      (_entitlementController?.flags.chatGameEnabled ?? false),
               matchReactivationEnabled:
                   (_entitlementController?.flags.matchReactivationEnabled ??
                           false) &&

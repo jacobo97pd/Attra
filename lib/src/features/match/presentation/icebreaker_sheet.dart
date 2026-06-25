@@ -56,6 +56,8 @@ Future<void> showIcebreakerSheet(
   VoidCallback? onSpark,
   VoidCallback? onDoubleAnswer,
   VoidCallback? onTwoTruths,
+  VoidCallback? onChatGame,
+  VoidCallback? onCoffeeChallenge,
   bool showQuickQuestion = true,
   bool showThisOrThat = true,
 }) {
@@ -132,6 +134,13 @@ Future<void> showIcebreakerSheet(
                       'Esto o aquello',
                       'Una eleccion ligera',
                       () => onPrefill(IcebreakerCatalog.randomThisOrThat())),
+                if (onChatGame != null)
+                  tile(Icons.bolt_rounded, 'Duelo de Química · 5 min',
+                      'Reto de conversación con resultado de la IA', onChatGame),
+                if (onCoffeeChallenge != null)
+                  tile(Icons.coffee_rounded, 'Reto Café',
+                      'El que pierde invita al primer café (opcional)',
+                      onCoffeeChallenge),
                 if (onDoubleAnswer != null)
                   tile(Icons.question_answer_rounded, 'Doble respuesta',
                       'Responded sin veros hasta el reveal', onDoubleAnswer),

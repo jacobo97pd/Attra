@@ -323,6 +323,15 @@ service cloud.firestore {
       match /privateAnswers/{answerId} {
         allow read, write: if false;
       }
+
+      // Sesiones del "Duelo de Quimica" (reto de 5 min). Los participantes del
+      // chat las LEEN en vivo (estado + resultado IA); escritura SOLO backend.
+      match /gameSessions/{sessionId} {
+        allow read: if isParticipant(
+          get(/databases/$(database)/documents/chats/$(chatId)).data.get('users', [])
+        );
+        allow write: if false;
+      }
     }
 
     // Bloqueos: solo quien bloquea ve su registro.

@@ -13,7 +13,8 @@ enum MessageType {
   attraContext('attra_context'),
   dateProposal('date_proposal'),
   doubleAnswer('double_answer'),
-  twoTruths('two_truths');
+  twoTruths('two_truths'),
+  chatGame('chat_game');
 
   const MessageType(this.wireName);
 
@@ -27,6 +28,10 @@ enum MessageType {
   bool get isDoubleAnswer => this == MessageType.doubleAnswer;
 
   bool get isTwoTruths => this == MessageType.twoTruths;
+
+  /// Tarjeta del "Duelo de Química" (invitación / activo / resultado). El detalle
+  /// se lee de la sesión `chats/{chatId}/gameSessions/{gameSessionId}`.
+  bool get isChatGame => this == MessageType.chatGame;
 
   bool get isImage => this == MessageType.image;
 
@@ -314,6 +319,7 @@ class ChatMessage {
     this.dateProposal,
     this.doubleAnswer,
     this.twoTruths,
+    this.gameSessionId,
     this.media,
     this.bomb,
     this.createdAt,
@@ -345,6 +351,11 @@ class ChatMessage {
 
   /// Solo en mensajes `two_truths`.
   final TwoTruths? twoTruths;
+
+  /// Sesión del "Duelo de Química" asociada. En la tarjeta `chat_game` apunta a
+  /// la sesión a pintar; en mensajes normales enviados DURANTE un reto, marca a
+  /// qué sesión pertenecen (para que la IA solo analice esos 5 minutos).
+  final String? gameSessionId;
 
   /// Solo en mensajes `image` / `voice_note`.
   final MediaInfo? media;
@@ -385,6 +396,7 @@ class ChatMessage {
           ? TwoTruths.fromMap((map['twoTruths'] as Map)
               .map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
           : null,
+      gameSessionId: map['gameSessionId'] as String?,
       media: map['media'] is Map
           ? MediaInfo.fromMap((map['media'] as Map)
               .map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))

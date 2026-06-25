@@ -64,6 +64,12 @@ export {
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";
 export {
+  startChatGame,
+  respondChatGame,
+  finishChatGame,
+  abandonChatGame,
+} from "./chatGame";
+export {
   onLikeCreated,
   onMatchCreated,
   onMessageCreated,

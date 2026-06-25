@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../chat_game/domain/chat_game.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
 
@@ -50,6 +51,21 @@ class ChatRepository {
             .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
                 ChatMessage.fromMap(d.id, d.data()))
             .toList(growable: false));
+  }
+
+  /// Observa una sesión del "Duelo de Química" (lectura en vivo del estado y el
+  /// resultado de la IA). Escritura solo backend.
+  Stream<ChatGameSession?> observeGameSession(String chatId, String sessionId) {
+    return _chats
+        .doc(chatId)
+        .collection('gameSessions')
+        .doc(sessionId)
+        .snapshots()
+        .map((DocumentSnapshot<Map<String, dynamic>> snap) {
+      final Map<String, dynamic>? data = snap.data();
+      if (!snap.exists || data == null) return null;
+      return ChatGameSession.fromMap(snap.id, data);
+    });
   }
 
   static int _millis(DateTime? d) => d?.millisecondsSinceEpoch ?? 0;
