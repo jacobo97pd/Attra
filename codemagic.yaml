@@ -73,10 +73,26 @@ workflows:
           pod install --repo-update
       - name: Build IPA
         script: |
-          APP_VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)"
+          APP_VERSION_FULL="$(grep '^version:' pubspec.yaml | sed 's/version: //')"
+          APP_VERSION="${APP_VERSION_FULL%%+*}"
+          APP_BUILD_NUMBER="${APP_VERSION_FULL#*+}"
+          if [ "$APP_BUILD_NUMBER" = "$APP_VERSION_FULL" ]; then
+            APP_BUILD_NUMBER=1
+          fi
+          CM_BUILD_NUMBER="${PROJECT_BUILD_NUMBER:-0}"
+          case "$CM_BUILD_NUMBER" in
+            ''|*[!0-9]*) CM_BUILD_NUMBER=0 ;;
+          esac
+          case "$APP_BUILD_NUMBER" in
+            ''|*[!0-9]*) APP_BUILD_NUMBER=1 ;;
+          esac
+          if [ "$CM_BUILD_NUMBER" -gt "$APP_BUILD_NUMBER" ]; then
+            APP_BUILD_NUMBER="$CM_BUILD_NUMBER"
+          fi
+          echo "Building iOS version $APP_VERSION ($APP_BUILD_NUMBER)"
           flutter build ipa --release \
             --build-name=$APP_VERSION \
-            --build-number=$PROJECT_BUILD_NUMBER \
+            --build-number=$APP_BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
