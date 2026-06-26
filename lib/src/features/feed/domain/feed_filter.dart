@@ -49,10 +49,7 @@ class FeedFilter {
       //    distancia → se queda en la regla de país de arriba.
       final int maxKm =
           filters.maxDistanceKm ?? defaultMaxKm ?? defaultRadiusKm;
-      if (myLat != null &&
-          myLng != null &&
-          p.lat != null &&
-          p.lng != null) {
+      if (myLat != null && myLng != null && p.lat != null && p.lng != null) {
         if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
       }
 
@@ -85,8 +82,8 @@ class FeedFilter {
       }
       // (La distancia se aplica arriba, en RELEVANCIA GEOGRÁFICA.)
       // Qué busca.
-      if (_excludesString(filters, FeedFilters.kGoal,
-          filters.relationshipGoal, p.relationshipGoal)) {
+      if (_excludesString(filters, FeedFilters.kGoal, filters.relationshipGoal,
+          p.relationshipGoal)) {
         return false;
       }
       // Tabaco / alcohol / estudios.
@@ -115,7 +112,8 @@ class FeedFilter {
       if (filters.isDealbreaker(FeedFilters.kHeight) &&
           filters.heightActive &&
           p.heightCm != null &&
-          (p.heightCm! < filters.minHeight || p.heightCm! > filters.maxHeight)) {
+          (p.heightCm! < filters.minHeight ||
+              p.heightCm! > filters.maxHeight)) {
         return false;
       }
       // Verificación.
@@ -145,24 +143,43 @@ class FeedFilter {
     final String s = raw.trim().toLowerCase();
     if (s.isEmpty) return '';
     const Map<String, String> aliases = <String, String>{
-      'españa': 'es', 'espana': 'es', 'spain': 'es',
-      'italia': 'it', 'italy': 'it',
-      'francia': 'fr', 'france': 'fr',
+      'españa': 'es',
+      'espana': 'es',
+      'spain': 'es',
+      'italia': 'it',
+      'italy': 'it',
+      'francia': 'fr',
+      'france': 'fr',
       'portugal': 'pt',
-      'alemania': 'de', 'germany': 'de', 'deutschland': 'de',
-      'reino unido': 'gb', 'united kingdom': 'gb', 'inglaterra': 'gb',
-      'estados unidos': 'us', 'united states': 'us', 'usa': 'us',
-      'méxico': 'mx', 'mexico': 'mx',
-      'argentina': 'ar', 'brasil': 'br', 'brazil': 'br',
-      'países bajos': 'nl', 'paises bajos': 'nl', 'netherlands': 'nl',
-      'bélgica': 'be', 'belgica': 'be', 'belgium': 'be',
-      'irlanda': 'ie', 'ireland': 'ie',
+      'alemania': 'de',
+      'germany': 'de',
+      'deutschland': 'de',
+      'reino unido': 'gb',
+      'united kingdom': 'gb',
+      'inglaterra': 'gb',
+      'estados unidos': 'us',
+      'united states': 'us',
+      'usa': 'us',
+      'méxico': 'mx',
+      'mexico': 'mx',
+      'argentina': 'ar',
+      'brasil': 'br',
+      'brazil': 'br',
+      'países bajos': 'nl',
+      'paises bajos': 'nl',
+      'netherlands': 'nl',
+      'bélgica': 'be',
+      'belgica': 'be',
+      'belgium': 'be',
+      'irlanda': 'ie',
+      'ireland': 'ie',
     };
     return aliases[s] ?? s;
   }
 
   /// Distancia haversine en km.
-  static double _distanceKm(double lat1, double lon1, double lat2, double lon2) {
+  static double _distanceKm(
+      double lat1, double lon1, double lat2, double lon2) {
     const double r = 6371; // radio Tierra km
     final double dLat = _rad(lat2 - lat1);
     final double dLon = _rad(lon2 - lon1);

@@ -483,8 +483,8 @@ class OnboardingDraft {
           .map((Map<dynamic, dynamic> e) => ProfilePrompt.fromMap(
                 e.map((dynamic k, dynamic v) => MapEntry(k.toString(), v)),
               ))
-          .where((ProfilePrompt p) =>
-              p.question.isNotEmpty && p.answer.isNotEmpty)
+          .where(
+              (ProfilePrompt p) => p.question.isNotEmpty && p.answer.isNotEmpty)
           .toList(growable: false);
     }
     return const <ProfilePrompt>[];

@@ -79,7 +79,6 @@ class _SparkSummaryBody extends StatelessWidget {
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: AppColors.textSecondary)),
             const SizedBox(height: 18),
-
             if (summary.coincidences.isNotEmpty)
               _section(
                 theme,
@@ -93,7 +92,6 @@ class _SparkSummaryBody extends StatelessWidget {
                       .toList(growable: false),
                 ),
               ),
-
             if (summary.funnyDifferences.isNotEmpty)
               _section(
                 theme,
@@ -104,13 +102,12 @@ class _SparkSummaryBody extends StatelessWidget {
                   children: summary.funnyDifferences
                       .map((String d) => Padding(
                             padding: const EdgeInsets.only(bottom: 4),
-                            child: Text('• $d',
-                                style: theme.textTheme.bodyMedium),
+                            child:
+                                Text('• $d', style: theme.textTheme.bodyMedium),
                           ))
                       .toList(growable: false),
                 ),
               ),
-
             if (summary.suggestedQuestions.isNotEmpty)
               _section(
                 theme,
@@ -130,7 +127,6 @@ class _SparkSummaryBody extends StatelessWidget {
                       .toList(growable: false),
                 ),
               ),
-
             const SizedBox(height: 16),
             AttraPrimaryButton(
               label: 'Abrir chat',

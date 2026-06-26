@@ -106,7 +106,8 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
         Navigator.of(context).maybePop();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(active ? 'Modo viajes activado.' : 'Modo viajes desactivado.'),
+          content: Text(
+              active ? 'Modo viajes activado.' : 'Modo viajes desactivado.'),
         ));
       }
     } catch (e) {

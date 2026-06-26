@@ -30,8 +30,10 @@ class ProfileTraitsCatalog {
   }
 
   /// Claves de rasgos SENSIBLES (opcionales, opt-in, fuera del strength).
-  static Set<String> get sensitiveKeys =>
-      all.where((ProfileTraitDefinition d) => d.sensitive).map((ProfileTraitDefinition d) => d.key).toSet();
+  static Set<String> get sensitiveKeys => all
+      .where((ProfileTraitDefinition d) => d.sensitive)
+      .map((ProfileTraitDefinition d) => d.key)
+      .toSet();
 
   // --- Secciones ------------------------------------------------------------
 

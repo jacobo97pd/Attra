@@ -194,7 +194,8 @@ class SparkSession {
       userAId: (map['userAId'] as String?) ?? '',
       userBId: (map['userBId'] as String?) ?? '',
       status: SparkStatus.fromValue(map['status']),
-      invitedBy: (map['invitedBy'] as String?) ?? (map['userAId'] as String?) ?? '',
+      invitedBy:
+          (map['invitedBy'] as String?) ?? (map['userAId'] as String?) ?? '',
       currentRound: (map['currentRound'] as num?)?.toInt() ?? 0,
       totalRounds: (map['totalRounds'] as num?)?.toInt() ?? 0,
       countdownSeconds: (map['countdownSeconds'] as num?)?.toInt() ?? 300,

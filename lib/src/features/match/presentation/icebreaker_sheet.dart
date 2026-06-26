@@ -135,10 +135,15 @@ Future<void> showIcebreakerSheet(
                       'Una eleccion ligera',
                       () => onPrefill(IcebreakerCatalog.randomThisOrThat())),
                 if (onChatGame != null)
-                  tile(Icons.bolt_rounded, 'Duelo de Química · 5 min',
-                      'Reto de conversación con resultado de la IA', onChatGame),
+                  tile(
+                      Icons.bolt_rounded,
+                      'Duelo de Química · 5 min',
+                      'Reto de conversación con resultado de la IA',
+                      onChatGame),
                 if (onCoffeeChallenge != null)
-                  tile(Icons.coffee_rounded, 'Reto Café',
+                  tile(
+                      Icons.coffee_rounded,
+                      'Reto Café',
                       'El que pierde invita al primer café (opcional)',
                       onCoffeeChallenge),
                 if (onDoubleAnswer != null)

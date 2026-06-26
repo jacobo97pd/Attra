@@ -126,7 +126,8 @@ class MatchJourneyCard extends StatelessWidget {
             ),
             child: Icon(cta.icon,
                 size: 19,
-                color: journey.coolingDown ? AppColors.gold : AppColors.attraRed),
+                color:
+                    journey.coolingDown ? AppColors.gold : AppColors.attraRed),
           ),
           const SizedBox(width: 12),
           Expanded(

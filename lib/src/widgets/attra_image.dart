@@ -54,9 +54,7 @@ class AttraImage extends StatelessWidget {
     } else {
       final double dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
       final int? decodeWidth = memCacheWidth ??
-          (width != null && width!.isFinite
-              ? (width! * dpr).round()
-              : null);
+          (width != null && width!.isFinite ? (width! * dpr).round() : null);
       child = CachedNetworkImage(
         imageUrl: clean,
         fit: fit,

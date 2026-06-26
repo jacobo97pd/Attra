@@ -154,7 +154,8 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final BoostActivationResult r = await widget.service.activateBoost(type: type);
+      final BoostActivationResult r =
+          await widget.service.activateBoost(type: type);
       if (r.success) {
         setState(() => _boosts = r.remainingBoosts);
         _snack(type == BoostType.superboost
@@ -172,7 +173,6 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
       if (mounted) setState(() => _busy = false);
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -243,14 +243,16 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
               label: 'Boost 30 min',
               icon: Icons.bolt_rounded,
               loading: _busy,
-              onPressed:
-                  _boosts > 0 && !_busy ? () => _activate(BoostType.boostNormal) : null,
+              onPressed: _boosts > 0 && !_busy
+                  ? () => _activate(BoostType.boostNormal)
+                  : null,
             ),
             const SizedBox(height: 8),
             AttraSecondaryButton(
               label: 'Superboost 24h',
-              onPressed:
-                  _boosts > 0 && !_busy ? () => _activate(BoostType.superboost) : null,
+              onPressed: _boosts > 0 && !_busy
+                  ? () => _activate(BoostType.superboost)
+                  : null,
             ),
             const SizedBox(height: 20),
 

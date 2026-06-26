@@ -77,7 +77,10 @@ void main() {
       final result = FeedFilter.apply(
         profiles: <SeedProfile>[
           _p(id: 'hetero_f', gender: 'female', interestedIn: <String>['male']),
-          _p(id: 'lesbiana', gender: 'female', interestedIn: <String>['female']),
+          _p(
+              id: 'lesbiana',
+              gender: 'female',
+              interestedIn: <String>['female']),
           _p(id: 'hetero_m', gender: 'male', interestedIn: <String>['female']),
         ],
         myUid: 'me',
@@ -103,7 +106,8 @@ void main() {
       expect(result.map((p) => p.id), <String>['seed_f']);
     });
 
-    test('edad "no negociable" excluye fuera de rango; sin edad es permisivo', () {
+    test('edad "no negociable" excluye fuera de rango; sin edad es permisivo',
+        () {
       final result = FeedFilter.apply(
         profiles: <SeedProfile>[
           _p(id: 'joven', age: 20),
@@ -115,16 +119,17 @@ void main() {
         myInterestedIn: const <String>[],
         excludedUids: const <String>{},
         filters: const FeedFilters(
-            minAge: 25,
-            maxAge: 40,
-            dealbreakers: <String>{FeedFilters.kAge}),
+            minAge: 25, maxAge: 40, dealbreakers: <String>{FeedFilters.kAge}),
       );
       expect(result.map((p) => p.id), <String>['sinedad']);
     });
 
     test('filtro BLANDO (no deal-breaker) NO excluye', () {
       final result = FeedFilter.apply(
-        profiles: <SeedProfile>[_p(id: 'joven', age: 20), _p(id: 'mayor', age: 50)],
+        profiles: <SeedProfile>[
+          _p(id: 'joven', age: 20),
+          _p(id: 'mayor', age: 50)
+        ],
         myUid: 'me',
         myGender: '',
         myInterestedIn: const <String>[],
@@ -148,13 +153,13 @@ void main() {
         myLat: 40.42,
         myLng: -3.70,
         filters: const FeedFilters(
-            maxDistanceKm: 50,
-            dealbreakers: <String>{FeedFilters.kDistance}),
+            maxDistanceKm: 50, dealbreakers: <String>{FeedFilters.kDistance}),
       );
       expect(result.map((p) => p.id), <String>['cerca']);
     });
 
-    test('etnicidad/religión solo filtran si vienen (consentidas) y deal-breaker',
+    test(
+        'etnicidad/religión solo filtran si vienen (consentidas) y deal-breaker',
         () {
       final result = FeedFilter.apply(
         profiles: <SeedProfile>[
@@ -243,7 +248,8 @@ void main() {
       );
       // nofuma_alto pasa; fuma fuera; nofuma_bajo fuera por altura;
       // sindato permisivo (sin smoking ni altura) => queda.
-      expect(result.map((p) => p.id).toSet(), <String>{'nofuma_alto', 'sindato'});
+      expect(
+          result.map((p) => p.id).toSet(), <String>{'nofuma_alto', 'sindato'});
     });
 
     test('sin preferencia propia ve a todos (salvo excluidos)', () {

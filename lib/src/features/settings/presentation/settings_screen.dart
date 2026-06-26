@@ -46,7 +46,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (BuildContext context, int index) {
             final SettingsSection section = sections[index];
-            final bool destructive = section.key == SettingsCatalog.secLifecycle;
+            final bool destructive =
+                section.key == SettingsCatalog.secLifecycle;
             return ListTile(
               leading: Icon(
                 settingsIcon(section.icon),
@@ -58,9 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 section.title,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: destructive
-                      ? Theme.of(context).colorScheme.error
-                      : null,
+                  color:
+                      destructive ? Theme.of(context).colorScheme.error : null,
                 ),
               ),
               subtitle: Text(section.description),

@@ -94,7 +94,8 @@ void main() {
   group('BoostAwareRanker', () {
     test('capa el bonus y lo ignora si expiro o alcanzo cap', () {
       expect(
-        BoostAwareRanker.boostContribution(_boost(userId: 'a', priorityBonus: 999)),
+        BoostAwareRanker.boostContribution(
+            _boost(userId: 'a', priorityBonus: 999)),
         closeTo(BoostAwareRanker.maxBoostScore, 0.0001),
       );
       expect(

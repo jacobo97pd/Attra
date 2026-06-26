@@ -52,8 +52,8 @@ void main() {
     });
 
     test('juego completado pesa más que pocos mensajes', () {
-      final MatchJourney j = MatchJourney.derive(
-          realMessageCount: 2, hasCompletedGame: true);
+      final MatchJourney j =
+          MatchJourney.derive(realMessageCount: 2, hasCompletedGame: true);
       expect(j.status, MatchJourneyStatus.gameCompleted);
       expect(j.suggestedCta, MatchJourneyCta.proposePlan);
     });
@@ -66,8 +66,7 @@ void main() {
 
     test('cita propuesta y aceptada tienen prioridad', () {
       expect(
-        MatchJourney.derive(
-                realMessageCount: 20, dateProposalStatus: 'pending')
+        MatchJourney.derive(realMessageCount: 20, dateProposalStatus: 'pending')
             .status,
         MatchJourneyStatus.dateProposed,
       );

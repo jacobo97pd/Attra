@@ -230,17 +230,16 @@ class UserRepository {
 
     final DocumentSnapshot<Map<String, dynamic>> snap =
         await _usersCollection.doc(uid).get();
-    final Map<String, dynamic> profile =
-        _asStringMap(snap.data()?['profile']);
+    final Map<String, dynamic> profile = _asStringMap(snap.data()?['profile']);
 
     await _usersCollection.doc(uid).set(
-      _withRequiredUserFields(uid, <String, dynamic>{
-        'profilePrompts': payload,
-        'profile': <String, dynamic>{...profile, 'prompts': legacyMirror},
-        'updatedAt': FieldValue.serverTimestamp(),
-      }),
-      SetOptions(merge: true),
-    );
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'profilePrompts': payload,
+            'profile': <String, dynamic>{...profile, 'prompts': legacyMirror},
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
     await refreshProfileCompletion(uid);
   }
 
@@ -250,13 +249,13 @@ class UserRepository {
     required bool granted,
   }) async {
     await _usersCollection.doc(uid).set(
-      _withRequiredUserFields(uid, <String, dynamic>{
-        'aiVisualConsent': granted,
-        'aiVisualConsentVersion': granted ? 1 : 0,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }),
-      SetOptions(merge: true),
-    );
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'aiVisualConsent': granted,
+            'aiVisualConsentVersion': granted ? 1 : 0,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
   }
 
   /// Datos crudos del documento de usuario (para editar rasgos/visibilidad).
@@ -430,21 +429,21 @@ class UserRepository {
     required bool useForFilters,
   }) async {
     await _usersCollection.doc(uid).set(
-      _withRequiredUserFields(uid, <String, dynamic>{
-        'profileVisibility': <String, dynamic>{
-          'fields': <String, dynamic>{
-            traitKey: <String, dynamic>{
-              'visibleInProfile': visibleInProfile,
-              'useForMatching': useForMatching,
-              'useForFilters': useForFilters,
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'profileVisibility': <String, dynamic>{
+              'fields': <String, dynamic>{
+                traitKey: <String, dynamic>{
+                  'visibleInProfile': visibleInProfile,
+                  'useForMatching': useForMatching,
+                  'useForFilters': useForFilters,
+                },
+              },
+              'updatedAt': FieldValue.serverTimestamp(),
             },
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        'updatedAt': FieldValue.serverTimestamp(),
-      }),
-      SetOptions(merge: true),
-    );
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
     await refreshProfileCompletion(uid);
   }
 

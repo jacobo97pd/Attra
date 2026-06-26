@@ -49,7 +49,20 @@
 	<string>Attra necesita acceso a la camara para capturar tu selfie en vivo obligatoria.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attra puede necesitar acceso a fotos para gestionar imagenes de perfil.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Attra puede guardar contenido que generes o selecciones para tu perfil.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Attra necesita acceso al microfono para grabar notas de voz en chats y perfil.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Attra usa tu ubicacion aproximada para mostrarte perfiles cercanos segun tu radio de busqueda.</string>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 </dict>
 </plist>

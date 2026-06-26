@@ -634,8 +634,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 8),
             if (active)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(999),
@@ -648,10 +647,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ],
         ),
-        subtitle: const Text(
-            'Citas con calma: menos perfiles pero más afines a ti.'),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        subtitle:
+            const Text('Citas con calma: menos perfiles pero más afines a ti.'),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
     );
   }
@@ -683,7 +681,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
-        icon: Icon(Icons.spa_rounded, color: theme.colorScheme.primary, size: 36),
+        icon:
+            Icon(Icons.spa_rounded, color: theme.colorScheme.primary, size: 36),
         title: const Text('Slow Dating', textAlign: TextAlign.center),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
@@ -691,11 +690,19 @@ class _HomeScreenState extends State<HomeScreen> {
           children: <Widget>[
             Text('Citas con calma, no deslizar sin parar. Si lo activas:'),
             SizedBox(height: 12),
-            _InfoRow(icon: Icons.tune_rounded, text: 'Ves MENOS perfiles, pero más afines a ti (intereses y lo que buscáis).'),
+            _InfoRow(
+                icon: Icons.tune_rounded,
+                text:
+                    'Ves MENOS perfiles, pero más afines a ti (intereses y lo que buscáis).'),
             SizedBox(height: 8),
-            _InfoRow(icon: Icons.favorite_rounded, text: 'Prioriza conexiones intencionales sobre el match masivo.'),
+            _InfoRow(
+                icon: Icons.favorite_rounded,
+                text:
+                    'Prioriza conexiones intencionales sobre el match masivo.'),
             SizedBox(height: 8),
-            _InfoRow(icon: Icons.toggle_off_rounded, text: 'Puedes desactivarlo cuando quieras. No borra a nadie.'),
+            _InfoRow(
+                icon: Icons.toggle_off_rounded,
+                text: 'Puedes desactivarlo cuando quieras. No borra a nadie.'),
           ],
         ),
         actions: <Widget>[

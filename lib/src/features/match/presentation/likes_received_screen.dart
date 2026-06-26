@@ -255,7 +255,8 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
   /// Abre el perfil (solo lectura) de quien dio like. Solo Plus/Pro: el muro de
   /// Free no llega aquí (sus tarjetas van al paywall).
   Future<void> _openProfile(String uid) async {
-    final Future<SeedProfile?> Function(String uid)? loader = widget.loadProfile;
+    final Future<SeedProfile?> Function(String uid)? loader =
+        widget.loadProfile;
     if (loader == null) return;
     final NavigatorState nav = Navigator.of(context);
     SeedProfile? profile;

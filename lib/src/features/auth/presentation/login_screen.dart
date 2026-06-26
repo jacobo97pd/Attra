@@ -81,8 +81,7 @@ class _LoginScreenState extends State<LoginScreen>
   void didUpdateWidget(covariant LoginScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Si llega el paso de SMS o un error mientras está oculto, lo revelamos.
-    if (!_revealed &&
-        (widget.phoneCodeSent || widget.errorMessage != null)) {
+    if (!_revealed && (widget.phoneCodeSent || widget.errorMessage != null)) {
       _reveal();
     }
   }
@@ -231,9 +230,8 @@ class _LoginScreenState extends State<LoginScreen>
       children: <Widget>[
         // Google.
         _SocialButton(
-          label: widget.isLoading
-              ? 'Iniciando sesión...'
-              : 'Continuar con Google',
+          label:
+              widget.isLoading ? 'Iniciando sesión...' : 'Continuar con Google',
           loading: widget.isLoading,
           onPressed: widget.isLoading ? null : widget.onGooglePressed,
         ),

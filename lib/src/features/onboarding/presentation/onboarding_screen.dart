@@ -767,8 +767,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               padding: const EdgeInsets.only(bottom: 12),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: AppColors.attraRed.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
@@ -851,15 +851,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             children: <Widget>[
               Icon(Icons.verified_user_rounded,
                   size: 16,
-                  color: hasSelfie
-                      ? AppColors.success
-                      : AppColors.textMuted),
+                  color: hasSelfie ? AppColors.success : AppColors.textMuted),
               const SizedBox(width: 6),
               Text(
                 hasSelfie ? 'Selfie capturada' : 'Pendiente de capturar',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color:
-                      hasSelfie ? AppColors.success : AppColors.textMuted,
+                  color: hasSelfie ? AppColors.success : AppColors.textMuted,
                 ),
               ),
             ],
@@ -1879,8 +1876,8 @@ class _SelectablePill extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: EdgeInsets.symmetric(
-            horizontal: selected ? 14 : 16, vertical: 10),
+        padding:
+            EdgeInsets.symmetric(horizontal: selected ? 14 : 16, vertical: 10),
         decoration: BoxDecoration(
           gradient:
               selected ? const LinearGradient(colors: AppColors.action) : null,
@@ -2144,4 +2141,3 @@ const List<_OptionItem> _appearancePreferenceOptions = <_OptionItem>[
   _OptionItem(value: 'urban_style', label: 'Estilo urbano'),
   _OptionItem(value: 'sporty_vibe', label: 'Vibe deportiva'),
 ];
-

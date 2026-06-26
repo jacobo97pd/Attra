@@ -49,9 +49,8 @@ class StoryRepository {
         }
       }
       final List<Story> list = byOwner.values.toList(growable: true)
-        ..sort((Story a, Story b) =>
-            (b.createdAt?.millisecondsSinceEpoch ?? 0)
-                .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
+        ..sort((Story a, Story b) => (b.createdAt?.millisecondsSinceEpoch ?? 0)
+            .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
       return list;
     });
   }
@@ -68,9 +67,8 @@ class StoryRepository {
               Story.fromMap(d.id, d.data()))
           .where((Story s) => s.isLive)
           .toList(growable: true)
-        ..sort((Story a, Story b) =>
-            (b.createdAt?.millisecondsSinceEpoch ?? 0)
-                .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
+        ..sort((Story a, Story b) => (b.createdAt?.millisecondsSinceEpoch ?? 0)
+            .compareTo(a.createdAt?.millisecondsSinceEpoch ?? 0));
       return live.isEmpty ? null : live.first;
     });
   }

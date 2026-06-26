@@ -61,7 +61,8 @@ class SpotifyAuthService implements IntegrationConnector {
       throw IntegrationException('Spotify denegó el acceso ($error).');
     }
     if (redirect.queryParameters['state'] != state) {
-      throw const IntegrationException('Respuesta de Spotify no válida (state).');
+      throw const IntegrationException(
+          'Respuesta de Spotify no válida (state).');
     }
     final String? code = redirect.queryParameters['code'];
     if (code == null || code.isEmpty) {
@@ -86,7 +87,8 @@ class SpotifyAuthService implements IntegrationConnector {
     try {
       await _functions.httpsCallable('spotifyDisconnect').call<dynamic>();
     } on FirebaseFunctionsException catch (e) {
-      throw IntegrationException(e.message ?? 'No se pudo desconectar Spotify.');
+      throw IntegrationException(
+          e.message ?? 'No se pudo desconectar Spotify.');
     }
   }
 

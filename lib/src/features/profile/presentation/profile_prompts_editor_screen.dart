@@ -142,8 +142,7 @@ class _ProfilePromptsEditorScreenState
     await _persist(_prompts
         .map((ProfilePrompt p) => p.id == prompt.id
             ? p.copyWith(
-                answer: answer,
-                updatedAtIso: DateTime.now().toIso8601String())
+                answer: answer, updatedAtIso: DateTime.now().toIso8601String())
             : p)
         .toList(growable: false));
   }
@@ -273,8 +272,8 @@ class _PromptEditCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   prompt.question,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(letterSpacing: 0.3),
+                  style:
+                      theme.textTheme.bodySmall?.copyWith(letterSpacing: 0.3),
                 ),
               ),
               if (prompt.isCustom)
@@ -344,8 +343,8 @@ class _PromptPickerSheetState extends State<_PromptPickerSheet> {
         ? ProfilePromptCatalog.search(_query)
         : ProfilePromptCatalog.byCategory(_category);
     return base
-        .where((CatalogPrompt p) => !widget.usedQuestions
-            .contains(ProfilePromptValidator.normalize(p.question).toLowerCase()))
+        .where((CatalogPrompt p) => !widget.usedQuestions.contains(
+            ProfilePromptValidator.normalize(p.question).toLowerCase()))
         .toList(growable: false);
   }
 
@@ -361,8 +360,8 @@ class _PromptPickerSheetState extends State<_PromptPickerSheet> {
           Padding(
             padding:
                 const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, 0),
-            child: Text('Elige una pregunta',
-                style: theme.textTheme.titleLarge),
+            child:
+                Text('Elige una pregunta', style: theme.textTheme.titleLarge),
           ),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
@@ -380,14 +379,12 @@ class _PromptPickerSheetState extends State<_PromptPickerSheet> {
               height: 40,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 itemCount: ProfilePromptCatalog.categories.length,
                 separatorBuilder: (_, __) =>
                     const SizedBox(width: AppSpacing.sm),
                 itemBuilder: (BuildContext context, int i) {
-                  final PromptCategory c =
-                      ProfilePromptCatalog.categories[i];
+                  final PromptCategory c = ProfilePromptCatalog.categories[i];
                   return ChoiceChip(
                     label: Text(c.label),
                     selected: _category == c.key,
@@ -409,8 +406,7 @@ class _PromptPickerSheetState extends State<_PromptPickerSheet> {
                     itemBuilder: (BuildContext context, int i) {
                       final CatalogPrompt p = visible[i];
                       return Padding(
-                        padding:
-                            const EdgeInsets.only(bottom: AppSpacing.sm),
+                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                         child: AttraCard(
                           padding: const EdgeInsets.symmetric(
                               horizontal: AppSpacing.lg,

@@ -42,7 +42,8 @@ void main() {
       final _FakeConnector spotify = _FakeConnector('integrations.spotify');
       final _FakeConnector instagram = _FakeConnector('integrations.instagram');
       final CompositeIntegrationConnector composite =
-          CompositeIntegrationConnector(<IntegrationConnector>[spotify, instagram]);
+          CompositeIntegrationConnector(
+              <IntegrationConnector>[spotify, instagram]);
 
       expect(composite.handles('integrations.spotify'), isTrue);
       expect(composite.handles('integrations.instagram'), isTrue);

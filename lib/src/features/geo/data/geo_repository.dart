@@ -72,7 +72,8 @@ class GeoRepository {
       return cached;
     }
     try {
-      final String raw = await rootBundle.loadString('assets/geo/cities/$key.json');
+      final String raw =
+          await rootBundle.loadString('assets/geo/cities/$key.json');
       final List<dynamic> decoded = json.decode(raw) as List<dynamic>;
       final List<String> cities =
           decoded.whereType<String>().toList(growable: false);
@@ -150,18 +151,43 @@ class GeoRepository {
       final String ch = String.fromCharCode(codeUnit);
       buffer.write(_diacritics[ch] ?? ch);
     }
-    return buffer
-        .toString()
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 }
 
 const Map<String, String> _diacritics = <String, String>{
-  'á': 'a', 'à': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a', 'ā': 'a',
-  'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e', 'ē': 'e',
-  'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i', 'ī': 'i',
-  'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o', 'ø': 'o', 'ō': 'o',
-  'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ū': 'u',
-  'ñ': 'n', 'ç': 'c', 'ß': 'ss', 'œ': 'oe', 'æ': 'ae',
+  'á': 'a',
+  'à': 'a',
+  'â': 'a',
+  'ä': 'a',
+  'ã': 'a',
+  'å': 'a',
+  'ā': 'a',
+  'é': 'e',
+  'è': 'e',
+  'ê': 'e',
+  'ë': 'e',
+  'ē': 'e',
+  'í': 'i',
+  'ì': 'i',
+  'î': 'i',
+  'ï': 'i',
+  'ī': 'i',
+  'ó': 'o',
+  'ò': 'o',
+  'ô': 'o',
+  'ö': 'o',
+  'õ': 'o',
+  'ø': 'o',
+  'ō': 'o',
+  'ú': 'u',
+  'ù': 'u',
+  'û': 'u',
+  'ü': 'u',
+  'ū': 'u',
+  'ñ': 'n',
+  'ç': 'c',
+  'ß': 'ss',
+  'œ': 'oe',
+  'æ': 'ae',
 };

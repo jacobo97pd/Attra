@@ -9,8 +9,7 @@ import '../domain/app_notification.dart';
 /// cuando llegue un like/match/mensaje; mientras, el cliente puede crear las
 /// suyas (re-engagement local, pruebas). Streams eficientes (limit + orderBy).
 class NotificationService {
-  NotificationService({required FirebaseFirestore firestore})
-      : _db = firestore;
+  NotificationService({required FirebaseFirestore firestore}) : _db = firestore;
 
   final FirebaseFirestore _db;
 
@@ -52,9 +51,8 @@ class NotificationService {
 
   Future<void> markRead(String uid, String id) async {
     if (uid.isEmpty || id.isEmpty) return;
-    await _items(uid).doc(id).set(
-        <String, dynamic>{'read': true}, SetOptions(merge: true)).catchError(
-        (_) {});
+    await _items(uid).doc(id).set(<String, dynamic>{'read': true},
+        SetOptions(merge: true)).catchError((_) {});
   }
 
   Future<void> markAllRead(String uid) async {

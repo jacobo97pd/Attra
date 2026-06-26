@@ -36,15 +36,16 @@ class SparkSummary {
       };
 
   static SparkSummary fromMap(Map<String, dynamic> map) {
-    List<String> list(Object? v) =>
-        v is List ? v.whereType<String>().toList(growable: false) : const <String>[];
+    List<String> list(Object? v) => v is List
+        ? v.whereType<String>().toList(growable: false)
+        : const <String>[];
     return SparkSummary(
       coincidences: list(map['coincidences']),
       funnyDifferences: list(map['funnyDifferences']),
       topics: list(map['topics']),
       suggestedQuestions: list(map['suggestedQuestions']),
-      chatLine: (map['chatLine'] as String?) ??
-          'Habéis completado Attra Spark.',
+      chatLine:
+          (map['chatLine'] as String?) ?? 'Habéis completado Attra Spark.',
     );
   }
 }
@@ -85,8 +86,10 @@ class SparkSummaryBuilder {
     final List<String> funny = <String>[];
     final List<String> topics = <String>[];
 
-    String aKey(SparkRound r) => _choiceKey(session.answerOf(r.id, session.userAId));
-    String bKey(SparkRound r) => _choiceKey(session.answerOf(r.id, session.userBId));
+    String aKey(SparkRound r) =>
+        _choiceKey(session.answerOf(r.id, session.userAId));
+    String bKey(SparkRound r) =>
+        _choiceKey(session.answerOf(r.id, session.userBId));
     String labelFor(SparkRound r, String key) {
       for (final SparkOption o in r.options) {
         if (o.key == key) return o.label.toLowerCase();
@@ -108,8 +111,7 @@ class SparkSummaryBuilder {
         }
       } else if (r.kind == SparkRoundKind.guess ||
           r.kind == SparkRoundKind.vibe) {
-        funny.add(
-            '${_cap(nameA)} ${labelFor(r, a)}, $nameB ${labelFor(r, b)}');
+        funny.add('${_cap(nameA)} ${labelFor(r, a)}, $nameB ${labelFor(r, b)}');
         topics.add(r.prompt.toLowerCase());
       }
     }

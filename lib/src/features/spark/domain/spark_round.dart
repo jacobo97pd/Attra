@@ -80,19 +80,36 @@ class SparkRoundCatalog {
   /// This-or-that para "Adivina al otro" (ronda 2). Cada item = par de polos.
   static const List<(String, String, SparkOption, SparkOption)> _thisOrThat =
       <(String, String, SparkOption, SparkOption)>[
-    ('beach_mountain', 'planes', SparkOption('beach', 'Playa', emoji: '🏖️'),
-        SparkOption('mountain', 'Montaña', emoji: '⛰️')),
-    ('tapas_dinner', 'planes', SparkOption('tapas', 'Tapas', emoji: '🍤'),
-        SparkOption('dinner', 'Cena elegante', emoji: '🍽️')),
-    ('museum_concert', 'aventura',
-        SparkOption('museum', 'Museo', emoji: '🖼️'),
-        SparkOption('concert', 'Concierto', emoji: '🎶')),
-    ('sofa_getaway', 'cotidiana',
-        SparkOption('sofa', 'Domingo de sofá', emoji: '🛋️'),
-        SparkOption('getaway', 'Escapada', emoji: '🚗')),
-    ('city_nature', 'aventura',
-        SparkOption('city', 'Paseo por ciudad', emoji: '🏙️'),
-        SparkOption('nature', 'Naturaleza', emoji: '🌿')),
+    (
+      'beach_mountain',
+      'planes',
+      SparkOption('beach', 'Playa', emoji: '🏖️'),
+      SparkOption('mountain', 'Montaña', emoji: '⛰️')
+    ),
+    (
+      'tapas_dinner',
+      'planes',
+      SparkOption('tapas', 'Tapas', emoji: '🍤'),
+      SparkOption('dinner', 'Cena elegante', emoji: '🍽️')
+    ),
+    (
+      'museum_concert',
+      'aventura',
+      SparkOption('museum', 'Museo', emoji: '🖼️'),
+      SparkOption('concert', 'Concierto', emoji: '🎶')
+    ),
+    (
+      'sofa_getaway',
+      'cotidiana',
+      SparkOption('sofa', 'Domingo de sofá', emoji: '🛋️'),
+      SparkOption('getaway', 'Escapada', emoji: '🚗')
+    ),
+    (
+      'city_nature',
+      'aventura',
+      SparkOption('city', 'Paseo por ciudad', emoji: '🏙️'),
+      SparkOption('nature', 'Naturaleza', emoji: '🌿')
+    ),
   ];
 
   /// Situaciones para "Reacciona" (ronda 3).

@@ -7,8 +7,7 @@ void main() {
     test('fromValue tolera snake_case y desconocidos', () {
       expect(AppNotificationKind.fromValue('new_match'),
           AppNotificationKind.newMatch);
-      expect(AppNotificationKind.fromValue('???'),
-          AppNotificationKind.generic);
+      expect(AppNotificationKind.fromValue('???'), AppNotificationKind.generic);
       expect(NotifAccent.fromValue('premium'), NotifAccent.premium);
       expect(NotifAccent.fromValue('zzz'), NotifAccent.desire);
     });
@@ -26,8 +25,9 @@ void main() {
     });
 
     test('newMatch usa el nombre y acento de match', () {
-      final NotifContent c =
-          AppNotificationTemplates.build(AppNotificationKind.newMatch, name: 'Sara');
+      final NotifContent c = AppNotificationTemplates.build(
+          AppNotificationKind.newMatch,
+          name: 'Sara');
       expect(c.title, contains('Sara'));
       expect(c.accent, NotifAccent.match);
       expect(c.route, 'chats');
@@ -45,16 +45,15 @@ void main() {
     });
 
     test('comeBack usa los días y acento calm', () {
-      final NotifContent c = AppNotificationTemplates.build(
-          AppNotificationKind.comeBack,
-          days: 4);
+      final NotifContent c =
+          AppNotificationTemplates.build(AppNotificationKind.comeBack, days: 4);
       expect(c.body, contains('4'));
       expect(c.accent, NotifAccent.calm);
     });
 
     test('attraReceived es premium (champagne)', () {
-      final NotifContent c = AppNotificationTemplates.build(
-          AppNotificationKind.attraReceived);
+      final NotifContent c =
+          AppNotificationTemplates.build(AppNotificationKind.attraReceived);
       expect(c.accent, NotifAccent.premium);
       expect(c.emoji, '⭐');
     });
@@ -72,7 +71,8 @@ void main() {
     });
 
     test('fromMap parsea y tolera campos ausentes', () {
-      final AppNotification n = AppNotification.fromMap('id1', <String, dynamic>{
+      final AppNotification n =
+          AppNotification.fromMap('id1', <String, dynamic>{
         'kind': 'new_message',
         'emoji': '💬',
         'title': 'Hola',

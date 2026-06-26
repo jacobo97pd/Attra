@@ -13,8 +13,7 @@ import 'package:flutter/foundation.dart';
 /// (no como un evento por tarjeta, que saturaría). Los eventos de feedEvents son
 /// las interacciones de baja frecuencia y alto valor (like/attra/nope/match…).
 class FeedMetricsService {
-  FeedMetricsService({required FirebaseFirestore firestore})
-      : _db = firestore;
+  FeedMetricsService({required FirebaseFirestore firestore}) : _db = firestore;
 
   final FirebaseFirestore _db;
 

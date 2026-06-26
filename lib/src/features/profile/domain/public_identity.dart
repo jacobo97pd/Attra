@@ -20,10 +20,8 @@ String resolvePublicDisplayName(Map<String, dynamic> userData) {
 
   final String first = _str(profile['firstName']);
   final String last = _str(profile['lastName']);
-  final String full = <String>[first, last]
-      .where((String s) => s.isNotEmpty)
-      .join(' ')
-      .trim();
+  final String full =
+      <String>[first, last].where((String s) => s.isNotEmpty).join(' ').trim();
   if (full.isNotEmpty) return full;
 
   return _str(userData['displayName']);

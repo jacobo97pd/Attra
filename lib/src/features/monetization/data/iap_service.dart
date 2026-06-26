@@ -54,6 +54,7 @@ class IapService extends ChangeNotifier {
   bool get isAvailable => _available;
   bool get isBusy => _busy;
   String? get error => _error;
+
   /// Primera oferta de [id] (la única en consumibles). Para suscripciones con
   /// varios planes básicos, usa [offersFor].
   ProductDetails? productById(String id) {

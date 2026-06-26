@@ -148,8 +148,9 @@ class DateBuilder {
     final DateVibe vibe = p.vibe ?? DateVibe.casual;
 
     final String place = _placeFor[plan] ?? 'un plan sencillo';
-    final String durationPhrase =
-        duration == DateDuration.sinPrisa ? 'sin prisa' : 'de ${duration.phrase}';
+    final String durationPhrase = duration == DateDuration.sinPrisa
+        ? 'sin prisa'
+        : 'de ${duration.phrase}';
 
     final String summary =
         'Un plan ${vibe.phrase} ${moment.phrase}, ${budget.phrase} y $durationPhrase. '

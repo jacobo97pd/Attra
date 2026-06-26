@@ -438,7 +438,8 @@ class AuthService {
         );
       case 'popup-closed-by-user':
       case 'cancelled-popup-request':
-        return _withCode('Inicio de sesion cancelado por el usuario.', error.code);
+        return _withCode(
+            'Inicio de sesion cancelado por el usuario.', error.code);
       case 'unauthorized-domain':
         return _withCode(
           'Este dominio no esta autorizado en Firebase Auth.',

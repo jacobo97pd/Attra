@@ -304,7 +304,8 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
 
-    final bool likesProtected = !(_entitlementController?.canSeeAllLikes ?? false);
+    final bool likesProtected =
+        !(_entitlementController?.canSeeAllLikes ?? false);
     final Widget likesTab = Scaffold(
       appBar: AppBar(
         title: Text(l10n.likesTitle),

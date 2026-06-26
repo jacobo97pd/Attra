@@ -61,8 +61,8 @@ class StoriesBar extends StatelessWidget {
         return StreamBuilder<List<UserMatch>>(
           stream: matchService?.observeMatches(currentUid) ??
               const Stream<List<UserMatch>>.empty(),
-          builder: (BuildContext context,
-              AsyncSnapshot<List<UserMatch>> matchSnap) {
+          builder:
+              (BuildContext context, AsyncSnapshot<List<UserMatch>> matchSnap) {
             final Set<String> matchedUids = matchService == null
                 ? const <String>{}
                 : <String>{
@@ -76,50 +76,48 @@ class StoriesBar extends StatelessWidget {
     );
   }
 
-  Widget _buildBar(
-      BuildContext context, Story? mine, Set<String> matchedUids) {
+  Widget _buildBar(BuildContext context, Story? mine, Set<String> matchedUids) {
     return StreamBuilder<List<Story>>(
-          stream: storyService.observeLiveStories(
-              excludeUid: currentUid, excludedOwners: excludedOwners),
-          builder:
-              (BuildContext context, AsyncSnapshot<List<Story>> othersSnap) {
-            // Solo historias de matches (si hay matchService).
-            final List<Story> others =
-                (othersSnap.data ?? <Story>[]).where((Story s) {
-              if (matchService == null) return true;
-              return matchedUids.contains(s.ownerUid);
-            }).toList(growable: false);
-            return SizedBox(
-              height: 96,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                children: <Widget>[
-                  StoryRing(
-                    name: currentName,
-                    imageUrl: mine?.thumbnailUrl.isNotEmpty == true
-                        ? mine!.thumbnailUrl
-                        : currentPhotoUrl,
-                    hasLiveStory: mine != null,
-                    isAdd: mine == null,
-                    onTap: () => mine == null
-                        ? _openCreate(context)
-                        : _openViewer(context, <Story>[mine], 0),
-                  ),
-                  const SizedBox(width: 8),
-                  for (int i = 0; i < others.length; i++) ...<Widget>[
-                    StoryRing(
-                      name: others[i].displayName,
-                      imageUrl: others[i].thumbnailUrl,
-                      hasLiveStory: true,
-                      onTap: () => _openViewer(context, others, i),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                ],
+      stream: storyService.observeLiveStories(
+          excludeUid: currentUid, excludedOwners: excludedOwners),
+      builder: (BuildContext context, AsyncSnapshot<List<Story>> othersSnap) {
+        // Solo historias de matches (si hay matchService).
+        final List<Story> others =
+            (othersSnap.data ?? <Story>[]).where((Story s) {
+          if (matchService == null) return true;
+          return matchedUids.contains(s.ownerUid);
+        }).toList(growable: false);
+        return SizedBox(
+          height: 96,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            children: <Widget>[
+              StoryRing(
+                name: currentName,
+                imageUrl: mine?.thumbnailUrl.isNotEmpty == true
+                    ? mine!.thumbnailUrl
+                    : currentPhotoUrl,
+                hasLiveStory: mine != null,
+                isAdd: mine == null,
+                onTap: () => mine == null
+                    ? _openCreate(context)
+                    : _openViewer(context, <Story>[mine], 0),
               ),
-            );
-          },
+              const SizedBox(width: 8),
+              for (int i = 0; i < others.length; i++) ...<Widget>[
+                StoryRing(
+                  name: others[i].displayName,
+                  imageUrl: others[i].thumbnailUrl,
+                  hasLiveStory: true,
+                  onTap: () => _openViewer(context, others, i),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ],
+          ),
         );
+      },
+    );
   }
 }

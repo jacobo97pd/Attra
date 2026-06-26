@@ -112,7 +112,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
           children: <Widget>[
             Expanded(
               child: _video == null
-                  ? _Picker(onGallery: () => _pick(ImageSource.gallery),
+                  ? _Picker(
+                      onGallery: () => _pick(ImageSource.gallery),
                       onCamera: () => _pick(ImageSource.camera))
                   : _Preview(controller: _preview),
             ),
@@ -132,7 +133,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
                       value: StoryVisibility.discovery,
                       label: Text('Descubrimiento')),
                   ButtonSegment<StoryVisibility>(
-                      value: StoryVisibility.matches, label: Text('Solo matches')),
+                      value: StoryVisibility.matches,
+                      label: Text('Solo matches')),
                 ],
                 selected: <StoryVisibility>{_visibility},
                 onSelectionChanged: (Set<StoryVisibility> s) =>

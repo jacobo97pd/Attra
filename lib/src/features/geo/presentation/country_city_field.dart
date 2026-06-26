@@ -99,7 +99,8 @@ class _CountryCityFieldState extends State<CountryCityField> {
     final Country? selected = await showModalBottomSheet<Country>(
       context: context,
       isScrollControlled: true,
-      builder: (BuildContext context) => _CountryPickerSheet(countries: countries),
+      builder: (BuildContext context) =>
+          _CountryPickerSheet(countries: countries),
     );
     if (selected == null) {
       return;

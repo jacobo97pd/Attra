@@ -166,7 +166,8 @@ class AttraProfileCardSkeleton extends StatelessWidget {
                 height: double.infinity, radius: AppSpacing.radiusLg),
           ),
           const SizedBox(height: AppSpacing.md),
-          AttraSkeleton(width: MediaQuery.of(context).size.width * 0.5, height: 22),
+          AttraSkeleton(
+              width: MediaQuery.of(context).size.width * 0.5, height: 22),
           const SizedBox(height: AppSpacing.sm),
           const AttraSkeleton(width: 180, height: 14),
         ],

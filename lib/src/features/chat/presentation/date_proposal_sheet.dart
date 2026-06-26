@@ -16,13 +16,11 @@ class DateProposalInput {
   final String placeAddress;
   final String note;
 
-  String get dateIso =>
-      '${date.year.toString().padLeft(4, '0')}-'
+  String get dateIso => '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
 
-  String get timeHm =>
-      '${time.hour.toString().padLeft(2, '0')}:'
+  String get timeHm => '${time.hour.toString().padLeft(2, '0')}:'
       '${time.minute.toString().padLeft(2, '0')}';
 }
 
@@ -118,10 +116,13 @@ class _DateProposalSheetState extends State<DateProposalSheet> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String dateLabel =
-        _date == null ? 'Elegir fecha' : DateProposalInput(
-            date: _date!, time: const TimeOfDay(hour: 0, minute: 0),
-            placeName: '').dateIso;
+    final String dateLabel = _date == null
+        ? 'Elegir fecha'
+        : DateProposalInput(
+                date: _date!,
+                time: const TimeOfDay(hour: 0, minute: 0),
+                placeName: '')
+            .dateIso;
     final String timeLabel = _time == null
         ? 'Elegir hora'
         : '${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}';
@@ -167,7 +168,8 @@ class _DateProposalSheetState extends State<DateProposalSheet> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text('Elige fecha y hora',
-                  style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+                  style:
+                      TextStyle(color: theme.colorScheme.error, fontSize: 12)),
             ),
           const SizedBox(height: 12),
           TextField(
@@ -196,7 +198,10 @@ class _DateProposalSheetState extends State<DateProposalSheet> {
             maxLines: 3,
             minLines: 2,
             maxLength: _maxNote,
-            buildCounter: (_, {required int currentLength, required bool isFocused, int? maxLength}) =>
+            buildCounter: (_,
+                    {required int currentLength,
+                    required bool isFocused,
+                    int? maxLength}) =>
                 Text('$remaining', style: theme.textTheme.bodySmall),
             decoration: const InputDecoration(
               labelText: 'Nota (opcional)',

@@ -51,13 +51,13 @@ void main() {
 
     test('lee spark_enabled (snake_case) y sparkEnabled (camelCase)', () {
       expect(
-        MonetizationFeatureFlags.fromMap(<String, dynamic>{'spark_enabled': true})
-            .sparkEnabled,
+        MonetizationFeatureFlags.fromMap(
+            <String, dynamic>{'spark_enabled': true}).sparkEnabled,
         isTrue,
       );
       expect(
-        MonetizationFeatureFlags.fromMap(<String, dynamic>{'sparkEnabled': true})
-            .sparkEnabled,
+        MonetizationFeatureFlags.fromMap(
+            <String, dynamic>{'sparkEnabled': true}).sparkEnabled,
         isTrue,
       );
     });
@@ -107,8 +107,8 @@ void main() {
       final SparkSession waiting = SparkSession.fromMap(
           's', sessionMap(a: 'A', b: 'B', status: 'waiting', bAccepted: false));
       expect(waiting.bothAccepted, isFalse);
-      final SparkSession ready = SparkSession.fromMap('s',
-          sessionMap(a: 'A', b: 'B', status: 'waiting', bAccepted: true));
+      final SparkSession ready = SparkSession.fromMap(
+          's', sessionMap(a: 'A', b: 'B', status: 'waiting', bAccepted: true));
       expect(ready.bothAccepted, isTrue);
     });
   });

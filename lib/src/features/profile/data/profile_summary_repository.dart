@@ -22,7 +22,9 @@ class ProfileSummaryRepository {
   ProfileSummary? peek(String uid) => _cache[uid];
 
   Future<ProfileSummary> fetch(String uid) {
-    if (uid.isEmpty) return Future<ProfileSummary>.value(ProfileSummary.unknown);
+    if (uid.isEmpty) {
+      return Future<ProfileSummary>.value(ProfileSummary.unknown);
+    }
     final ProfileSummary? cached = _cache[uid];
     if (cached != null) return Future<ProfileSummary>.value(cached);
 
@@ -37,10 +39,9 @@ class ProfileSummaryRepository {
 
   Future<ProfileSummary> _load(String uid) async {
     try {
-      final ProfileSummary summary =
-          await _fromCollection('discovery', uid) ??
-              await _fromCollection('seed_profiles', uid) ??
-              ProfileSummary.unknown.copyWith(uid: uid);
+      final ProfileSummary summary = await _fromCollection('discovery', uid) ??
+          await _fromCollection('seed_profiles', uid) ??
+          ProfileSummary.unknown.copyWith(uid: uid);
       // Solo cachea si se resolvio (evita fijar "Alguien" si discovery aun no
       // estaba sincronizado en el momento de la primera lectura).
       if (summary.displayName != 'Alguien') {

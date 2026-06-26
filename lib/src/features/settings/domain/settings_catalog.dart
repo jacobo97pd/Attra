@@ -135,8 +135,7 @@ class SettingsCatalog {
         sectionKey: secPrivacy,
         type: SettingType.boolean,
         label: 'Slow Dating',
-        description:
-            'Citas con calma: ves menos perfiles pero mas afines a ti '
+        description: 'Citas con calma: ves menos perfiles pero mas afines a ti '
             '(intereses y lo que buscais). Prioriza conexiones intencionales '
             'sobre el deslizar masivo. Puedes desactivarlo cuando quieras.',
         defaultValue: false,
@@ -530,8 +529,7 @@ class SettingsCatalog {
         sectionKey: secIntegrations,
         type: SettingType.boolean,
         label: 'Sincronizar contactos',
-        description:
-            'Usar tu agenda para no mostrarte a personas que conoces.',
+        description: 'Usar tu agenda para no mostrarte a personas que conoces.',
         defaultValue: false,
         requiresOsPermission: 'contacts',
         legalBasis: LegalBasis.consent,

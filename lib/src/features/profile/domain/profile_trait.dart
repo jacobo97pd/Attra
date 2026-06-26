@@ -30,7 +30,8 @@ class ProfileTraitDefinition {
   final String sectionKey;
   final String label;
   final TraitType type;
-  final String group; // profile | appearance | lifestyle | style | preferences | origin
+  final String
+      group; // profile | appearance | lifestyle | style | preferences | origin
   final String field;
   final List<TraitOption> options;
   final bool sensitive;

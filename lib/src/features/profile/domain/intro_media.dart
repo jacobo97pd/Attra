@@ -26,8 +26,8 @@ class IntroAudio {
 
   static IntroAudio? fromMap(Object? raw) {
     if (raw is! Map) return null;
-    final Map<String, dynamic> m = raw.map(
-        (dynamic k, dynamic v) => MapEntry(k.toString(), v));
+    final Map<String, dynamic> m =
+        raw.map((dynamic k, dynamic v) => MapEntry(k.toString(), v));
     final String url = (m['url'] ?? '').toString();
     if (url.isEmpty) return null;
     return IntroAudio(
@@ -61,8 +61,8 @@ class IntroVideo {
 
   static IntroVideo? fromMap(Object? raw) {
     if (raw is! Map) return null;
-    final Map<String, dynamic> m = raw.map(
-        (dynamic k, dynamic v) => MapEntry(k.toString(), v));
+    final Map<String, dynamic> m =
+        raw.map((dynamic k, dynamic v) => MapEntry(k.toString(), v));
     final String url = (m['url'] ?? '').toString();
     if (url.isEmpty) return null;
     return IntroVideo(

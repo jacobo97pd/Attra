@@ -188,7 +188,8 @@ class _FeedScreenState extends State<FeedScreen> {
       // getLastKnownPosition no está soportado en web: ahí se pide la actual.
       Position? pos = kIsWeb ? null : await Geolocator.getLastKnownPosition();
       pos ??= await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+        locationSettings:
+            const LocationSettings(accuracy: LocationAccuracy.low),
       ).timeout(const Duration(seconds: 6),
           onTimeout: () => throw TimeoutException('geo'));
       if (!mounted) return;
@@ -255,7 +256,8 @@ class _FeedScreenState extends State<FeedScreen> {
   List<SeedProfile> _applyTravel(List<SeedProfile> profiles) {
     // País normalizado (Italy=Italia, Spain=España…) para no vaciar el feed por
     // diferencias de idioma entre el destino y los perfiles.
-    final String country = FeedFilter.canonCountry(widget.user?.travelCountry ?? '');
+    final String country =
+        FeedFilter.canonCountry(widget.user?.travelCountry ?? '');
     final String city = _canonCity(widget.user?.travelCity ?? '');
     if (country.isEmpty) return profiles;
     final List<SeedProfile> inCountry = profiles
@@ -275,11 +277,18 @@ class _FeedScreenState extends State<FeedScreen> {
   static String _canonCity(String raw) {
     final String s = raw.trim().toLowerCase();
     const Map<String, String> aliases = <String, String>{
-      'roma': 'rome', 'rome': 'rome',
-      'milán': 'milan', 'milan': 'milan', 'milano': 'milan',
-      'londres': 'london', 'london': 'london',
-      'lisboa': 'lisbon', 'lisbon': 'lisbon',
-      'munich': 'munich', 'múnich': 'munich', 'münchen': 'munich',
+      'roma': 'rome',
+      'rome': 'rome',
+      'milán': 'milan',
+      'milan': 'milan',
+      'milano': 'milan',
+      'londres': 'london',
+      'london': 'london',
+      'lisboa': 'lisbon',
+      'lisbon': 'lisbon',
+      'munich': 'munich',
+      'múnich': 'munich',
+      'münchen': 'munich',
     };
     return aliases[s] ?? s;
   }
@@ -1607,8 +1616,7 @@ class _StoryPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: seen ? Colors.black.withValues(alpha: 0.5) : null,
-        gradient:
-            seen ? null : const LinearGradient(colors: AppColors.action),
+        gradient: seen ? null : const LinearGradient(colors: AppColors.action),
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
         boxShadow: seen
             ? null

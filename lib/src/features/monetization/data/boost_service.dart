@@ -39,7 +39,8 @@ class BoostService {
     String? platform, // 'app_store' | 'play_store'
     String? verificationData,
   }) async {
-    final Map<String, dynamic> data = await _call('grantConsumable', <String, dynamic>{
+    final Map<String, dynamic> data =
+        await _call('grantConsumable', <String, dynamic>{
       'kind': kind,
       'amount': amount,
       if (purchaseId != null) 'purchaseId': purchaseId,
@@ -58,7 +59,8 @@ class BoostService {
     String? purchaseId,
     String? period, // 'monthly' | 'yearly'
   }) async {
-    final Map<String, dynamic> data = await _call('verifyPurchase', <String, dynamic>{
+    final Map<String, dynamic> data =
+        await _call('verifyPurchase', <String, dynamic>{
       'productId': productId,
       'platform': platform,
       'verificationData': verificationData,
@@ -124,14 +126,12 @@ class BoostService {
 
     final Map<String, ActiveBoost> out = <String, ActiveBoost>{};
     for (int i = 0; i < ids.length; i += 10) {
-      final List<String> chunk =
-          ids.skip(i).take(10).toList(growable: false);
+      final List<String> chunk = ids.skip(i).take(10).toList(growable: false);
       final QuerySnapshot<Map<String, dynamic>> snap = await _firestore
           .collection('activeBoosts')
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
-      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-          in snap.docs) {
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in snap.docs) {
         final ActiveBoost boost = ActiveBoost.fromMap(doc.id, doc.data());
         if (boost.isActiveAt(DateTime.now())) {
           out[doc.id] = boost;

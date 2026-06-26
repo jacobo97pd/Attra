@@ -142,7 +142,8 @@ class _EditTraitsScreenState extends State<EditTraitsScreen> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => StatefulBuilder(
-        builder: (BuildContext context, void Function(void Function()) setLocal) {
+        builder:
+            (BuildContext context, void Function(void Function()) setLocal) {
           return AlertDialog(
             title: Text(def.label),
             content: SizedBox(
@@ -315,8 +316,11 @@ class _EditTraitsScreenState extends State<EditTraitsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Column(
               children: <Widget>[
-                _visSwitch('Mostrar en mi perfil', vis.visibleInProfile,
-                    (bool b) => _setVis(def, vis.copyWith(visibleInProfile: b))),
+                _visSwitch(
+                    'Mostrar en mi perfil',
+                    vis.visibleInProfile,
+                    (bool b) =>
+                        _setVis(def, vis.copyWith(visibleInProfile: b))),
                 _visSwitch('Usar en recomendaciones', vis.useForMatching,
                     (bool b) => _setVis(def, vis.copyWith(useForMatching: b))),
                 _visSwitch('Usar en filtros', vis.useForFilters,

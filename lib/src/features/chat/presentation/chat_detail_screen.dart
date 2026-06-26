@@ -130,7 +130,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   /// La burbuja del reto reporta su estado activo. Al vencer, cierra el reto.
   void _onGameActive(String? sessionId, DateTime? endsAt) {
-    if (_activeGameSessionId == sessionId && _activeGameEndsAt == endsAt) return;
+    if (_activeGameSessionId == sessionId && _activeGameEndsAt == endsAt) {
+      return;
+    }
     setState(() {
       _activeGameSessionId = sessionId;
       _activeGameEndsAt = endsAt;
@@ -686,11 +688,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     try {
       // Si hay un Duelo de Química activo, el mensaje se etiqueta con la sesión
       // (la IA solo analiza esos 5 min). Si no, mensaje normal.
-      final String? gameSession =
-          (_activeGameSessionId != null && _activeGameEndsAt != null &&
-                  _activeGameEndsAt!.isAfter(DateTime.now()))
-              ? _activeGameSessionId
-              : null;
+      final String? gameSession = (_activeGameSessionId != null &&
+              _activeGameEndsAt != null &&
+              _activeGameEndsAt!.isAfter(DateTime.now()))
+          ? _activeGameSessionId
+          : null;
       final String id = await widget.chatService.sendMessage(
           chatId: widget.chatId, text: out.text, gameSessionId: gameSession);
       // Guarda el id real: el stream lo confirmará y se podará el optimista.
@@ -1259,7 +1261,8 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
               ],
             ),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
+            border:
+                Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
           ),
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, children: children),
@@ -1269,7 +1272,10 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
       children: <Widget>[
         const Icon(Icons.bolt_rounded, color: AppColors.attraRed, size: 20),
         const SizedBox(width: 8),
-        Text(s.mode.isCoffee ? 'Reto Café · Duelo de Química' : 'Duelo de Química',
+        Text(
+            s.mode.isCoffee
+                ? 'Reto Café · Duelo de Química'
+                : 'Duelo de Química',
             style: theme.textTheme.titleSmall
                 ?.copyWith(fontWeight: FontWeight.w800)),
       ],
@@ -1320,8 +1326,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
           Row(children: <Widget>[
             Expanded(child: header),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: AppColors.attraRed,
                 borderRadius: BorderRadius.circular(20),
@@ -1403,7 +1408,8 @@ class _ChatGameResult extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(children: <Widget>[
-            const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 20),
+            const Icon(Icons.auto_awesome_rounded,
+                color: Colors.white, size: 20),
             const SizedBox(width: 8),
             Text(headline,
                 style: theme.textTheme.titleMedium?.copyWith(

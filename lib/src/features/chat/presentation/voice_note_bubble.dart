@@ -77,7 +77,8 @@ class VoiceNoteBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color fg = mine ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface;
+    final Color fg =
+        mine ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface;
     final Duration total = Duration(milliseconds: media.durationMs ?? 0);
 
     return Align(
@@ -95,9 +96,11 @@ class VoiceNoteBubble extends StatelessWidget {
         ),
         child: StreamBuilder<PlayerState>(
           stream: controller.playerStateStream,
-          builder: (BuildContext context, AsyncSnapshot<PlayerState> stateSnap) {
+          builder:
+              (BuildContext context, AsyncSnapshot<PlayerState> stateSnap) {
             final bool isCurrent = controller.isCurrent(media.downloadUrl);
-            final bool playing = isCurrent && (stateSnap.data?.playing ?? false);
+            final bool playing =
+                isCurrent && (stateSnap.data?.playing ?? false);
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -111,15 +114,17 @@ class VoiceNoteBubble extends StatelessWidget {
                 const SizedBox(width: 4),
                 StreamBuilder<Duration>(
                   stream: controller.positionStream,
-                  builder: (BuildContext context, AsyncSnapshot<Duration> posSnap) {
-                    final Duration pos =
-                        isCurrent ? (posSnap.data ?? Duration.zero) : Duration.zero;
-                    final Duration dur = isCurrent
-                        ? (controller.duration ?? total)
-                        : total;
+                  builder:
+                      (BuildContext context, AsyncSnapshot<Duration> posSnap) {
+                    final Duration pos = isCurrent
+                        ? (posSnap.data ?? Duration.zero)
+                        : Duration.zero;
+                    final Duration dur =
+                        isCurrent ? (controller.duration ?? total) : total;
                     final double value = dur.inMilliseconds == 0
                         ? 0
-                        : (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
+                        : (pos.inMilliseconds / dur.inMilliseconds)
+                            .clamp(0.0, 1.0);
                     return SizedBox(
                       width: 130,
                       child: Column(

@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('resolvePublicDisplayName', () {
-    test('el nombre elegido en onboarding (profile.visibleName) gana al de '
+    test(
+        'el nombre elegido en onboarding (profile.visibleName) gana al de '
         'Google en displayName de primer nivel', () {
       final name = resolvePublicDisplayName(<String, dynamic>{
         'displayName': 'Javier Rodriguez Montero', // Auth/Google

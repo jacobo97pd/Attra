@@ -131,8 +131,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
   Future<void> _buy(String productId) async {
     if (_busy) return;
     if (widget.verifySubscription == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Compras disponibles próximamente.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Compras disponibles próximamente.')));
       return;
     }
     final ProductDetails? offer = _offerFor(productId);
@@ -177,8 +177,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0,
-                      AppSpacing.lg, AppSpacing.xl),
+                  padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
                   children: <Widget>[
                     Text('Desbloquea Attra',
                         style: theme.textTheme.headlineMedium),
@@ -230,9 +230,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       ctaLabel: currentTier.atLeast(SubscriptionTier.plus)
                           ? 'Plan actual'
                           : 'Hazte Plus',
-                      onTap: (currentTier.atLeast(SubscriptionTier.plus) || _busy)
-                          ? null
-                          : () => _buy(widget.plusProductId),
+                      onTap:
+                          (currentTier.atLeast(SubscriptionTier.plus) || _busy)
+                              ? null
+                              : () => _buy(widget.plusProductId),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     _PlanCard(
@@ -310,9 +311,8 @@ class _PeriodToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: active
-              ? const LinearGradient(colors: AppColors.action)
-              : null,
+          gradient:
+              active ? const LinearGradient(colors: AppColors.action) : null,
           borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
         ),
         child: Text(
@@ -399,11 +399,9 @@ class _PlanCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(Icons.check_circle,
-                        size: 18, color: gradient.last),
+                    Icon(Icons.check_circle, size: 18, color: gradient.last),
                     const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                        child: Text(f, style: theme.textTheme.bodyMedium)),
+                    Expanded(child: Text(f, style: theme.textTheme.bodyMedium)),
                   ],
                 ),
               )),

@@ -201,7 +201,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: <Widget>[
                     Expanded(
@@ -236,7 +237,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
                               const SizedBox(height: 12),
                               Text(_videoError!,
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(color: Colors.white70)),
+                                  style:
+                                      const TextStyle(color: Colors.white70)),
                             ],
                           ),
                         )
@@ -250,7 +252,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
               ),
               if (_story.caption.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Text(_story.caption,
                       style: const TextStyle(color: Colors.white)),
                 ),

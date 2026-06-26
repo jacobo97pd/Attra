@@ -58,7 +58,8 @@ class NotificationsScreen extends StatelessWidget {
               return const Center(
                   child: CircularProgressIndicator(color: AppColors.attraRed));
             }
-            final List<AppNotification> items = snap.data ?? <AppNotification>[];
+            final List<AppNotification> items =
+                snap.data ?? <AppNotification>[];
             if (items.isEmpty) return const _Empty();
             return ListView.separated(
               padding: const EdgeInsets.fromLTRB(
@@ -115,9 +116,8 @@ class _NotifTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: n.read
-                  ? AppColors.surface
-                  : accent.withValues(alpha: 0.10),
+              color:
+                  n.read ? AppColors.surface : accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
               border: Border.all(
                   color: n.read
@@ -166,8 +166,8 @@ class _NotifTile extends StatelessWidget {
                     width: 8,
                     height: 8,
                     margin: const EdgeInsets.only(left: 6),
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle, color: accent),
+                    decoration:
+                        BoxDecoration(shape: BoxShape.circle, color: accent),
                   ),
               ],
             ),
@@ -249,7 +249,8 @@ class NotificationBell extends StatelessWidget {
                 top: 8,
                 right: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   constraints: const BoxConstraints(minWidth: 16),
                   decoration: BoxDecoration(
                     color: AppColors.attraRed,

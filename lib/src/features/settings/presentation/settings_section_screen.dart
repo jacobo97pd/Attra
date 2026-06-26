@@ -185,7 +185,8 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
       badges.add(const _Badge(label: 'Premium', color: Color(0xFFB8860B)));
     }
     if (def.requiresRegion != null) {
-      badges.add(_Badge(label: def.requiresRegion!, color: const Color(0xFF1D6A96)));
+      badges.add(
+          _Badge(label: def.requiresRegion!, color: const Color(0xFF1D6A96)));
     }
     if (def.scope == SettingScope.device) {
       badges.add(const _Badge(label: 'Dispositivo', color: Color(0xFF607D8B)));
@@ -244,7 +245,9 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
       subtitle: Text(action.description),
       trailing: _busy
           ? const SizedBox(
-              width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2))
           : null,
       onTap: _busy ? null : () => _runAction(action),
     );
@@ -401,7 +404,8 @@ class _Badge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+        style:
+            TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -435,7 +439,9 @@ class _ConsentHistoryScreen extends StatelessWidget {
               final ConsentRecord r = items[index];
               return ListTile(
                 leading: Icon(
-                  r.granted ? Icons.check_circle_outline : Icons.cancel_outlined,
+                  r.granted
+                      ? Icons.check_circle_outline
+                      : Icons.cancel_outlined,
                   color: r.granted ? Colors.green : Colors.redAccent,
                 ),
                 title: Text(r.purpose),

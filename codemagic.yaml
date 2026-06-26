@@ -1,0 +1,82 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    environment:
+      groups:
+        - attra_ios
+      vars:
+        BUNDLE_ID: com.attra.app.attra
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.attra.app.attra
+      flutter: 3.41.7
+      xcode: latest
+      cocoapods: default
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+    scripts:
+      - name: Decode Firebase iOS config
+        script: |
+          set -euo pipefail
+          if [ -z "${IOS_FIREBASE_PLIST_B64:-}" ]; then
+            echo "Missing IOS_FIREBASE_PLIST_B64 in Codemagic group attra_ios." >&2
+            echo "Base64-encode ios/Runner/GoogleService-Info.plist and save it as a secure variable." >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import base64
+          import os
+          import pathlib
+
+          output = pathlib.Path("ios/Runner/GoogleService-Info.plist")
+          output.write_bytes(base64.b64decode(os.environ["IOS_FIREBASE_PLIST_B64"]))
+          PY
+          test -s ios/Runner/GoogleService-Info.plist
+          REVERSED_CLIENT_ID=$(/usr/libexec/PlistBuddy -c "Print REVERSED_CLIENT_ID" ios/Runner/GoogleService-Info.plist)
+          if [ -z "$REVERSED_CLIENT_ID" ]; then
+            echo "GoogleService-Info.plist does not contain REVERSED_CLIENT_ID." >&2
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" ios/Runner/Info.plist 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $REVERSED_CLIENT_ID" ios/Runner/Info.plist
+          if [ -n "${IOS_ADMOB_APP_ID:-}" ]; then
+            /usr/libexec/PlistBuddy -c "Set :GADApplicationIdentifier $IOS_ADMOB_APP_ID" ios/Runner/Info.plist
+          fi
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Dart format check
+        script: dart format --set-exit-if-changed lib test
+      - name: Flutter analyze
+        script: flutter analyze
+      - name: Flutter unit tests
+        script: flutter test
+      - name: Build Firebase Functions
+        script: |
+          cd functions
+          npm ci
+          npm run build
+      - name: Set up iOS code signing
+        script: xcode-project use-profiles
+      - name: Install iOS pods
+        script: |
+          cd ios
+          pod install --repo-update
+      - name: Build IPA
+        script: |
+          APP_VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d+ -f1)"
+          flutter build ipa --release \
+            --build-name=$APP_VERSION \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log

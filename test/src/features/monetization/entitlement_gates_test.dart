@@ -67,7 +67,8 @@ void main() {
       expect(c.hasNoAds, isFalse);
     });
 
-    test('Plus: ve todos los likes, comenta, filtros avanzados, incógnito; '
+    test(
+        'Plus: ve todos los likes, comenta, filtros avanzados, incógnito; '
         'pero NO IA', () async {
       final c = await _controller(
           UserEntitlements.forTier(uid: 'u', tier: SubscriptionTier.plus));

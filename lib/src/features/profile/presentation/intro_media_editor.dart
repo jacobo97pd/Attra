@@ -284,7 +284,6 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 16),
-
           if (_loading)
             const Center(
               child: Padding(
@@ -317,8 +316,7 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
             const SizedBox(width: 10),
             Text('Grabando  ${_fmt(_recordElapsed)}',
                 style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600)),
+                    color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
             const Spacer(),
             IconButton(
               tooltip: 'Cancelar',

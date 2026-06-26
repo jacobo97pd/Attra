@@ -5,7 +5,8 @@ void main() {
   group('ChatGameStatus', () {
     test('fromValue parsea wireName y nombre', () {
       expect(ChatGameStatus.fromValue('active'), ChatGameStatus.active);
-      expect(ChatGameStatus.fromValue('coffee'), ChatGameStatus.pending); // fallback
+      expect(ChatGameStatus.fromValue('coffee'),
+          ChatGameStatus.pending); // fallback
       expect(ChatGameStatus.fromValue('completed').isCompleted, isTrue);
     });
 
@@ -85,8 +86,8 @@ void main() {
       expect(r.isDraw, isFalse);
       expect(r.chemistryScore, 82);
       expect(r.suggestedDatePlan?.placeType, 'cafetería');
-      expect(r.suggestedDatePlan?.payerSuggestion,
-          PayerSuggestion.winnerChooses);
+      expect(
+          r.suggestedDatePlan?.payerSuggestion, PayerSuggestion.winnerChooses);
     });
 
     test('empate sin ganador', () {

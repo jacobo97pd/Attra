@@ -156,7 +156,9 @@ class _PhotoResponseSheetState extends State<PhotoResponseSheet> {
           FilledButton.icon(
             onPressed: tooLong ? null : () => _send(PhotoResponseKind.like),
             icon: const Icon(Icons.favorite),
-            label: Text(_comment == null ? 'Enviar Like' : 'Enviar Like con comentario'),
+            label: Text(_comment == null
+                ? 'Enviar Like'
+                : 'Enviar Like con comentario'),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(

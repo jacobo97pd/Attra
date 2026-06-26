@@ -15,14 +15,14 @@ class AdsService {
 
   bool _initialized = false;
   bool get supported =>
-      !kIsWeb && (defaultTargetPlatform == TargetPlatform.android ||
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
   // --- IDs de TEST de Google (válidos en cualquier app, solo desarrollo) ---
   static const String _testNativeAndroid =
       'ca-app-pub-3940256099942544/2247696110';
-  static const String _testNativeIos =
-      'ca-app-pub-3940256099942544/3986624511';
+  static const String _testNativeIos = 'ca-app-pub-3940256099942544/3986624511';
 
   // --- IDs REALES (rellénalos con los de tu cuenta AdMob al publicar) ---
   static const String _prodNativeAndroid = '';

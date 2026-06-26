@@ -28,9 +28,10 @@ class FiltersScreen extends StatefulWidget {
     required bool isPlus,
     bool canVisualMatch = false,
   }) {
-    return Navigator.of(context).push<FeedFilters>(MaterialPageRoute<FeedFilters>(
-      builder: (_) =>
-          FiltersScreen(initial: initial, isPlus: isPlus, canVisualMatch: canVisualMatch),
+    return Navigator.of(context)
+        .push<FeedFilters>(MaterialPageRoute<FeedFilters>(
+      builder: (_) => FiltersScreen(
+          initial: initial, isPlus: isPlus, canVisualMatch: canVisualMatch),
     ));
   }
 
@@ -140,7 +141,8 @@ class _FiltersScreenState extends State<FiltersScreen> {
       ethnicity: widget.isPlus ? _ethnicity : null,
       religion: widget.isPlus ? _religion : null,
       verifiedOnly: widget.isPlus && _verifiedOnly,
-      minHeight: widget.isPlus ? _height.start.round() : FeedFilters.heightFloor,
+      minHeight:
+          widget.isPlus ? _height.start.round() : FeedFilters.heightFloor,
       maxHeight: widget.isPlus ? _height.end.round() : FeedFilters.heightCeil,
       dealbreakers: db,
       sortByVisualReference: widget.isPlus && _sortByRef,
@@ -154,7 +156,8 @@ class _FiltersScreenState extends State<FiltersScreen> {
         _onlyWithPhoto = false;
         _distanceOn = false;
         _distance = 100;
-        _goal = _smoking = _drinking = _education = _ethnicity = _religion = null;
+        _goal =
+            _smoking = _drinking = _education = _ethnicity = _religion = null;
         _verifiedOnly = false;
         _sortByRef = false;
         _height = const RangeValues(
@@ -185,8 +188,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
             min: FeedFilters.ageFloor.toDouble(),
             max: FeedFilters.ageCeil.toDouble(),
             divisions: FeedFilters.ageCeil - FeedFilters.ageFloor,
-            labels:
-                RangeLabels('${_age.start.round()}', '${_age.end.round()}'),
+            labels: RangeLabels('${_age.start.round()}', '${_age.end.round()}'),
             onChanged: (RangeValues v) => setState(() => _age = v),
           ),
           _dbSwitch(FeedFilters.kAge),
@@ -253,15 +255,31 @@ class _FiltersScreenState extends State<FiltersScreen> {
                 (String? v) => setState(() => _goal = v)),
             _single('Tabaco', _smokingOptions, _smoking, FeedFilters.kSmoking,
                 (String? v) => setState(() => _smoking = v)),
-            _single('Alcohol', _drinkingOptions, _drinking,
-                FeedFilters.kDrinking, (String? v) => setState(() => _drinking = v)),
-            _single('Estudios', _educationOptions, _education,
-                FeedFilters.kEducation, (String? v) => setState(() => _education = v)),
-            _single('Etnicidad', _ethnicityOptions, _ethnicity,
-                FeedFilters.kEthnicity, (String? v) => setState(() => _ethnicity = v),
+            _single(
+                'Alcohol',
+                _drinkingOptions,
+                _drinking,
+                FeedFilters.kDrinking,
+                (String? v) => setState(() => _drinking = v)),
+            _single(
+                'Estudios',
+                _educationOptions,
+                _education,
+                FeedFilters.kEducation,
+                (String? v) => setState(() => _education = v)),
+            _single(
+                'Etnicidad',
+                _ethnicityOptions,
+                _ethnicity,
+                FeedFilters.kEthnicity,
+                (String? v) => setState(() => _ethnicity = v),
                 note: 'Solo cruza con quien consintió usarlo en filtros.'),
-            _single('Religión', _religionOptions, _religion,
-                FeedFilters.kReligion, (String? v) => setState(() => _religion = v),
+            _single(
+                'Religión',
+                _religionOptions,
+                _religion,
+                FeedFilters.kReligion,
+                (String? v) => setState(() => _religion = v),
                 note: 'Solo cruza con quien consintió usarlo en filtros.'),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -312,8 +330,8 @@ class _FiltersScreenState extends State<FiltersScreen> {
           const Spacer(),
           Switch(
             value: _db.contains(key),
-            onChanged: (bool v) => setState(
-                () => v ? _db.add(key) : _db.remove(key)),
+            onChanged: (bool v) =>
+                setState(() => v ? _db.add(key) : _db.remove(key)),
           ),
         ],
       ),
@@ -331,8 +349,10 @@ class _FiltersScreenState extends State<FiltersScreen> {
         Text(title, style: Theme.of(context).textTheme.bodyMedium),
         if (note != null)
           Text(note,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline)),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Theme.of(context).colorScheme.outline)),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,

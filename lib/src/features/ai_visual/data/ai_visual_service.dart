@@ -83,8 +83,7 @@ class AiVisualService {
   /// `ai/{uid}/reference/`), o null si no tiene. Lectura permitida al dueño.
   Future<String?> getReferenceUrl(String uid) async {
     try {
-      final ListResult res =
-          await _storage.ref('ai/$uid/reference').listAll();
+      final ListResult res = await _storage.ref('ai/$uid/reference').listAll();
       if (res.items.isEmpty) return null;
       final List<Reference> items = <Reference>[...res.items]
         ..sort((Reference a, Reference b) => a.name.compareTo(b.name));
@@ -97,7 +96,8 @@ class AiVisualService {
   Future<List<ProfileInsight>> getInsights() async {
     final Map<String, dynamic> data =
         await _call('getProfileInsights', <String, dynamic>{});
-    final List<dynamic> raw = (data['insights'] as List<dynamic>?) ?? <dynamic>[];
+    final List<dynamic> raw =
+        (data['insights'] as List<dynamic>?) ?? <dynamic>[];
     return raw
         .whereType<Map>()
         .map((Map<dynamic, dynamic> m) => ProfileInsight.fromMap(

@@ -105,8 +105,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
           children: <Widget>[
             const Text('IA visual · '),
             ShaderMask(
-              shaderCallback: (Rect b) =>
-                  const LinearGradient(colors: <Color>[
+              shaderCallback: (Rect b) => const LinearGradient(colors: <Color>[
                 AppColors.attraRed,
                 AppColors.aiViolet,
               ]).createShader(b),
@@ -225,8 +224,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
 
         const SizedBox(height: 26),
         // ── 02 Lo que la IA hará por ti ──────────────────────────────────
-        const _SectionHeader(
-            number: '02', title: 'Lo que la IA hará por ti'),
+        const _SectionHeader(number: '02', title: 'Lo que la IA hará por ti'),
         const SizedBox(height: 14),
         const Row(
           children: <Widget>[
@@ -256,8 +254,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
               child: _FeatureCard(
                 icon: Icons.edit_note_rounded,
                 title: 'Optimización de perfil',
-                body:
-                    'Detectamos puntos débiles en tu bio y te damos mejoras.',
+                body: 'Detectamos puntos débiles en tu bio y te damos mejoras.',
               ),
             ),
             SizedBox(width: 12),
@@ -265,8 +262,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
               child: _FeatureCard(
                 icon: Icons.favorite_rounded,
                 title: 'Compatibilidad visual',
-                body:
-                    'Indicamos el nivel de parecido visual de cada perfil.',
+                body: 'Indicamos el nivel de parecido visual de cada perfil.',
               ),
             ),
           ],
@@ -298,8 +294,10 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
             Flexible(
               child: Text(
                 'Solo tú puedes ver tus referencias. Tu privacidad está 100% protegida.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textMuted),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.textMuted),
               ),
             ),
           ],

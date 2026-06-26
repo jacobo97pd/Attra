@@ -371,7 +371,8 @@ class ChatService {
     });
   }
 
-  Stream<ChatGameSession?> observeGameSession(String chatId, String sessionId) =>
+  Stream<ChatGameSession?> observeGameSession(
+          String chatId, String sessionId) =>
       _repository.observeGameSession(chatId, sessionId);
 
   // --- Lecturas ---

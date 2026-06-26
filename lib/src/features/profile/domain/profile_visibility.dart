@@ -16,10 +16,10 @@ class FieldVisibility {
 
   /// Por defecto un campo NO sensible es visible y utilizable; uno sensible
   /// queda OPT-IN (todo en false hasta que el usuario lo active).
-  static const FieldVisibility defaultNonSensitive =
-      FieldVisibility(visibleInProfile: true, useForMatching: true, useForFilters: true);
-  static const FieldVisibility defaultSensitive =
-      FieldVisibility(visibleInProfile: false, useForMatching: false, useForFilters: false);
+  static const FieldVisibility defaultNonSensitive = FieldVisibility(
+      visibleInProfile: true, useForMatching: true, useForFilters: true);
+  static const FieldVisibility defaultSensitive = FieldVisibility(
+      visibleInProfile: false, useForMatching: false, useForFilters: false);
 
   FieldVisibility copyWith({
     bool? visibleInProfile,
@@ -39,9 +39,11 @@ class FieldVisibility {
         'useForFilters': useForFilters,
       };
 
-  factory FieldVisibility.fromMap(Map<String, dynamic> m, FieldVisibility fallback) {
+  factory FieldVisibility.fromMap(
+      Map<String, dynamic> m, FieldVisibility fallback) {
     return FieldVisibility(
-      visibleInProfile: (m['visibleInProfile'] as bool?) ?? fallback.visibleInProfile,
+      visibleInProfile:
+          (m['visibleInProfile'] as bool?) ?? fallback.visibleInProfile,
       useForMatching: (m['useForMatching'] as bool?) ?? fallback.useForMatching,
       useForFilters: (m['useForFilters'] as bool?) ?? fallback.useForFilters,
     );
@@ -50,7 +52,8 @@ class FieldVisibility {
 
 /// Visibilidad de todos los campos (de `users/{uid}.profileVisibility`).
 class ProfileVisibility {
-  const ProfileVisibility({this.byKey = const <String, FieldVisibility>{}, this.updatedAt});
+  const ProfileVisibility(
+      {this.byKey = const <String, FieldVisibility>{}, this.updatedAt});
 
   final Map<String, FieldVisibility> byKey;
   final DateTime? updatedAt;

@@ -70,6 +70,15 @@ export {
   abandonChatGame,
 } from "./chatGame";
 export {
+  rankingOnLike,
+  rankingOnMatch,
+  rankingOnMessage,
+  rankingOnReport,
+  rankingOnBlock,
+  rankingOnGameSession,
+  rankingNightly,
+} from "./ranking";
+export {
   onLikeCreated,
   onMatchCreated,
   onMessageCreated,

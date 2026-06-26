@@ -128,9 +128,9 @@ class _AttraAppState extends State<AttraApp> {
         functions: functions,
         storage: FirebaseStorage.instance,
       ),
-      profileSummaryRepository:
-          ProfileSummaryRepository(firestore: firestore),
-      integrationConnector: CompositeIntegrationConnector(<IntegrationConnector>[
+      profileSummaryRepository: ProfileSummaryRepository(firestore: firestore),
+      integrationConnector:
+          CompositeIntegrationConnector(<IntegrationConnector>[
         SpotifyAuthService(functions: functions),
       ]),
       storyService: StoryService(

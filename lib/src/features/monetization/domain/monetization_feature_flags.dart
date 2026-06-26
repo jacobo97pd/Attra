@@ -114,22 +114,21 @@ class MonetizationFeatureFlags {
       aiProcessingEnabled: readBool('aiProcessingEnabled', true),
       aiKillSwitch: readBool('aiKillSwitch', false),
       // Acepta snake_case (spark_enabled) y camelCase (sparkEnabled).
-      sparkEnabled:
-          readBool('spark_enabled', readBool('sparkEnabled', false)),
+      sparkEnabled: readBool('spark_enabled', readBool('sparkEnabled', false)),
       matchJourneyEnabled: readBool(
           'match_journey_enabled', readBool('matchJourneyEnabled', false)),
       icebreakersEnabled: readBool(
           'icebreakers_enabled', readBool('icebreakersEnabled', false)),
-      miniGamesEnabled: readBool(
-          'mini_games_enabled', readBool('miniGamesEnabled', false)),
+      miniGamesEnabled:
+          readBool('mini_games_enabled', readBool('miniGamesEnabled', false)),
       doubleAnswerEnabled: readBool(
           'double_answer_enabled', readBool('doubleAnswerEnabled', false)),
       thisOrThatEnabled: readBool(
           'this_or_that_enabled', readBool('thisOrThatEnabled', false)),
-      twoTruthsEnabled: readBool(
-          'two_truths_enabled', readBool('twoTruthsEnabled', false)),
-      chatGameEnabled: readBool(
-          'chat_game_enabled', readBool('chatGameEnabled', false)),
+      twoTruthsEnabled:
+          readBool('two_truths_enabled', readBool('twoTruthsEnabled', false)),
+      chatGameEnabled:
+          readBool('chat_game_enabled', readBool('chatGameEnabled', false)),
       dateBuilderEnabled: readBool(
           'date_builder_enabled', readBool('dateBuilderEnabled', false)),
       matchReactivationEnabled: readBool('match_reactivation_enabled',
