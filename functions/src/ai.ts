@@ -15,6 +15,8 @@ const aiRefs = db.collection("aiReferences");
 const VERTEX_PROJECT = "attra-database";
 const VERTEX_LOCATION = "us-central1";
 const VERTEX_MODEL = "multimodalembedding@001";
+const VISUAL_MATCH_LIMIT = 80;
+const VISUAL_EMBED_CONCURRENCY = 4;
 const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
@@ -124,6 +126,15 @@ export const analyzeReferencePhoto = onCall({ region: REGION }, async (request) 
     existing.data()?.photoHash === photoHash &&
     existing.data()?.status === "ready"
   ) {
+    await aiRefs.doc(uid).set(
+      {
+        referencePath,
+        photoHash,
+        status: "ready",
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
     return { status: "ready", cached: true };
   }
 
@@ -222,51 +233,84 @@ function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const index = next;
+        next += 1;
+        if (index >= items.length) break;
+        results[index] = await fn(items[index]);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
+}
+
 /// getVisualMatches: ordena los candidatos del feed por SIMILITUD ESTÉTICA con
 /// la foto de referencia del usuario (Attra Pro). El cliente envía los uids ya
-/// filtrados; el backend devuelve [{uid, score}] ordenado. Caro acotado: máx 50
+/// filtrados; el backend devuelve [{uid, score}] ordenado. Caro acotado: max 80
 /// candidatos, embeddings cacheados por hash.
-export const getVisualMatches = onCall({ region: REGION }, async (request) => {
-  const uid = requireAuthUid(request.auth);
-  await requireProAiConsent(uid);
+export const getVisualMatches = onCall(
+  {
+    region: REGION,
+    memory: "1GiB",
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    const uid = requireAuthUid(request.auth);
+    await requireProAiConsent(uid);
 
-  const refSnap = await aiRefs.doc(uid).get();
-  const ref = refSnap.data()?.embedding;
-  if (!Array.isArray(ref)) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Sube una foto de referencia para buscar parecidos."
-    );
-  }
-  const candidateUids: string[] = Array.isArray(request.data?.candidateUids)
-    ? (request.data.candidateUids as unknown[])
-        .filter((x): x is string => typeof x === "string")
-        .slice(0, 50)
-    : [];
+    const refSnap = await aiRefs.doc(uid).get();
+    const ref = refSnap.data()?.embedding;
+    if (!Array.isArray(ref)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Sube una foto de referencia para buscar parecidos."
+      );
+    }
+    const candidateUids: string[] = Array.isArray(request.data?.candidateUids)
+      ? Array.from(
+          new Set(
+            (request.data.candidateUids as unknown[]).filter(
+              (x): x is string => typeof x === "string" && x.length > 0
+            )
+          )
+        ).slice(0, VISUAL_MATCH_LIMIT)
+      : [];
+    const candidates = candidateUids.filter((cuid) => cuid !== uid);
 
-  // Embeddings en PARALELO (antes era secuencial -> N descargas una tras otra).
-  // Los embeddings ya están cacheados por hash, así que el grueso de las cargas
-  // siguientes ni descarga; esto acelera sobre todo la primera vez.
-  const scored = await Promise.all(
-    candidateUids
-      .filter((cuid) => cuid !== uid)
-      .map(async (cuid) => {
+    // Embeddings con concurrencia limitada. Las fotos mock pueden pesar varios MB:
+    // procesarlas todas a la vez reventaba la Cloud Function por memoria.
+    const scored = await mapWithConcurrency(
+      candidates,
+      VISUAL_EMBED_CONCURRENCY,
+      async (cuid) => {
         const emb = await embeddingForUserPhoto(cuid);
         return emb ? { uid: cuid, score: cosine(ref as number[], emb) } : null;
-      })
-  );
-  const ranking = scored.filter(
-    (x): x is { uid: string; score: number } => x !== null
-  );
-  ranking.sort((a, b) => b.score - a.score);
-  // Diagnóstico: cuántos candidatos llegaron a tener embedding (si es 0 con
-  // candidatos > 0, las fotos no se pudieron embeber → revisar Vertex/URLs).
-  console.log(
-    `[Vertex] getVisualMatches: ${ranking.length}/${candidateUids.length} ` +
-      `con embedding. top=${ranking[0]?.score?.toFixed(3) ?? "-"}`
-  );
-  return { ranking };
-});
+      }
+    );
+    const ranking = scored.filter(
+      (x): x is { uid: string; score: number } => x !== null
+    );
+    ranking.sort((a, b) => b.score - a.score);
+    // Diagnóstico: cuántos candidatos llegaron a tener embedding (si es 0 con
+    // candidatos > 0, las fotos no se pudieron embeber → revisar Vertex/URLs).
+    console.log(
+      `[Vertex] getVisualMatches: ${ranking.length}/${candidateUids.length} ` +
+        `con embedding. top=${ranking[0]?.score?.toFixed(3) ?? "-"}`
+    );
+    return { ranking };
+  }
+);
 
 /// getProfileInsights: sugerencias para mejorar el perfil y subir la
 /// probabilidad de match. Las DETERMINISTAS (nº fotos, longitud de bio, prompts)

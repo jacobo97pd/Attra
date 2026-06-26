@@ -222,22 +222,23 @@ class _FeedScreenState extends State<FeedScreen> {
   /// Umbral de parecido (similitud coseno) para considerar a alguien "similar".
   /// El embedding multimodal de Vertex es ESTÉTICO (composición, estilo…): dos
   /// fotos de la misma persona suelen rondar 0.5-0.8 y el mismo "tipo" 0.45-0.6.
-  /// 0.50 da precisión con holgura (más laxo que el 0.62 anterior).
-  static const double _kVisualThreshold = 0.50;
+  /// 0.62 prioriza precision: Bella da ~0.658 con su propia referencia y los
+  /// perfiles menos parecidos quedan fuera.
+  static const double _kVisualThreshold = 0.62;
 
   /// FILTRA el feed dejando SOLO los que se parecen a la foto de referencia
   /// (>= [_kVisualThreshold]), ordenados de más a menos parecido.
   ///
-  /// Best-effort: si el motor no está disponible (ranking vacío = Vertex
-  /// apagado o sin referencia), devuelve la lista original sin tocar para no
-  /// vaciar el feed por un fallo de infraestructura.
+  /// Si el motor no esta disponible, devuelve una lista vacia. Al aplicar el
+  /// filtro visual es peor mostrar el feed organico como falso positivo.
   Future<List<SeedProfile>> _sortByVisualReference(
       List<SeedProfile> profiles) async {
     try {
       final List<VisualMatch> ranking = await widget.aiVisualService!
           .getVisualMatches(profiles.map((SeedProfile p) => p.id).toList());
-      // Motor no disponible (Vertex deshabilitado / sin referencia): no filtra.
-      if (ranking.isEmpty) return profiles;
+      // Motor no disponible (Vertex deshabilitado / sin referencia): sin falsos
+      // positivos.
+      if (ranking.isEmpty) return const <SeedProfile>[];
 
       if (kDebugMode) {
         for (final VisualMatch m in ranking) {
@@ -255,8 +256,11 @@ class _FeedScreenState extends State<FeedScreen> {
             byId[m.uid]!,
       ];
       return matches;
-    } catch (_) {
-      return profiles;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[IA visual] error al ordenar: $e');
+      }
+      return const <SeedProfile>[];
     }
   }
 
@@ -439,8 +443,7 @@ class _FeedScreenState extends State<FeedScreen> {
               .prefetch(filtered.map((SeedProfile p) => p.id));
         } catch (_) {/* señales no disponibles: orden orgánico */}
         if (!mounted) return;
-        signalsFor =
-            (SeedProfile p) => widget.rankingSignals!.signalsFor(p.id);
+        signalsFor = (SeedProfile p) => widget.rankingSignals!.signalsFor(p.id);
       }
       // Orden BASE orgánico (compatibilidad real). No salta filtros: solo ordena
       // lo ya filtrado. Los modos opt-in de abajo lo re-curan si están activos.
