@@ -7,10 +7,10 @@ workflows:
       groups:
         - attra_ios
       vars:
-        BUNDLE_ID: com.attra.app.attra
+        BUNDLE_ID: com.jpedrero.attra
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.attra.app.attra
+        bundle_identifier: com.jpedrero.attra
       flutter: 3.41.7
       xcode: latest
       cocoapods: default

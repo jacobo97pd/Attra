@@ -8,7 +8,7 @@
 PRODUCT_NAME = attra
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.attra.app.attra
+PRODUCT_BUNDLE_IDENTIFIER = com.jpedrero.attra
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.attra.app. All rights reserved.
