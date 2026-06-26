@@ -2112,35 +2112,69 @@ class _Composer extends StatelessWidget {
   final VoidCallback onGames;
   final VoidCallback onMic;
 
+  /// Abre la hoja con TODAS las acciones del chat (antes apretadas en la barra).
+  void _openActions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext sheetCtx) {
+        Widget tile(IconData icon, String title, VoidCallback onTap) {
+          return ListTile(
+            leading: Icon(icon, color: AppColors.attraRed),
+            title: Text(title),
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              onTap();
+            },
+          );
+        }
+
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLine,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              tile(Icons.photo_outlined, 'Enviar foto', onPhoto),
+              tile(Icons.visibility_off_outlined, 'Foto bomba', onBombPhoto),
+              tile(Icons.event, 'Proponer cita', onPropose),
+              if (showGames)
+                tile(Icons.casino_outlined, 'Juegos', onGames),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 6, 6, 10),
+        padding: const EdgeInsets.fromLTRB(6, 6, 8, 10),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
+            // Todas las acciones colapsadas en un "+".
             IconButton(
-              tooltip: 'Adjuntar',
-              onPressed: onPhoto,
-              icon: const Icon(Icons.photo_outlined),
+              tooltip: 'Más',
+              onPressed: () => _openActions(context),
+              icon: const Icon(Icons.add_circle_outline_rounded),
             ),
-            IconButton(
-              tooltip: 'Foto bomba',
-              onPressed: onBombPhoto,
-              icon: const Icon(Icons.visibility_off_outlined),
-            ),
-            IconButton(
-              tooltip: 'Proponer cita',
-              onPressed: onPropose,
-              icon: const Icon(Icons.event),
-            ),
-            if (showGames)
-              IconButton(
-                tooltip: 'Juegos',
-                onPressed: onGames,
-                icon: const Icon(Icons.casino_outlined),
-              ),
             Expanded(
               child: TextField(
                 controller: controller,
@@ -2156,6 +2190,7 @@ class _Composer extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(width: 4),
             IconButton(
               tooltip: 'Grabar nota de voz',
               onPressed: onMic,

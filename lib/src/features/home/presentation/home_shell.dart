@@ -11,6 +11,8 @@ import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
+import '../../feed/data/ranking_signals_repository.dart';
+import '../../feed/domain/ranking_config.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../feed/presentation/travel_sheet.dart';
 import '../../notifications/data/notification_router.dart';
@@ -72,6 +74,7 @@ class HomeShell extends StatefulWidget {
     this.feedMetricsService,
     this.notificationService,
     required this.profileSummaryRepository,
+    required this.rankingSignalsRepository,
     required this.storyService,
     required this.aiVisualService,
     required this.onSetAiConsent,
@@ -134,6 +137,7 @@ class HomeShell extends StatefulWidget {
   final FeedMetricsService? feedMetricsService;
   final NotificationService? notificationService;
   final ProfileSummaryRepository profileSummaryRepository;
+  final RankingSignalsRepository rankingSignalsRepository;
   final StoryService storyService;
   final AiVisualService aiVisualService;
   final Future<void> Function(bool granted) onSetAiConsent;
@@ -301,6 +305,11 @@ class _HomeShellState extends State<HomeShell> {
             !(_entitlementController?.isPlusActive ?? false),
         canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
         onOpenTravel: _openTravelSheet,
+        // Ranking inteligente: señales server-side + config remota. Detrás del
+        // flag `ranking_enabled` (default off hasta desplegar el backend).
+        rankingSignals: widget.rankingSignalsRepository,
+        rankingConfig: RankingConfig.fromMap(
+            _entitlementController?.flags.rawConfig ?? const <String, dynamic>{}),
       ),
     );
 

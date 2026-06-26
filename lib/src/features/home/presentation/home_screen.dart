@@ -494,8 +494,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(displayName, style: theme.textTheme.titleLarge),
-                      Text(email, style: theme.textTheme.bodyMedium),
+                      Text(displayName,
+                          style: theme.textTheme.titleLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text(email,
+                          style: theme.textTheme.bodyMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                     ],
                   ),
                 ),

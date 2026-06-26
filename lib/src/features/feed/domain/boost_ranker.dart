@@ -2,6 +2,7 @@ import '../../auth/domain/app_user.dart';
 import '../../monetization/domain/boost.dart';
 import '../../profile/domain/profile_state.dart';
 import 'ranking.dart';
+import 'ranking_config.dart';
 
 class BoostAwareRanker {
   const BoostAwareRanker._();
@@ -15,14 +16,19 @@ class BoostAwareRanker {
     required List<SeedProfile> profiles,
     required AppUser? me,
     required Map<String, ActiveBoost> activeBoosts,
+    RankingSignals Function(SeedProfile)? signalsFor,
+    RankingConfig config = const RankingConfig(),
   }) {
     if (profiles.length <= 1 || activeBoosts.isEmpty) {
-      return RankingScorer.rank(profiles: profiles, me: me);
+      return RankingScorer.rank(
+          profiles: profiles, me: me, signalsFor: signalsFor, config: config);
     }
 
     final List<_BoostedProfile> scored = RankingScorer.score(
       profiles: profiles,
       me: me,
+      signalsFor: signalsFor,
+      config: config,
     ).map((RankedProfile ranked) {
       final ActiveBoost? boost = activeBoosts[ranked.profile.id];
       final double bonus = boostContribution(boost);

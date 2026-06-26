@@ -27,6 +27,7 @@ import 'src/features/monetization/data/boost_service.dart';
 import 'src/features/monetization/data/entitlement_service.dart';
 import 'src/features/monetization/data/feature_flag_service.dart';
 import 'src/features/onboarding/data/onboarding_repository.dart';
+import 'src/features/feed/data/ranking_signals_repository.dart';
 import 'src/features/profile/data/profile_summary_repository.dart';
 import 'src/features/settings/data/settings_repository.dart';
 import 'src/features/spark/data/spark_analytics.dart';
@@ -129,6 +130,8 @@ class _AttraAppState extends State<AttraApp> {
         storage: FirebaseStorage.instance,
       ),
       profileSummaryRepository: ProfileSummaryRepository(firestore: firestore),
+      rankingSignalsRepository:
+          RankingSignalsRepository(firestore: firestore),
       integrationConnector:
           CompositeIntegrationConnector(<IntegrationConnector>[
         SpotifyAuthService(functions: functions),

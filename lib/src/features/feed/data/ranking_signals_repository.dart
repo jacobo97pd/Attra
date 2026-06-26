@@ -15,8 +15,10 @@ class RankingSignalsRepository {
   final FirebaseFirestore _firestore;
   final Map<String, RankingSignals> _cache = <String, RankingSignals>{};
 
+  // Espejo PÚBLICO con solo los scores derivados [0..1]. Los recuentos crudos
+  // viven en `rankingSignals` (read:false), nunca llegan al cliente.
   CollectionReference<Map<String, dynamic>> get _col =>
-      _firestore.collection('rankingSignals');
+      _firestore.collection('rankingPublic');
 
   RankingSignals? peek(String uid) => _cache[uid];
 

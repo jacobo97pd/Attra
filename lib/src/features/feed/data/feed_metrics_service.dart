@@ -18,14 +18,23 @@ class FeedMetricsService {
   final FirebaseFirestore _db;
 
   // --- Nombres de evento (única fuente de verdad) ---
+  static const String feedImpression = 'feedImpression';
   static const String profileOpened = 'profileOpened';
   static const String likeSent = 'likeSent';
   static const String attraSent = 'attraSent';
   static const String nopeSent = 'nopeSent';
   static const String matchCreated = 'matchCreated';
   static const String messageSent = 'messageSent';
+  static const String firstMessageSent = 'firstMessageSent';
   static const String conversationStarted = 'conversationStarted';
+  static const String gameStarted = 'gameStarted';
+  static const String gameCompleted = 'gameCompleted';
   static const String dateProposed = 'dateProposed';
+  static const String dateAccepted = 'dateAccepted';
+
+  /// Versión del algoritmo de ranking activo. Se adjunta a CADA evento para
+  /// poder atribuir métricas a la versión (A/B y evolución del modelo).
+  static const String rankingVersion = 'v1';
 
   /// Cuántas impresiones acumulamos antes de volcar a Firestore.
   static const int _flushThreshold = 8;
@@ -43,6 +52,7 @@ class FeedMetricsService {
     _db.collection('feedEvents').add(<String, dynamic>{
       'event': event,
       'uid': uid,
+      'rankingVersion': rankingVersion,
       if (targetUid != null) 'targetUid': targetUid,
       ...meta,
       'at': FieldValue.serverTimestamp(),

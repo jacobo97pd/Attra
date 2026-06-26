@@ -82,6 +82,7 @@ class SessionGate extends StatelessWidget {
               feedMetricsService: controller.feedMetricsService,
               notificationService: controller.notificationService,
               profileSummaryRepository: controller.profileSummaryRepository,
+              rankingSignalsRepository: controller.rankingSignalsRepository,
               integrationConnector: controller.integrationConnector,
               storyService: controller.storyService,
               aiVisualService: controller.aiVisualService,

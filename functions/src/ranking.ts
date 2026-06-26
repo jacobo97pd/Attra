@@ -12,7 +12,11 @@ import { col } from "./common";
 /// El job nocturno deriva los 5 scores [0..1] que consume el cliente.
 
 const DATABASE = "attra-database";
+/// Contadores CRUDOS (privados): solo backend lee/escribe (rules read:false).
 const signals = db.collection("rankingSignals");
+/// Scores DERIVADOS [0..1] (legibles por el cliente para ordenar el feed). NO
+/// contienen recuentos crudos ni se muestran como "nota" al usuario.
+const publicSignals = db.collection("rankingPublic");
 
 /// Incrementa contadores en rankingSignals/{uid} (merge, idempotente por evento
 /// gracias a que los triggers onCreate solo disparan una vez por doc).
@@ -255,6 +259,17 @@ export const rankingNightly = onSchedule(
             trustSafetyScore: trust,
             isNewUserBoostUntil: newUserBoostUntil,
             exposureCount24h: 0, // reset diario del cap
+            lastComputedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        // Espejo PÚBLICO solo con scores derivados (sin recuentos crudos).
+        await publicSignals.doc(uid).set(
+          {
+            profileQualityScore: pq,
+            connectionScore: conn,
+            trustSafetyScore: trust,
+            isNewUserBoostUntil: newUserBoostUntil,
             lastComputedAt: FieldValue.serverTimestamp(),
           },
           { merge: true }

@@ -79,6 +79,10 @@ export {
   rankingNightly,
 } from "./ranking";
 export {
+  productMetricsOnEvent,
+  productMetricsFinalize,
+} from "./productMetrics";
+export {
   onLikeCreated,
   onMatchCreated,
   onMessageCreated,

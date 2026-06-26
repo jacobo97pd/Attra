@@ -14,6 +14,7 @@ import '../../stories/data/story_service.dart';
 import '../../monetization/data/boost_service.dart';
 import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
+import '../../feed/data/ranking_signals_repository.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_prompt.dart';
@@ -39,6 +40,7 @@ class SessionController extends ChangeNotifier {
     required MatchService matchService,
     required ChatService chatService,
     required ProfileSummaryRepository profileSummaryRepository,
+    required RankingSignalsRepository rankingSignalsRepository,
     required StoryService storyService,
     required AiVisualService aiVisualService,
     BoostService? boostService,
@@ -61,7 +63,8 @@ class SessionController extends ChangeNotifier {
         _featureFlagService = featureFlagService,
         _matchService = matchService,
         _chatService = chatService,
-        _profileSummaryRepository = profileSummaryRepository {
+        _profileSummaryRepository = profileSummaryRepository,
+        _rankingSignalsRepository = rankingSignalsRepository {
     _authSubscription =
         _authService.authStateChanges.listen((User? firebaseUser) {
       unawaited(_handleAuthStateChange(firebaseUser));
@@ -77,6 +80,7 @@ class SessionController extends ChangeNotifier {
   final MatchService _matchService;
   final ChatService _chatService;
   final ProfileSummaryRepository _profileSummaryRepository;
+  final RankingSignalsRepository _rankingSignalsRepository;
   final IntegrationConnector? _integrationConnector;
   final StoryService _storyService;
   final AiVisualService _aiVisualService;
@@ -159,6 +163,8 @@ class SessionController extends ChangeNotifier {
   ChatService get chatService => _chatService;
   ProfileSummaryRepository get profileSummaryRepository =>
       _profileSummaryRepository;
+  RankingSignalsRepository get rankingSignalsRepository =>
+      _rankingSignalsRepository;
 
   StreamSubscription<User?>? _authSubscription;
   bool _isDisposed = false;

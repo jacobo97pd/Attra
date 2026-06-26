@@ -27,7 +27,13 @@ class MonetizationFeatureFlags {
     this.plusMonthlyAttras = 3,
     this.premiumMonthlyAttras = 10,
     this.proMonthlyAttras = 15,
+    this.rawConfig = const <String, dynamic>{},
   });
+
+  /// Doc crudo `config/featureFlags` (para módulos que leen claves propias, p.ej.
+  /// el ranking lee `ranking_*` vía RankingConfig.fromMap). No se usa para los
+  /// flags tipados de arriba.
+  final Map<String, dynamic> rawConfig;
 
   const MonetizationFeatureFlags.disabled()
       : monetizationEnabled = false,
@@ -53,7 +59,8 @@ class MonetizationFeatureFlags {
         weeklyFreeAttras = 0,
         plusMonthlyAttras = 0,
         premiumMonthlyAttras = 0,
-        proMonthlyAttras = 0;
+        proMonthlyAttras = 0,
+        rawConfig = const <String, dynamic>{};
 
   final bool monetizationEnabled;
   final bool attrasEnabled;
@@ -138,6 +145,7 @@ class MonetizationFeatureFlags {
       plusMonthlyAttras: readInt('plusMonthlyAttras', 3),
       premiumMonthlyAttras: readInt('premiumMonthlyAttras', 10),
       proMonthlyAttras: readInt('proMonthlyAttras', 15),
+      rawConfig: map,
     );
   }
 

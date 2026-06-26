@@ -188,6 +188,27 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // Señales de ranking CRUDAS (recuentos: likes/matches/reportes/bloqueos…).
+    // PRIVADAS: solo las Cloud Functions (Admin SDK) leen/escriben. El cliente
+    // NUNCA ve recuentos de otros usuarios.
+    match /rankingSignals/{uid} {
+      allow read, write: if false;
+    }
+
+    // Métricas de producto agregadas por día (admin/analítica). El cliente NO
+    // las lee; se consultan desde consola/backend con Admin SDK.
+    match /productMetrics/{day} {
+      allow read, write: if false;
+    }
+
+    // Espejo PÚBLICO del ranking: solo los 5 scores DERIVADOS [0..1] que el
+    // cliente necesita para ordenar el feed. No son una "nota" visible ni
+    // exponen recuentos. Lectura para sesiones; escritura solo backend.
+    match /rankingPublic/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // Perfiles ya mostrados al usuario (frecuencia de aparición / no repetir).
     // PRIVADO del dueño: solo él lee y escribe sus impresiones.
     match /seenProfiles/{uid}/seen/{otherUid} {

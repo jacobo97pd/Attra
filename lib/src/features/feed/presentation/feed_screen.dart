@@ -28,10 +28,12 @@ import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_image.dart';
 import '../../../widgets/attra_states.dart';
 import '../data/feed_metrics_service.dart';
+import '../data/ranking_signals_repository.dart';
 import '../domain/boost_ranker.dart';
 import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
 import '../domain/ranking.dart';
+import '../domain/ranking_config.dart';
 import '../domain/slow_dating.dart';
 import 'filters_screen.dart';
 
@@ -61,6 +63,8 @@ class FeedScreen extends StatefulWidget {
     this.adsEnabled = false,
     this.canUseTravelMode = false,
     this.onOpenTravel,
+    this.rankingSignals,
+    this.rankingConfig = const RankingConfig(),
   });
 
   final AppUser? user;
@@ -108,6 +112,12 @@ class FeedScreen extends StatefulWidget {
   /// Modo viajes (Plus/Pro): botón para cambiar la ubicación del feed.
   final bool canUseTravelMode;
   final VoidCallback? onOpenTravel;
+
+  /// Ranking inteligente: señales server-side (prefetch) + config remota. Si
+  /// null o `rankingConfig.enabled == false`, el feed usa el orden orgánico
+  /// base (rollback seguro).
+  final RankingSignalsRepository? rankingSignals;
+  final RankingConfig rankingConfig;
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -418,14 +428,35 @@ class _FeedScreenState extends State<FeedScreen> {
         }
       }
       if (!mounted) return;
+      // Ranking inteligente: si está activo el flag, precarga las señales
+      // server-side (prefetch en lote) y construye el inyector signalsFor.
+      final bool useSignals =
+          widget.rankingConfig.enabled && widget.rankingSignals != null;
+      RankingSignals Function(SeedProfile)? signalsFor;
+      if (useSignals) {
+        try {
+          await widget.rankingSignals!
+              .prefetch(filtered.map((SeedProfile p) => p.id));
+        } catch (_) {/* señales no disponibles: orden orgánico */}
+        if (!mounted) return;
+        signalsFor =
+            (SeedProfile p) => widget.rankingSignals!.signalsFor(p.id);
+      }
       // Orden BASE orgánico (compatibilidad real). No salta filtros: solo ordena
       // lo ya filtrado. Los modos opt-in de abajo lo re-curan si están activos.
       filtered = activeBoosts.isEmpty
-          ? RankingScorer.rank(profiles: filtered, me: widget.user)
+          ? RankingScorer.rank(
+              profiles: filtered,
+              me: widget.user,
+              signalsFor: signalsFor,
+              config: widget.rankingConfig,
+            )
           : BoostAwareRanker.rank(
               profiles: filtered,
               me: widget.user,
               activeBoosts: activeBoosts,
+              signalsFor: signalsFor,
+              config: widget.rankingConfig,
             );
       // Slow Dating (opt-in): cura el feed (menos perfiles, más afines e
       // intencionales). No se aplica en búsqueda visual (que es global).
