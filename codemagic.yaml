@@ -50,6 +50,8 @@ workflows:
           if [ -n "${IOS_ADMOB_APP_ID:-}" ]; then
             /usr/libexec/PlistBuddy -c "Set :GADApplicationIdentifier $IOS_ADMOB_APP_ID" ios/Runner/Info.plist
           fi
+      - name: Disable Flutter Swift Package Manager
+        script: flutter config --no-enable-swift-package-manager
       - name: Get Flutter packages
         script: flutter pub get
       - name: Dart format check
