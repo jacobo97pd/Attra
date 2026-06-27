@@ -222,9 +222,9 @@ class _FeedScreenState extends State<FeedScreen> {
   /// Umbral de parecido (similitud coseno) para considerar a alguien "similar".
   /// El embedding multimodal de Vertex es ESTÉTICO (composición, estilo…): dos
   /// fotos de la misma persona suelen rondar 0.5-0.8 y el mismo "tipo" 0.45-0.6.
-  /// 0.62 prioriza precision: Bella da ~0.658 con su propia referencia y los
-  /// perfiles menos parecidos quedan fuera.
-  static const double _kVisualThreshold = 0.62;
+  /// 0.55 mantiene precision suficiente: Bella da ~0.658 y Ariel ~0.557 con
+  /// esta referencia, mientras los mocks de viaje probados quedan por debajo.
+  static const double _kVisualThreshold = 0.55;
 
   /// FILTRA el feed dejando SOLO los que se parecen a la foto de referencia
   /// (>= [_kVisualThreshold]), ordenados de más a menos parecido.
