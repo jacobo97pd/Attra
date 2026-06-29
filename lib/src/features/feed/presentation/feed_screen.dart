@@ -1003,9 +1003,10 @@ class _FeedScreenState extends State<FeedScreen> {
             : 'Volver atras (1 paso)'
         : 'Volver atras (Plus/Pro)';
     return SafeArea(
-      child: Column(
+      child: Stack(
         children: <Widget>[
-          Expanded(
+          // La tarjeta ocupa toda la altura disponible: la foto se ve más grande.
+          Positioned.fill(
             child: AnimatedPadding(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOut,
@@ -1029,8 +1030,33 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10, top: 4),
+          // Degradado suave detrás de los botones para que se lean sobre fotos
+          // claras. No captura toques (IgnorePointer) para no robar el scroll.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 140,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Botones de acción FLOTANDO sobre la imagen (abajo).
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 14,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
@@ -1430,7 +1456,9 @@ class _ProfileDetail extends StatelessWidget {
         ),
         // Resto de fotos con prompts intercalados, cada pieza respondible.
         ..._interleavedMediaItems(restPhotos, profile.profilePrompts),
-        const SizedBox(height: 24),
+        // Hueco extra para que el último contenido no quede bajo los botones
+        // flotantes (≈ alto del botón de like + margen).
+        const SizedBox(height: 96),
       ],
     );
   }
