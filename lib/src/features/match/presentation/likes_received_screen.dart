@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_badges.dart';
 import '../../../widgets/attra_image.dart';
@@ -390,7 +391,7 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
                   ? '${likes.length} ${likes.length == 1 ? "persona te ha" : "personas te han"} dado like'
                   : 'Tienes ${likes.length} ${likes.length == 1 ? "like esperando" : "likes esperando"}',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppColors.textSecondary,
+                    color: context.colors.textSecondary,
                   ),
             ),
           ),
@@ -528,7 +529,7 @@ class _LikesTabBar extends StatelessWidget {
           indicatorWeight: 2.5,
           indicatorSize: TabBarIndicatorSize.label,
           labelColor: AppColors.attraRed,
-          unselectedLabelColor: AppColors.textSecondary,
+          unselectedLabelColor: context.colors.textSecondary,
           labelStyle: TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: compact ? 13 : 14.5,
@@ -537,7 +538,7 @@ class _LikesTabBar extends StatelessWidget {
             fontWeight: FontWeight.w600,
             fontSize: compact ? 13 : 14.5,
           ),
-          dividerColor: AppColors.surfaceLine,
+          dividerColor: context.colors.surfaceLine,
           tabs: <Widget>[
             const Tab(child: _TabTitle(label: 'Quién te gusta')),
             Tab(
@@ -610,10 +611,10 @@ class _SecretLikesBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
-          colors: <Color>[AppColors.wine, AppColors.surface],
+          colors: <Color>[AppColors.wine, context.colors.surface],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.25)),
@@ -641,13 +642,13 @@ class _SecretLikesBanner extends StatelessWidget {
               children: <Widget>[
                 Text('Recibe likes en secreto',
                     style: theme.textTheme.titleMedium?.copyWith(
-                        color: AppColors.textPrimary,
+                        color: context.colors.textPrimary,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
                 Text(
                   'Activa Likes ilimitados para descubrir a quién le gustas sin límites.',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textSecondary, height: 1.3),
+                      ?.copyWith(color: context.colors.textSecondary, height: 1.3),
                 ),
               ],
             ),
@@ -915,7 +916,7 @@ class _ProfileCardShell extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       child: Material(
-        color: AppColors.surface,
+        color: context.colors.surface,
         child: InkWell(
           onTap: onTap,
           child: Stack(
@@ -1298,13 +1299,13 @@ class _LikesPaywall extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: <Color>[AppColors.wine, AppColors.surface],
+          colors: <Color>[AppColors.wine, context.colors.surface],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         children: <Widget>[
@@ -1313,14 +1314,14 @@ class _LikesPaywall extends StatelessWidget {
           Text(
             '$hidden ${hidden == 1 ? 'persona ya te ha' : 'personas ya te han'} dado like',
             style: theme.textTheme.titleMedium
-                ?.copyWith(color: AppColors.textPrimary),
+                ?.copyWith(color: context.colors.textPrimary),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 6),
           Text(
             'Hazte Attra Plus o Pro para ver quién eres y empezar a hacer match.',
             style: theme.textTheme.bodyMedium
-                ?.copyWith(color: AppColors.textSecondary),
+                ?.copyWith(color: context.colors.textSecondary),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 14),
@@ -1347,9 +1348,9 @@ class _ImproveProfileBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
@@ -1371,13 +1372,13 @@ class _ImproveProfileBanner extends StatelessWidget {
               children: <Widget>[
                 Text('Aumenta tus posibilidades',
                     style: theme.textTheme.titleSmall?.copyWith(
-                        color: AppColors.textPrimary,
+                        color: context.colors.textPrimary,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
                 Text(
                   'Completa tu perfil y sube más fotos para recibir más likes cada día.',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textSecondary, height: 1.3),
+                      ?.copyWith(color: context.colors.textSecondary, height: 1.3),
                 ),
               ],
             ),
@@ -1424,12 +1425,12 @@ class _LikesEmpty extends StatelessWidget {
             const SizedBox(height: 16),
             Text(title,
                 style: theme.textTheme.titleLarge
-                    ?.copyWith(color: AppColors.textPrimary)),
+                    ?.copyWith(color: context.colors.textPrimary)),
             const SizedBox(height: 8),
             Text(subtitle,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: AppColors.textSecondary)),
+                    ?.copyWith(color: context.colors.textSecondary)),
           ],
         ),
       ),
@@ -1458,14 +1459,14 @@ class _LikesLoadError extends StatelessWidget {
               'No se pudieron cargar los likes',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium
-                  ?.copyWith(color: AppColors.textPrimary),
+                  ?.copyWith(color: context.colors.textPrimary),
             ),
             const SizedBox(height: 8),
             Text(
               'Reintenta en unos segundos.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: AppColors.textSecondary),
+                  ?.copyWith(color: context.colors.textSecondary),
             ),
             const SizedBox(height: 16),
             FilledButton.icon(

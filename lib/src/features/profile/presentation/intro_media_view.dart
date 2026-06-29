@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../domain/intro_media.dart';
 
@@ -63,9 +64,9 @@ class _IntroAudioPlayerState extends State<IntroAudioPlayer> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
@@ -108,7 +109,7 @@ class _IntroAudioPlayerState extends State<IntroAudioPlayer> {
                       const SizedBox(width: 6),
                       Text(widget.label!,
                           style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textSecondary)),
+                              ?.copyWith(color: context.colors.textSecondary)),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -132,7 +133,7 @@ class _IntroAudioPlayerState extends State<IntroAudioPlayer> {
                           child: LinearProgressIndicator(
                             value: value,
                             minHeight: 4,
-                            backgroundColor: AppColors.surfaceLine,
+                            backgroundColor: context.colors.surfaceLine,
                             color: AppColors.attraRed,
                           ),
                         ),
@@ -140,7 +141,7 @@ class _IntroAudioPlayerState extends State<IntroAudioPlayer> {
                         Text(
                           pos > Duration.zero ? _fmt(pos) : _fmt(dur),
                           style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textMuted),
+                              ?.copyWith(color: context.colors.textMuted),
                         ),
                       ],
                     );
@@ -232,7 +233,7 @@ class _IntroVideoPlayerState extends State<IntroVideoPlayer> {
                   ),
                 )
               else
-                const ColoredBox(color: AppColors.surfaceHigh),
+                ColoredBox(color: context.colors.surfaceHigh),
 
               // Botón play/pausa superpuesto (se oculta mientras reproduce).
               if (!playing)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../geo/presentation/country_city_field.dart';
@@ -26,7 +27,7 @@ Future<void> showTravelSheet(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.colors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -151,7 +152,7 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLine,
+                  color: context.colors.surfaceLine,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -172,7 +173,7 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
               'Cambia tu ubicación para ver quién hay en cualquier parte del '
               'mundo. Tu perfil aparecerá allí "de viaje".',
               style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: AppColors.textSecondary),
+                  ?.copyWith(color: context.colors.textSecondary),
             ),
             const SizedBox(height: 16),
             if (!widget.canUseTravelMode)
@@ -181,9 +182,9 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
               // Toggle maestro: enciende/apaga el modo viajes aparte del botón.
               Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceHigh,
+                  color: context.colors.surfaceHigh,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                  border: Border.all(color: AppColors.surfaceLine),
+                  border: Border.all(color: context.colors.surfaceLine),
                 ),
                 child: SwitchListTile(
                   value: _active,
@@ -199,7 +200,7 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
                             : 'Elige un destino abajo')
                         : 'Desactivado · usas tu ubicación real',
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.textSecondary),
+                        ?.copyWith(color: context.colors.textSecondary),
                   ),
                 ),
               ),
@@ -234,7 +235,7 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
                 'Solo cambia dónde te muestras y a quién ves. No comparte tu '
                 'ubicación exacta.',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.textMuted),
+                    ?.copyWith(color: context.colors.textMuted),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -256,13 +257,13 @@ class _UpsellWall extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: <Color>[AppColors.wine, AppColors.surface],
+          colors: <Color>[AppColors.wine, context.colors.surface],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         children: <Widget>[
@@ -270,14 +271,14 @@ class _UpsellWall extends StatelessWidget {
           const SizedBox(height: 10),
           Text('El modo viajes es Plus y Pro',
               style: theme.textTheme.titleMedium
-                  ?.copyWith(color: AppColors.textPrimary),
+                  ?.copyWith(color: context.colors.textPrimary),
               textAlign: TextAlign.center),
           const SizedBox(height: 6),
           Text(
             'Hazte Plus o Pro para explorar y hacer match en cualquier ciudad '
             'del mundo antes de viajar.',
             style: theme.textTheme.bodyMedium
-                ?.copyWith(color: AppColors.textSecondary),
+                ?.copyWith(color: context.colors.textSecondary),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 14),

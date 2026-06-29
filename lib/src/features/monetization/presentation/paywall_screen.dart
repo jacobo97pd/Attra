@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_badges.dart';
@@ -194,10 +195,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: AppColors.surfaceHigh,
+                          color: context.colors.surfaceHigh,
                           borderRadius:
                               BorderRadius.circular(AppSpacing.radiusPill),
-                          border: Border.all(color: AppColors.surfaceLine),
+                          border: Border.all(color: context.colors.surfaceLine),
                         ),
                         child: Text('Tu plan: ${currentTier.label}',
                             style: theme.textTheme.labelLarge),
@@ -290,21 +291,25 @@ class _PeriodToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
-          Expanded(child: _segment('Mensual', !yearly, () => onChanged(false))),
           Expanded(
-              child: _segment('Anual · ahorra', yearly, () => onChanged(true))),
+              child: _segment(
+                  context, 'Mensual', !yearly, () => onChanged(false))),
+          Expanded(
+              child:
+                  _segment(context, 'Anual · ahorra', yearly, () => onChanged(true))),
         ],
       ),
     );
   }
 
-  Widget _segment(String label, bool active, VoidCallback onTap) {
+  Widget _segment(
+      BuildContext context, String label, bool active, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -318,7 +323,7 @@ class _PeriodToggle extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: active ? Colors.white : AppColors.textSecondary,
+            color: active ? Colors.white : context.colors.textSecondary,
             fontWeight: FontWeight.w700,
             fontSize: 13.5,
           ),
@@ -358,7 +363,7 @@ class _PlanCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     // Plus usa champagne (claro) => texto oscuro sobre sus acentos para que se lea.
     final bool onLight = kind == AttraBadgeKind.plus;
-    final Color accentText = onLight ? AppColors.black : AppColors.textPrimary;
+    final Color accentText = onLight ? context.colors.bg : context.colors.textPrimary;
     return AttraCard(
       padding: const EdgeInsets.all(AppSpacing.lg),
       borderColor: gradient.last.withValues(alpha: 0.55),
@@ -392,7 +397,7 @@ class _PlanCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(price,
               style: theme.textTheme.titleLarge?.copyWith(
-                  color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
+                  color: context.colors.textPrimary, fontWeight: FontWeight.w800)),
           const SizedBox(height: AppSpacing.md),
           ...features.map((String f) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
@@ -412,7 +417,7 @@ class _PlanCard extends StatelessWidget {
                   label: ctaLabel,
                   onPressed: onTap,
                   gradient: gradient,
-                  foregroundColor: onLight ? AppColors.black : null,
+                  foregroundColor: onLight ? context.colors.bg : null,
                 ),
         ],
       ),

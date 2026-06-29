@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../data/spark_service.dart';
 import '../domain/spark_session.dart';
@@ -161,8 +162,8 @@ class _Card extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0x33E5384E), AppColors.surface],
+        gradient: LinearGradient(
+          colors: <Color>[const Color(0x33E5384E), context.colors.surface],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
@@ -185,14 +186,14 @@ class _Card extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(title,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary,
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
                         fontWeight: FontWeight.w700,
                         fontSize: 14)),
                 const SizedBox(height: 2),
                 Text(subtitle,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12)),
+                    style: TextStyle(
+                        color: context.colors.textSecondary, fontSize: 12)),
               ],
             ),
           ),

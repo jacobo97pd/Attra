@@ -34,6 +34,7 @@ import 'src/features/spark/data/spark_analytics.dart';
 import 'src/features/spark/data/spark_repository.dart';
 import 'src/features/spark/data/spark_service.dart';
 import 'src/theme/app_theme.dart';
+import 'src/theme/theme_controller.dart';
 import 'src/features/stories/data/story_repository.dart';
 import 'src/features/stories/data/story_service.dart';
 
@@ -182,17 +183,24 @@ class _AttraAppState extends State<AttraApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Attra',
-      theme: AppTheme.dark,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.dark,
-      // i18n: la app sigue el idioma del SISTEMA. Si el dispositivo está en un
-      // idioma soportado (es/en) se usa ese; si no, cae a español (plantilla).
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: SessionGate(controller: _sessionController),
+    // Repinta al instante cuando cambia el modo (toggle de Ajustes) o al cargar
+    // la preferencia del usuario en la sesión.
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (BuildContext context, ThemeMode mode, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Attra',
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: mode,
+          // i18n: la app sigue el idioma del SISTEMA. Si el dispositivo está en
+          // un idioma soportado (es/en) se usa ese; si no, cae a español.
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: SessionGate(controller: _sessionController),
+        );
+      },
     );
   }
 }

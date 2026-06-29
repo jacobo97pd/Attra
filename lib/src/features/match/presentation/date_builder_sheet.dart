@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../domain/date_builder.dart';
@@ -12,7 +13,7 @@ Future<DatePlanSuggestion?> showDateBuilderSheet(
   return showModalBottomSheet<DatePlanSuggestion>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.colors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -54,7 +55,7 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLine,
+                  color: context.colors.surfaceLine,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -69,7 +70,7 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
                   ? 'Elige lo que te apetece y te propongo una cita.'
                   : 'Version basica: elige plan y momento.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppColors.textSecondary),
+                  ?.copyWith(color: context.colors.textSecondary),
             ),
             const SizedBox(height: 14),
             _Group<PlanType>(
@@ -119,7 +120,7 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
                 child: Text(
                   'Plus desbloquea presupuesto, duracion y vibe.',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textMuted),
+                      ?.copyWith(color: context.colors.textMuted),
                 ),
               ),
             const SizedBox(height: 8),
@@ -127,9 +128,9 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceHigh,
+                  color: context.colors.surfaceHigh,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                  border: Border.all(color: AppColors.surfaceLine),
+                  border: Border.all(color: context.colors.surfaceLine),
                 ),
                 child: Row(
                   children: <Widget>[
@@ -159,7 +160,7 @@ class _DateBuilderBodyState extends State<_DateBuilderBody> {
                       : 'Elige tipo de plan y momento.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textMuted),
+                      ?.copyWith(color: context.colors.textMuted),
                 ),
               ),
           ],
@@ -192,8 +193,8 @@ class _Group<T> extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(title,
-              style: const TextStyle(
-                  color: AppColors.textSecondary,
+              style: TextStyle(
+                  color: context.colors.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
@@ -210,16 +211,16 @@ class _Group<T> extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: selectedValue
                         ? AppColors.attraRed.withValues(alpha: 0.18)
-                        : AppColors.surfaceHigh,
+                        : context.colors.surfaceHigh,
                     borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
                     border: Border.all(
                         color: selectedValue
                             ? AppColors.attraRed
-                            : AppColors.surfaceLine),
+                            : context.colors.surfaceLine),
                   ),
                   child: Text(labelOf(v),
                       style: TextStyle(
-                          color: AppColors.textPrimary,
+                          color: context.colors.textPrimary,
                           fontSize: 13,
                           fontWeight: selectedValue
                               ? FontWeight.w700

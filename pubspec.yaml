@@ -80,6 +80,17 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
+  # Genera los iconos de app (iOS/Android) desde assets/images/app_logo.png.
+  # Tras cambiar el icono: `dart run flutter_launcher_icons`.
+  flutter_launcher_icons: ^0.14.1
+
+# Iconos de lanzador (Attra). app_logo.png es 1254x1254 sin alpha (apto iOS).
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/app_logo.png"
+  remove_alpha_ios: true
+  background_color_ios: "#0E0E10"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

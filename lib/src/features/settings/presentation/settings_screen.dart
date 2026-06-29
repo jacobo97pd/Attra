@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/theme_controller.dart';
 import '../domain/settings_catalog.dart';
 import '../domain/setting_definition.dart';
 import 'settings_controller.dart';
 import 'settings_icons.dart';
 import 'settings_section_screen.dart';
 
-/// Pantalla raiz de Ajustes: lista las 8 secciones del catalogo.
+/// Pantalla raiz de Ajustes: apariencia (tema) + las 8 secciones del catalogo.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.controller});
+  const SettingsScreen({
+    super.key,
+    required this.controller,
+    this.onSetThemeMode,
+  });
 
   final SettingsController controller;
+
+  /// Cambia el modo de tema (claro/oscuro/sistema). Persiste en ajustes.
+  final Future<void> Function(ThemeMode mode)? onSetThemeMode;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -42,10 +50,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (BuildContext context, _) {
         return ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: sections.length,
+          itemCount: sections.length + 1, // +1 = sección Apariencia (tema)
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (BuildContext context, int index) {
-            final SettingsSection section = sections[index];
+            if (index == 0) {
+              return _ThemeModeTile(onSetThemeMode: widget.onSetThemeMode);
+            }
+            final SettingsSection section = sections[index - 1];
             final bool destructive =
                 section.key == SettingsCatalog.secLifecycle;
             return ListTile(
@@ -68,6 +79,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: () => _openSection(section),
             );
           },
+        );
+      },
+    );
+  }
+}
+
+/// Sección "Apariencia": elige Sistema / Claro / Oscuro. Refleja el estado del
+/// ThemeController (cambia al instante) y persiste vía [onSetThemeMode].
+class _ThemeModeTile extends StatelessWidget {
+  const _ThemeModeTile({this.onSetThemeMode});
+
+  final Future<void> Function(ThemeMode mode)? onSetThemeMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (BuildContext context, ThemeMode mode, _) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(Icons.brightness_6_rounded,
+                      color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  Text('Apariencia',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SegmentedButton<ThemeMode>(
+                segments: const <ButtonSegment<ThemeMode>>[
+                  ButtonSegment<ThemeMode>(
+                      value: ThemeMode.system,
+                      icon: Icon(Icons.brightness_auto_rounded),
+                      label: Text('Sistema')),
+                  ButtonSegment<ThemeMode>(
+                      value: ThemeMode.light,
+                      icon: Icon(Icons.light_mode_rounded),
+                      label: Text('Claro')),
+                  ButtonSegment<ThemeMode>(
+                      value: ThemeMode.dark,
+                      icon: Icon(Icons.dark_mode_rounded),
+                      label: Text('Oscuro')),
+                ],
+                selected: <ThemeMode>{mode},
+                showSelectedIcon: false,
+                onSelectionChanged: onSetThemeMode == null
+                    ? null
+                    : (Set<ThemeMode> sel) =>
+                        onSetThemeMode!(sel.first),
+              ),
+            ],
+          ),
         );
       },
     );

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_image.dart';
 import '../data/ai_visual_service.dart';
 import '../domain/profile_insight.dart';
@@ -98,7 +99,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: context.colors.bg,
       appBar: AppBar(
         title: Row(
           mainAxisSize: MainAxisSize.min,
@@ -288,8 +289,8 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Icon(Icons.lock_outline_rounded,
-                size: 13, color: AppColors.textMuted),
+            Icon(Icons.lock_outline_rounded,
+                size: 13, color: context.colors.textMuted),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -297,7 +298,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
-                    ?.copyWith(color: AppColors.textMuted),
+                    ?.copyWith(color: context.colors.textMuted),
               ),
             ),
           ],
@@ -379,7 +380,7 @@ class _SectionHeader extends StatelessWidget {
           const SizedBox(height: 4),
           Text(subtitle!,
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppColors.textSecondary, height: 1.35)),
+                  ?.copyWith(color: context.colors.textSecondary, height: 1.35)),
         ],
       ],
     );
@@ -392,8 +393,8 @@ class _SubHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(text,
-        style: const TextStyle(
-            color: AppColors.textPrimary, fontWeight: FontWeight.w700));
+        style: TextStyle(
+            color: context.colors.textPrimary, fontWeight: FontWeight.w700));
   }
 }
 
@@ -413,7 +414,7 @@ class _ReferencePhoto extends StatelessWidget {
             if (url != null && url!.isNotEmpty)
               Positioned.fill(child: AttraImage(url: url))
             else
-              _placeholder(),
+              _placeholder(context),
             // Badge "Referencia cargada".
             if (url != null && url!.isNotEmpty)
               Positioned(
@@ -449,18 +450,18 @@ class _ReferencePhoto extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(BuildContext context) {
     return Container(
-      color: AppColors.surfaceHigh,
-      child: const Center(
+      color: context.colors.surfaceHigh,
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Icon(Icons.add_a_photo_outlined,
-                size: 40, color: AppColors.textMuted),
-            SizedBox(height: 8),
+                size: 40, color: context.colors.textMuted),
+            const SizedBox(height: 8),
             Text('Sube una foto de referencia',
-                style: TextStyle(color: AppColors.textMuted)),
+                style: TextStyle(color: context.colors.textMuted)),
           ],
         ),
       ),
@@ -478,20 +479,20 @@ class _AnalysisPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Row(
+          Row(
             children: <Widget>[
-              Icon(Icons.auto_awesome, size: 16, color: AppColors.aiViolet),
-              SizedBox(width: 8),
+              const Icon(Icons.auto_awesome, size: 16, color: AppColors.aiViolet),
+              const SizedBox(width: 8),
               Text('Cómo trabaja la IA',
                   style: TextStyle(
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                       fontWeight: FontWeight.w700)),
             ],
           ),
@@ -527,14 +528,14 @@ class _AnalysisRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(label,
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 13)),
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 13)),
           ),
           Flexible(
             child: Text(value,
                 textAlign: TextAlign.right,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w600)),
           ),
@@ -548,7 +549,7 @@ class _Sep extends StatelessWidget {
   const _Sep();
   @override
   Widget build(BuildContext context) =>
-      const Divider(height: 1, color: AppColors.surfaceLine);
+      Divider(height: 1, color: context.colors.surfaceLine);
 }
 
 class _FeatureCard extends StatelessWidget {
@@ -564,9 +565,9 @@ class _FeatureCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,7 +588,7 @@ class _FeatureCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(body,
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppColors.textSecondary, height: 1.3)),
+                  ?.copyWith(color: context.colors.textSecondary, height: 1.3)),
         ],
       ),
     );
@@ -613,7 +614,7 @@ class _InsightRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(insight.text,
-                style: const TextStyle(color: AppColors.textPrimary)),
+                style: TextStyle(color: context.colors.textPrimary)),
           ),
         ],
       ),
@@ -635,7 +636,7 @@ class _OutlinedAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: context.colors.surface,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
@@ -645,7 +646,7 @@ class _OutlinedAction extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.surfaceLine),
+            border: Border.all(color: context.colors.surfaceLine),
           ),
           child: loading
               ? const SizedBox(
@@ -656,11 +657,11 @@ class _OutlinedAction extends StatelessWidget {
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(icon, size: 18, color: AppColors.textPrimary),
+                    Icon(icon, size: 18, color: context.colors.textPrimary),
                     const SizedBox(width: 8),
                     Text(label,
-                        style: const TextStyle(
-                            color: AppColors.textPrimary,
+                        style: TextStyle(
+                            color: context.colors.textPrimary,
                             fontWeight: FontWeight.w600)),
                   ],
                 ),

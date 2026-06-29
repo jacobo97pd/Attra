@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_buttons.dart';
@@ -277,8 +278,8 @@ class _PromptEditCard extends StatelessWidget {
                 ),
               ),
               if (prompt.isCustom)
-                const Icon(Icons.draw_outlined,
-                    size: 14, color: AppColors.textMuted),
+                Icon(Icons.draw_outlined,
+                    size: 14, color: context.colors.textMuted),
             ],
           ),
           const SizedBox(height: 6),
@@ -417,8 +418,8 @@ class _PromptPickerSheetState extends State<_PromptPickerSheet> {
                               Expanded(
                                   child: Text(p.question,
                                       style: theme.textTheme.bodyLarge)),
-                              const Icon(Icons.chevron_right,
-                                  size: 20, color: AppColors.textMuted),
+                              Icon(Icons.chevron_right,
+                                  size: 20, color: context.colors.textMuted),
                             ],
                           ),
                         ),
@@ -508,8 +509,8 @@ class _AnswerEditorSheetState extends State<_AnswerEditorSheet> {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: _answer.text.trim().isEmpty
-                        ? AppColors.textMuted
-                        : AppColors.textPrimary,
+                        ? context.colors.textMuted
+                        : context.colors.textPrimary,
                   ),
                 ),
               ],
@@ -530,7 +531,7 @@ class _AnswerEditorSheetState extends State<_AnswerEditorSheet> {
                     style: theme.textTheme.bodySmall?.copyWith(
                         color: remaining < 0
                             ? AppColors.danger
-                            : AppColors.textMuted)),
+                            : context.colors.textMuted)),
             decoration: InputDecoration(
               hintText: 'Escribe tu respuesta',
               errorText: _error,

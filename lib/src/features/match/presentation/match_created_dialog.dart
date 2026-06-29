@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/attra_image.dart';
 import '../domain/like.dart';
@@ -85,7 +86,7 @@ class _MatchCelebrationScreen extends StatelessWidget {
         .toList(growable: false);
 
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: context.colors.bg,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -100,7 +101,7 @@ class _MatchCelebrationScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
                 text: TextSpan(
                   style: theme.textTheme.headlineMedium?.copyWith(
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                       fontWeight: FontWeight.w900),
                   children: const <TextSpan>[
                     TextSpan(text: '¡Es un '),
@@ -114,7 +115,7 @@ class _MatchCelebrationScreen extends StatelessWidget {
               Text('A ti y a $name les gusta mutuamente',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: AppColors.textSecondary)),
+                      ?.copyWith(color: context.colors.textSecondary)),
               const SizedBox(height: 28),
               // Fotos circulares con halo + badge de corazón.
               _MatchPhotos(
@@ -252,7 +253,7 @@ class _MatchPhotos extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(colors: AppColors.action),
-                border: Border.all(color: AppColors.black, width: 3),
+                border: Border.all(color: context.colors.bg, width: 3),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
                     color: AppColors.attraRed.withValues(alpha: 0.55),
@@ -339,12 +340,12 @@ class _InfoRow extends StatelessWidget {
             children: <Widget>[
               Text(title,
                   style: theme.textTheme.bodyLarge?.copyWith(
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                       fontWeight: FontWeight.w700)),
               const SizedBox(height: 2),
               Text(subtitle,
                   style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: AppColors.textSecondary)),
+                      ?.copyWith(color: context.colors.textSecondary)),
             ],
           ),
         ),

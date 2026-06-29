@@ -7,6 +7,7 @@ import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../domain/intro_media.dart';
 import 'intro_media_view.dart';
@@ -262,9 +263,9 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,7 +283,7 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
           const SizedBox(height: 4),
           Text('Públicos: cualquiera que vea tu perfil podrá reproducirlos.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppColors.textSecondary)),
+                  ?.copyWith(color: context.colors.textSecondary)),
           const SizedBox(height: 16),
           if (_loading)
             const Center(
@@ -315,14 +316,14 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
             const Icon(Icons.fiber_manual_record, color: AppColors.attraRed),
             const SizedBox(width: 10),
             Text('Grabando  ${_fmt(_recordElapsed)}',
-                style: const TextStyle(
-                    color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    color: context.colors.textPrimary, fontWeight: FontWeight.w600)),
             const Spacer(),
             IconButton(
               tooltip: 'Cancelar',
               onPressed: _cancelRecording,
-              icon: const Icon(Icons.close_rounded,
-                  color: AppColors.textSecondary),
+              icon: Icon(Icons.close_rounded,
+                  color: context.colors.textSecondary),
             ),
             IconButton(
               tooltip: 'Listo',
@@ -420,7 +421,7 @@ class _AddTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Material(
-      color: AppColors.surfaceHigh,
+      color: context.colors.surfaceHigh,
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       child: InkWell(
         onTap: onTap,
@@ -449,13 +450,13 @@ class _AddTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(subtitle,
                         style: theme.textTheme.bodySmall
-                            ?.copyWith(color: AppColors.textMuted)),
+                            ?.copyWith(color: context.colors.textMuted)),
                   ],
                 ),
               ),
               trailing ??
-                  const Icon(Icons.add_circle_outline_rounded,
-                      color: AppColors.textSecondary),
+                  Icon(Icons.add_circle_outline_rounded,
+                      color: context.colors.textSecondary),
             ],
           ),
         ),

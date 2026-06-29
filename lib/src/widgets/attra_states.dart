@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
 import 'attra_buttons.dart';
 
@@ -137,10 +138,10 @@ class _AttraSkeletonState extends State<AttraSkeleton>
             gradient: LinearGradient(
               begin: Alignment(-1 - 2 * _c.value, 0),
               end: Alignment(1 - 2 * _c.value, 0),
-              colors: const <Color>[
-                AppColors.surfaceHigh,
-                AppColors.surfaceLine,
-                AppColors.surfaceHigh,
+              colors: <Color>[
+                context.colors.surfaceHigh,
+                context.colors.surfaceLine,
+                context.colors.surfaceHigh,
               ],
             ),
           ),

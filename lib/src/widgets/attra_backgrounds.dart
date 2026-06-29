@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
 
 /// Fondo premium con degradado de marca (vino oscuro → carbón). Úsalo como base
@@ -100,7 +101,7 @@ class AttraCard extends StatelessWidget {
     final Widget content = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: gradient == null ? AppColors.surface : null,
+        color: gradient == null ? context.colors.surface : null,
         gradient: gradient == null
             ? null
             : LinearGradient(
@@ -108,7 +109,7 @@ class AttraCard extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: gradient!),
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: borderColor ?? AppColors.surfaceLine),
+        border: Border.all(color: borderColor ?? context.colors.surfaceLine),
         boxShadow: <BoxShadow>[
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.35),

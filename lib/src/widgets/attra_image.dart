@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
+import '../theme/attra_colors.dart';
 
 /// Imagen de red con CACHÉ EN DISCO + memoria, downscaling y transición suave.
 ///
@@ -50,7 +50,7 @@ class AttraImage extends StatelessWidget {
     final String clean = (url ?? '').trim();
     Widget child;
     if (clean.isEmpty) {
-      child = _fallback();
+      child = _fallback(context);
     } else {
       final double dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 2.0;
       final int? decodeWidth = memCacheWidth ??
@@ -63,8 +63,8 @@ class AttraImage extends StatelessWidget {
         memCacheWidth: decodeWidth,
         fadeInDuration: const Duration(milliseconds: 180),
         fadeOutDuration: const Duration(milliseconds: 120),
-        placeholder: (_, __) => _placeholder(),
-        errorWidget: (_, __, ___) => _fallback(),
+        placeholder: (BuildContext ctx, __) => _placeholder(ctx),
+        errorWidget: (BuildContext ctx, __, ___) => _fallback(ctx),
       );
     }
     if (borderRadius != null) {
@@ -73,28 +73,28 @@ class AttraImage extends StatelessWidget {
     return child;
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(BuildContext context) {
     return Container(
       width: width,
       height: height,
-      color: AppColors.surfaceHigh,
+      color: context.colors.surfaceHigh,
     );
   }
 
-  Widget _fallback() {
+  Widget _fallback(BuildContext context) {
     final String initial = (fallbackInitial ?? '').trim();
     return Container(
       width: width,
       height: height,
-      color: AppColors.surfaceHigh,
+      color: context.colors.surfaceHigh,
       alignment: Alignment.center,
       child: initial.isEmpty
-          ? const Icon(Icons.person_rounded,
-              color: AppColors.textMuted, size: 40)
+          ? Icon(Icons.person_rounded,
+              color: context.colors.textMuted, size: 40)
           : Text(
               initial[0].toUpperCase(),
-              style: const TextStyle(
-                  color: AppColors.textMuted,
+              style: TextStyle(
+                  color: context.colors.textMuted,
                   fontSize: 40,
                   fontWeight: FontWeight.w700),
             ),

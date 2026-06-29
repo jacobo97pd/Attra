@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../auth/domain/app_user.dart';
@@ -25,7 +26,7 @@ Future<void> showBoostStoreSheet(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.colors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -190,7 +191,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLine,
+                  color: context.colors.surfaceLine,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -202,7 +203,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
             const SizedBox(height: 4),
             Text('Más visibilidad y más likes cuando quieras.',
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: AppColors.textSecondary)),
+                    ?.copyWith(color: context.colors.textSecondary)),
             const SizedBox(height: 16),
 
             // Boost activo (en vivo) con temporizador.
@@ -280,7 +281,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
                   ? 'Pago seguro a través de tu tienda (Google Play / App Store).'
                   : 'Las compras no están disponibles en este dispositivo.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppColors.textMuted),
+                  ?.copyWith(color: context.colors.textMuted),
               textAlign: TextAlign.center,
             ),
           ],
@@ -361,22 +362,22 @@ class _BalanceTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         children: <Widget>[
           Icon(icon, color: AppColors.attraRed),
           const SizedBox(height: 6),
           Text('$value',
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
+              style: TextStyle(
+                  color: context.colors.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.w800)),
           Text(label,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12)),
+              style: TextStyle(
+                  color: context.colors.textSecondary, fontSize: 12)),
         ],
       ),
     );
@@ -402,9 +403,9 @@ class _BuyRow extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: ListTile(
         onTap: onTap,
@@ -426,8 +427,8 @@ class _BuyRow extends StatelessWidget {
           children: <Widget>[
             if (price != null && price!.isNotEmpty) ...<Widget>[
               Text(price!,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
                       fontWeight: FontWeight.w800)),
               const SizedBox(width: 8),
             ],

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 
+import '../../../theme/theme_controller.dart';
 import '../../onboarding/data/onboarding_error_messages.dart';
 import '../../onboarding/data/onboarding_repository.dart';
 import '../../onboarding/domain/onboarding_draft.dart';
@@ -843,6 +845,22 @@ class SessionController extends ChangeNotifier {
       return;
     }
     _state = newState;
+    // Aplica la preferencia de tema del usuario (claro/oscuro/sistema) en cuanto
+    // se conoce, para que persista entre sesiones.
+    final AppUser? u = newState.user;
+    if (u != null) {
+      ThemeController.instance.set(ThemeController.fromWire(u.themeModeWire));
+    }
     notifyListeners();
+  }
+
+  /// Cambia el modo de tema (Ajustes): aplica al instante (ThemeController) y lo
+  /// persiste en `settings['appearance.themeMode']`.
+  Future<void> setThemeMode(ThemeMode mode) async {
+    ThemeController.instance.set(mode);
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _settingsRepository.patchValues(
+        uid, <String, Object?>{'appearance.themeMode': ThemeController.toWire(mode)});
   }
 }

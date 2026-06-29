@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import 'photo_response_sheet.dart' show PhotoResponseKind, PhotoResponseResult;
@@ -130,7 +131,7 @@ class _PromptResponseSheetState extends State<PromptResponseSheet> {
                       style: theme.textTheme.bodySmall?.copyWith(
                           color: tooLong
                               ? AppColors.danger
-                              : AppColors.textMuted)),
+                              : context.colors.textMuted)),
               decoration: InputDecoration(
                 hintText: 'Escribe un comentario…',
                 errorText: tooLong ? 'Comentario demasiado largo' : null,

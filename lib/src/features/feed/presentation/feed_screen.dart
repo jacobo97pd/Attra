@@ -24,6 +24,7 @@ import '../../stories/domain/story.dart';
 import '../../stories/presentation/stories_bar.dart';
 import '../../stories/presentation/story_viewer_screen.dart';
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_image.dart';
 import '../../../widgets/attra_states.dart';
@@ -1037,10 +1038,10 @@ class _FeedScreenState extends State<FeedScreen> {
                   size: 48,
                   iconColor: widget.canRewind
                       ? AppColors.gold
-                      : AppColors.textSecondary,
+                      : context.colors.textSecondary,
                   borderColor: widget.canRewind
                       ? AppColors.gold.withValues(alpha: 0.38)
-                      : AppColors.surfaceLine,
+                      : context.colors.surfaceLine,
                   tooltip: rewindTooltip,
                   enabled: rewindEnabled,
                   onPressed: _onRewind,
@@ -1049,8 +1050,8 @@ class _FeedScreenState extends State<FeedScreen> {
                 _CircleAction(
                   icon: Icons.close_rounded,
                   size: 58,
-                  iconColor: AppColors.textSecondary,
-                  borderColor: AppColors.surfaceLine,
+                  iconColor: context.colors.textSecondary,
+                  borderColor: context.colors.surfaceLine,
                   tooltip: 'Pasar',
                   onPressed: () => _cardKey.currentState?.triggerSwipe(false),
                 ),
@@ -1244,8 +1245,8 @@ class _SwipeCardState extends State<_SwipeCard>
                     right: 20,
                     child: Opacity(
                       opacity: nopeOpacity,
-                      child: const _Stamp(
-                          label: 'NOPE', color: AppColors.textSecondary),
+                      child: _Stamp(
+                          label: 'NOPE', color: context.colors.textSecondary),
                     ),
                   ),
                 ],
@@ -1602,7 +1603,7 @@ class _PhotoBox extends StatelessWidget {
                     borderRadius: BorderRadius.circular(28),
                     border: Border.all(
                         color: storySeen
-                            ? AppColors.textMuted
+                            ? context.colors.textMuted
                             : AppColors.attraRed,
                         width: 3),
                     boxShadow: storySeen
@@ -1666,11 +1667,11 @@ class _StoryPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(Icons.play_circle_fill_rounded,
-              color: seen ? AppColors.textMuted : Colors.white, size: 15),
+              color: seen ? context.colors.textMuted : Colors.white, size: 15),
           const SizedBox(width: 5),
           Text('Historia',
               style: TextStyle(
-                  color: seen ? AppColors.textSecondary : Colors.white,
+                  color: seen ? context.colors.textSecondary : Colors.white,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700)),
         ],
@@ -1798,7 +1799,7 @@ class _Stamp extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.black.withValues(alpha: 0.55),
+        color: context.colors.bg.withValues(alpha: 0.55),
         border: Border.all(color: color, width: 3),
         borderRadius: BorderRadius.circular(14),
         boxShadow: <BoxShadow>[
@@ -1922,7 +1923,7 @@ class _CircleAction extends StatelessWidget {
                 height: size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: gradient == null ? AppColors.surfaceHigh : null,
+                  color: gradient == null ? context.colors.surfaceHigh : null,
                   gradient: gradient == null
                       ? null
                       : LinearGradient(
@@ -1943,7 +1944,7 @@ class _CircleAction extends StatelessWidget {
                         ],
                 ),
                 child: Icon(icon,
-                    color: iconColor ?? AppColors.textPrimary,
+                    color: iconColor ?? context.colors.textPrimary,
                     size: size * 0.46),
               ),
             ),

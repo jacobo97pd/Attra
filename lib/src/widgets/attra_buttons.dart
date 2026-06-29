@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
 
 /// Botón primario premium: degradado de acción (vino→rojo→coral), pill, con
@@ -31,7 +32,9 @@ class AttraPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool enabled = onPressed != null && !loading;
-    final Color fg = foregroundColor ?? AppColors.textPrimary;
+    // Texto/icono SOBRE el gradiente de marca → blanco en ambos modos (salvo
+    // override, p.ej. champagne con texto oscuro).
+    final Color fg = foregroundColor ?? Colors.white;
     final Widget content = AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       height: 54,
@@ -40,7 +43,7 @@ class AttraPrimaryButton extends StatelessWidget {
         gradient: LinearGradient(
           colors: enabled
               ? gradient
-              : <Color>[AppColors.surfaceHigh, AppColors.surfaceHigh],
+              : <Color>[context.colors.surfaceHigh, context.colors.surfaceHigh],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
         boxShadow: enabled
@@ -73,7 +76,7 @@ class AttraPrimaryButton extends StatelessWidget {
                 label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: enabled ? fg : AppColors.textMuted,
+                  color: enabled ? fg : context.colors.textMuted,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.2,

@@ -40,12 +40,12 @@ class AttraPremiumBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: compact ? 10 : 12, color: AppColors.textPrimary),
+          Icon(icon, size: compact ? 10 : 12, color: Colors.white),
           SizedBox(width: compact ? 3 : 4),
           Text(
             label,
             style: TextStyle(
-              color: AppColors.textPrimary,
+              color: Colors.white,
               fontSize: compact ? 9 : 10,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.6,
@@ -86,7 +86,7 @@ class AttraCoin extends StatelessWidget {
               const SizedBox(width: 6),
               Text('$balance',
                   style: const TextStyle(
-                      color: AppColors.textPrimary,
+                      color: Colors.white,
                       fontWeight: FontWeight.w800)),
             ],
           ),

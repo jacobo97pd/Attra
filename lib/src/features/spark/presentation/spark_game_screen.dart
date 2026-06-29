@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_buttons.dart';
@@ -191,7 +192,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: context.colors.bg,
       body: AttraGradientBackground(
         child: SafeArea(
           child: StreamBuilder<SparkSession?>(
@@ -249,22 +250,22 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
         children: <Widget>[
           IconButton(
             onPressed: _exit,
-            icon: const Icon(Icons.close_rounded, color: AppColors.textPrimary),
+            icon: Icon(Icons.close_rounded, color: context.colors.textPrimary),
             tooltip: 'Salir',
           ),
           Expanded(
             child: Column(
               children: <Widget>[
-                const Text('Attra Spark',
+                Text('Attra Spark',
                     style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: context.colors.textPrimary,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1)),
                 if (s.status == SparkStatus.active)
                   Text(
                     'Ronda ${s.currentRound + 1} de ${s.totalRounds}  ·  $mmss',
-                    style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12),
+                    style: TextStyle(
+                        color: context.colors.textSecondary, fontSize: 12),
                   ),
               ],
             ),
@@ -272,7 +273,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
           IconButton(
             onPressed: _report,
             icon:
-                const Icon(Icons.flag_outlined, color: AppColors.textSecondary),
+                Icon(Icons.flag_outlined, color: context.colors.textSecondary),
             tooltip: 'Reportar',
           ),
         ],
@@ -316,15 +317,15 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
                   ? 'Esperando a que ${widget.otherName} acepte…'
                   : '${widget.otherName} te invita a jugar 5 minutos',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
+              style: TextStyle(
+                  color: context.colors.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            const Text('Romped el hielo con un juego rápido. Opcional.',
+            Text('Romped el hielo con un juego rápido. Opcional.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textSecondary)),
+                style: TextStyle(color: context.colors.textSecondary)),
             const SizedBox(height: 24),
             if (!iAccepted)
               AttraPrimaryButton(
@@ -367,8 +368,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
                 fontSize: 12)),
         const SizedBox(height: 8),
         Text(round.prompt,
-            style: const TextStyle(
-                color: AppColors.textPrimary,
+            style: TextStyle(
+                color: context.colors.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 height: 1.2)),
@@ -388,21 +389,21 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const SizedBox(
+          SizedBox(
               width: 12,
               height: 12,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppColors.textMuted)),
+                  strokeWidth: 2, color: context.colors.textMuted)),
           const SizedBox(width: 8),
           Text('Esperando a ${widget.otherName}…',
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12)),
+              style: TextStyle(
+                  color: context.colors.textSecondary, fontSize: 12)),
         ],
       ),
     );
@@ -414,10 +415,10 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (isGuess)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 6),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
             child: Text('Tú eliges:',
-                style: TextStyle(color: AppColors.textSecondary)),
+                style: TextStyle(color: context.colors.textSecondary)),
           ),
         ...round.options.map((SparkOption o) => _optionTile(
               o,
@@ -426,8 +427,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             )),
         if (isGuess) ...<Widget>[
           const SizedBox(height: 14),
-          const Text('¿Qué crees que elegirá?',
-              style: TextStyle(color: AppColors.textSecondary)),
+          Text('¿Qué crees que elegirá?',
+              style: TextStyle(color: context.colors.textSecondary)),
           const SizedBox(height: 6),
           ...round.options.map((SparkOption o) => _optionTile(
                 o,
@@ -453,9 +454,9 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
@@ -466,7 +467,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
               otherAnswered
                   ? 'Revelando…'
                   : '${widget.otherName} está respondiendo…',
-              style: const TextStyle(color: AppColors.textPrimary),
+              style: TextStyle(color: context.colors.textPrimary),
             ),
           ),
           if (!otherAnswered)
@@ -513,7 +514,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             gradient: LinearGradient(
               colors: coincide
                   ? AppColors.match
-                  : <Color>[AppColors.surfaceHigh, AppColors.surface],
+                  : <Color>[context.colors.surfaceHigh, context.colors.surface],
             ),
             borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           ),
@@ -521,8 +522,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             children: <Widget>[
               Text(
                 coincide ? '¡Coincidís! ✨' : 'Os complementáis 😉',
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w800),
               ),
@@ -553,7 +554,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
               if (guessLine != null) ...<Widget>[
                 const SizedBox(height: 10),
                 Text(guessLine,
-                    style: const TextStyle(color: AppColors.textPrimary)),
+                    style: TextStyle(color: context.colors.textPrimary)),
               ],
             ],
           ),
@@ -564,7 +565,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
               ? 'Pasando a la siguiente…'
               : 'Esperando a la siguiente ronda…',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          style: TextStyle(color: context.colors.textMuted, fontSize: 12),
         ),
       ],
     );
@@ -575,7 +576,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
-        color: AppColors.black.withValues(alpha: 0.18),
+        color: context.colors.bg.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Column(
@@ -586,7 +587,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style:
-                const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                TextStyle(color: context.colors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 4),
           Text(
@@ -594,8 +595,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+            style: TextStyle(
+                color: context.colors.textPrimary, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -608,7 +609,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: selected ? color.withValues(alpha: 0.18) : AppColors.surfaceHigh,
+        color: selected ? color.withValues(alpha: 0.18) : context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         child: InkWell(
           onTap: onTap,
@@ -618,7 +619,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
               border: Border.all(
-                  color: selected ? color : AppColors.surfaceLine,
+                  color: selected ? color : context.colors.surfaceLine,
                   width: selected ? 1.6 : 1),
             ),
             child: Row(
@@ -629,8 +630,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
                 ],
                 Expanded(
                   child: Text(o.label,
-                      style: const TextStyle(
-                          color: AppColors.textPrimary,
+                      style: TextStyle(
+                          color: context.colors.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600)),
                 ),
@@ -654,8 +655,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             const SizedBox(height: 16),
             Text(message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: AppColors.textPrimary,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w700)),
             const SizedBox(height: 24),

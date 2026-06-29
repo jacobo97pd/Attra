@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../domain/match_journey.dart';
 
@@ -107,12 +108,12 @@ class MatchJourneyCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(
             color: journey.coolingDown
                 ? AppColors.gold.withValues(alpha: 0.5)
-                : AppColors.surfaceLine),
+                : context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
@@ -136,15 +137,15 @@ class MatchJourneyCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(journey.label,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary,
+                    style: TextStyle(
+                        color: context.colors.textSecondary,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.4)),
                 const SizedBox(height: 1),
                 Text(_subtitle,
                     style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: AppColors.textPrimary)),
+                        ?.copyWith(color: context.colors.textPrimary)),
               ],
             ),
           ),
@@ -157,8 +158,8 @@ class MatchJourneyCard extends StatelessWidget {
           IconButton(
             tooltip: 'Ocultar',
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.close_rounded,
-                size: 18, color: AppColors.textMuted),
+            icon: Icon(Icons.close_rounded,
+                size: 18, color: context.colors.textMuted),
             onPressed: onDismiss,
           ),
         ],

@@ -24,6 +24,7 @@ import '../../spark/presentation/spark_entry_card.dart';
 import '../../spark/presentation/spark_game_screen.dart';
 import '../../../security/screen_guard.dart';
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
@@ -465,7 +466,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final bool ok = await showDialog<bool>(
             context: context,
             builder: (BuildContext ctx) => AlertDialog(
-              backgroundColor: AppColors.surface,
+              backgroundColor: context.colors.surface,
               title: const Text('Reto Café ☕'),
               content: const Text(
                 'Si hay ganador, el que pierde invita al primer café. Si hay '
@@ -634,7 +635,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final _TwoTruthsInput? input = await showModalBottomSheet<_TwoTruthsInput>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: context.colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1257,7 +1258,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
               end: Alignment.bottomRight,
               colors: <Color>[
                 AppColors.attraRed.withValues(alpha: 0.18),
-                AppColors.surface,
+                context.colors.surface,
               ],
             ),
             borderRadius: BorderRadius.circular(18),
@@ -1314,7 +1315,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
             const SizedBox(height: 8),
             Text('Has aceptado. Empezando…',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.textSecondary)),
+                    ?.copyWith(color: context.colors.textSecondary)),
           ],
         ]);
 
@@ -1343,7 +1344,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
           const SizedBox(height: 6),
           Text('Escribid en el chat. La IA analizará estos 5 minutos.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: AppColors.textSecondary)),
+                  ?.copyWith(color: context.colors.textSecondary)),
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
@@ -1363,7 +1364,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
           margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: AppColors.surfaceHigh,
+            color: context.colors.surfaceHigh,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
@@ -1371,7 +1372,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
                 ? 'Reto no aceptado.'
                 : 'Reto cancelado. Sin problema 😊',
             style: theme.textTheme.bodySmall
-                ?.copyWith(color: AppColors.textSecondary),
+                ?.copyWith(color: context.colors.textSecondary),
           ),
         );
     }
@@ -1541,10 +1542,10 @@ class _TextBubble extends StatelessWidget {
         ),
       );
     } else if (pending) {
-      status = const Padding(
-        padding: EdgeInsets.only(right: 4, bottom: 4),
+      status = Padding(
+        padding: const EdgeInsets.only(right: 4, bottom: 4),
         child:
-            Icon(Icons.schedule_rounded, size: 12, color: AppColors.textMuted),
+            Icon(Icons.schedule_rounded, size: 12, color: context.colors.textMuted),
       );
     }
 
@@ -1622,13 +1623,13 @@ class _DoubleAnswerBubble extends StatelessWidget {
             else if (answered)
               Row(
                 children: <Widget>[
-                  const Icon(Icons.lock_clock_rounded,
-                      size: 16, color: AppColors.textMuted),
+                  Icon(Icons.lock_clock_rounded,
+                      size: 16, color: context.colors.textMuted),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text('Respuesta guardada. Esperando al reveal.',
                         style: theme.textTheme.bodySmall
-                            ?.copyWith(color: AppColors.textMuted)),
+                            ?.copyWith(color: context.colors.textMuted)),
                   ),
                 ],
               )
@@ -1733,7 +1734,7 @@ class _TwoTruthsBubble extends StatelessWidget {
             else
               Text('Esperando a que responda.',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textMuted)),
+                      ?.copyWith(color: context.colors.textMuted)),
           ],
         ),
       ),
@@ -1754,16 +1755,16 @@ class _MiniReveal extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(label,
               style: theme.textTheme.labelSmall
-                  ?.copyWith(color: AppColors.textMuted)),
+                  ?.copyWith(color: context.colors.textMuted)),
           const SizedBox(height: 2),
           Text(value),
         ],
@@ -2030,7 +2031,7 @@ class _TwoTruthsComposerSheetState extends State<_TwoTruthsComposerSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLine,
+                  color: context.colors.surfaceLine,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -2042,7 +2043,7 @@ class _TwoTruthsComposerSheetState extends State<_TwoTruthsComposerSheet> {
             const SizedBox(height: 4),
             Text('Escribe tres frases y marca cual es la mentira.',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.textSecondary)),
+                    ?.copyWith(color: context.colors.textSecondary)),
             const SizedBox(height: 14),
             for (int i = 0; i < _controllers.length; i++) ...<Widget>[
               TextField(
@@ -2070,7 +2071,7 @@ class _TwoTruthsComposerSheetState extends State<_TwoTruthsComposerSheet> {
             const SizedBox(height: 8),
             Text('La frase marcada sera la mentira.',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.textMuted)),
+                    ?.copyWith(color: context.colors.textMuted)),
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
@@ -2116,7 +2117,7 @@ class _Composer extends StatelessWidget {
   void _openActions(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: context.colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -2142,7 +2143,7 @@ class _Composer extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLine,
+                  color: context.colors.surfaceLine,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),

@@ -25,6 +25,7 @@ class AppUser {
     this.countryName = '',
     this.maxDistanceKm,
     this.slowDatingEnabled = false,
+    this.themeModeWire = 'dark',
     this.relationshipIntent = '',
     this.interests = const <String>[],
     this.boostBalance = 0,
@@ -61,6 +62,10 @@ class AppUser {
   /// perfiles pero más afines (ranking/visibilidad), priorizando conexiones
   /// intencionales. Opt-in desde Ajustes (`settings['privacy.slowDating']`).
   final bool slowDatingEnabled;
+
+  /// Modo de tema elegido: 'system' | 'light' | 'dark'. De
+  /// `settings['appearance.themeMode']`. Default 'dark'.
+  final String themeModeWire;
 
   /// Qué busca (relationshipIntent) — para afinidad intencional en Slow Dating.
   final String relationshipIntent;
@@ -139,6 +144,11 @@ class AppUser {
           '',
       maxDistanceKm: _asIntOrNull(preferences['maxDistanceKm']),
       slowDatingEnabled: _asBool(settings['privacy.slowDating']),
+      themeModeWire:
+          (settings['appearance.themeMode'] as String?)?.trim().isNotEmpty ==
+                  true
+              ? settings['appearance.themeMode'] as String
+              : 'dark',
       relationshipIntent: (profile['relationshipIntent'] as String?) ??
           (preferences['relationshipIntent'] as String?) ??
           '',

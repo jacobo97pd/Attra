@@ -14,6 +14,7 @@ import '../../profile/domain/profile_prompt.dart';
 import '../../profile/presentation/company_field.dart';
 import '../../profile/presentation/profile_prompts_editor_screen.dart';
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_buttons.dart';
@@ -655,7 +656,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       case 'service_disabled':
         return AppColors.coral;
       default:
-        return AppColors.textSecondary;
+        return context.colors.textSecondary;
     }
   }
 
@@ -731,7 +732,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                     Text(
                       _stepMeta[step].label,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        color: AppColors.textPrimary,
+                        color: context.colors.textPrimary,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -741,8 +742,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               IconButton(
                 onPressed: _submitting ? null : widget.onLogout,
                 tooltip: 'Cerrar sesión',
-                icon: const Icon(Icons.logout_rounded,
-                    color: AppColors.textSecondary),
+                icon: Icon(Icons.logout_rounded,
+                    color: context.colors.textSecondary),
               ),
             ],
           ),
@@ -756,8 +757,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Widget _buildFooter(ThemeData theme, int step, bool isLast) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppColors.surfaceLine)),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: context.colors.surfaceLine)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -784,7 +785,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       child: Text(
                         _localError ?? widget.errorMessage!,
                         style: theme.textTheme.bodySmall
-                            ?.copyWith(color: AppColors.textPrimary),
+                            ?.copyWith(color: context.colors.textPrimary),
                       ),
                     ),
                   ],
@@ -851,12 +852,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             children: <Widget>[
               Icon(Icons.verified_user_rounded,
                   size: 16,
-                  color: hasSelfie ? AppColors.success : AppColors.textMuted),
+                  color: hasSelfie ? AppColors.success : context.colors.textMuted),
               const SizedBox(width: 6),
               Text(
                 hasSelfie ? 'Selfie capturada' : 'Pendiente de capturar',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: hasSelfie ? AppColors.success : AppColors.textMuted,
+                  color: hasSelfie ? AppColors.success : context.colors.textMuted,
                 ),
               ),
             ],
@@ -1315,7 +1316,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               Text(
                 'Ubicacion para perfiles cercanos',
                 style: theme.textTheme.titleSmall
-                    ?.copyWith(color: AppColors.textPrimary),
+                    ?.copyWith(color: context.colors.textPrimary),
               ),
             ],
           ),
@@ -1469,9 +1470,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
+                color: context.colors.surfaceHigh,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                border: Border.all(color: AppColors.surfaceLine),
+                border: Border.all(color: context.colors.surfaceLine),
               ),
               child: Column(
                 children: <Widget>[
@@ -1487,7 +1488,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   Text(
                     'Las preguntas dan tema de conversación y mejoran tus matches.',
                     style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: AppColors.textSecondary),
+                        ?.copyWith(color: context.colors.textSecondary),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -1501,16 +1502,16 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceHigh,
+                    color: context.colors.surfaceHigh,
                     borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                    border: Border.all(color: AppColors.surfaceLine),
+                    border: Border.all(color: context.colors.surfaceLine),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(p.question,
                           style: theme.textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textSecondary)),
+                              ?.copyWith(color: context.colors.textSecondary)),
                       const SizedBox(height: 6),
                       Text(p.answer,
                           style: theme.textTheme.titleMedium?.copyWith(
@@ -1660,19 +1661,19 @@ class _StepLayout extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Icon(icon, color: AppColors.textPrimary, size: 26),
+                child: Icon(icon, color: context.colors.textPrimary, size: 26),
               ),
               const SizedBox(height: 16),
             ],
             Text(title,
                 style: theme.textTheme.headlineSmall?.copyWith(
-                  color: AppColors.textPrimary,
+                  color: context.colors.textPrimary,
                   fontWeight: FontWeight.w800,
                 )),
             const SizedBox(height: 6),
             Text(subtitle,
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: AppColors.textSecondary, height: 1.4)),
+                    ?.copyWith(color: context.colors.textSecondary, height: 1.4)),
             const SizedBox(height: 22),
             child,
           ],
@@ -1706,7 +1707,7 @@ class _StepProgress extends StatelessWidget {
                 gradient: filled
                     ? const LinearGradient(colors: AppColors.action)
                     : null,
-                color: filled ? null : AppColors.surfaceHigh,
+                color: filled ? null : context.colors.surfaceHigh,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
               ),
             ),
@@ -1728,9 +1729,9 @@ class _CircleNavButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool enabled = onPressed != null;
     return Material(
-      color: AppColors.surfaceHigh,
-      shape: const CircleBorder(
-        side: BorderSide(color: AppColors.surfaceLine),
+      color: context.colors.surfaceHigh,
+      shape: CircleBorder(
+        side: BorderSide(color: context.colors.surfaceLine),
       ),
       child: InkWell(
         onTap: onPressed,
@@ -1739,7 +1740,7 @@ class _CircleNavButton extends StatelessWidget {
           width: 54,
           height: 54,
           child: Icon(icon,
-              color: enabled ? AppColors.textPrimary : AppColors.textMuted),
+              color: enabled ? context.colors.textPrimary : context.colors.textMuted),
         ),
       ),
     );
@@ -1770,7 +1771,7 @@ class _SelfieRing extends StatelessWidget {
           gradient: LinearGradient(
             colors: hasSelfie
                 ? AppColors.action
-                : const <Color>[AppColors.surfaceLine, AppColors.surfaceHigh],
+                : <Color>[context.colors.surfaceLine, context.colors.surfaceHigh],
           ),
           boxShadow: hasSelfie
               ? <BoxShadow>[
@@ -1785,23 +1786,23 @@ class _SelfieRing extends StatelessWidget {
         child: Container(
           width: 200,
           height: 200,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppColors.surface,
+            color: context.colors.surface,
           ),
           clipBehavior: Clip.antiAlias,
           child: image != null
               ? Image(image: image!, fit: BoxFit.cover)
-              : const Column(
+              : Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
                     Icon(Icons.add_a_photo_rounded,
-                        size: 44, color: AppColors.textMuted),
-                    SizedBox(height: 10),
+                        size: 44, color: context.colors.textMuted),
+                    const SizedBox(height: 10),
                     Text('Toca para\ntomar tu selfie',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: AppColors.textMuted,
+                            color: context.colors.textMuted,
                             fontSize: 13,
                             height: 1.3)),
                   ],
@@ -1836,7 +1837,7 @@ class _ChoiceGroup extends StatelessWidget {
       children: <Widget>[
         Text(title,
             style: theme.textTheme.titleSmall?.copyWith(
-              color: AppColors.textPrimary,
+              color: context.colors.textPrimary,
               fontWeight: FontWeight.w700,
             )),
         const SizedBox(height: 10),
@@ -1881,10 +1882,10 @@ class _SelectablePill extends StatelessWidget {
         decoration: BoxDecoration(
           gradient:
               selected ? const LinearGradient(colors: AppColors.action) : null,
-          color: selected ? null : AppColors.surfaceHigh,
+          color: selected ? null : context.colors.surfaceHigh,
           borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
           border: Border.all(
-            color: selected ? Colors.transparent : AppColors.surfaceLine,
+            color: selected ? Colors.transparent : context.colors.surfaceLine,
           ),
           boxShadow: selected
               ? <BoxShadow>[
@@ -1900,15 +1901,15 @@ class _SelectablePill extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (selected) ...<Widget>[
-              const Icon(Icons.check_rounded,
-                  size: 16, color: AppColors.textPrimary),
+              Icon(Icons.check_rounded,
+                  size: 16, color: context.colors.textPrimary),
               const SizedBox(width: 5),
             ],
             Text(
               label,
               style: TextStyle(
                 color:
-                    selected ? AppColors.textPrimary : AppColors.textSecondary,
+                    selected ? context.colors.textPrimary : context.colors.textSecondary,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 fontSize: 14,
               ),

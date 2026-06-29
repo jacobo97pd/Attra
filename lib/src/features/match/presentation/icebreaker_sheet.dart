@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 
 /// Catalogo local de aperturas. El usuario siempre revisa antes de enviar.
@@ -64,7 +65,7 @@ Future<void> showIcebreakerSheet(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.colors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -103,7 +104,7 @@ Future<void> showIcebreakerSheet(
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.textPrimary,
+                    color: context.colors.textPrimary,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -118,7 +119,7 @@ Future<void> showIcebreakerSheet(
                     'Elige una apertura. Podras editarla antes de enviar.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: AppColors.textSecondary),
+                        ?.copyWith(color: context.colors.textSecondary),
                   ),
                 ),
                 const SizedBox(height: 8),

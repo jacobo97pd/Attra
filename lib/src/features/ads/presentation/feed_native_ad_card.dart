@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../data/ads_service.dart';
@@ -42,7 +43,7 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
       request: const AdRequest(),
       nativeTemplateStyle: NativeTemplateStyle(
         templateType: TemplateType.medium,
-        mainBackgroundColor: AppColors.surface,
+        mainBackgroundColor: context.colors.surface,
         cornerRadius: 18,
         callToActionTextStyle: NativeTemplateTextStyle(
           textColor: Colors.white,
@@ -51,19 +52,19 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
           size: 15,
         ),
         primaryTextStyle: NativeTemplateTextStyle(
-          textColor: AppColors.textPrimary,
-          backgroundColor: AppColors.surface,
+          textColor: context.colors.textPrimary,
+          backgroundColor: context.colors.surface,
           style: NativeTemplateFontStyle.bold,
           size: 16,
         ),
         secondaryTextStyle: NativeTemplateTextStyle(
-          textColor: AppColors.textSecondary,
-          backgroundColor: AppColors.surface,
+          textColor: context.colors.textSecondary,
+          backgroundColor: context.colors.surface,
           size: 13,
         ),
         tertiaryTextStyle: NativeTemplateTextStyle(
-          textColor: AppColors.textMuted,
-          backgroundColor: AppColors.surface,
+          textColor: context.colors.textMuted,
+          backgroundColor: context.colors.surface,
           size: 11,
         ),
       ),
@@ -102,20 +103,20 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceHigh,
+                  color: context.colors.surfaceHigh,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                  border: Border.all(color: AppColors.surfaceLine),
+                  border: Border.all(color: context.colors.surfaceLine),
                 ),
                 child: Text('Patrocinado',
                     style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppColors.textSecondary,
+                        color: context.colors.textSecondary,
                         fontWeight: FontWeight.w700,
                         fontSize: 11)),
               ),
               const Spacer(),
               Text('Anuncio',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.textMuted, fontSize: 11)),
+                      ?.copyWith(color: context.colors.textMuted, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 8),
@@ -126,7 +127,7 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
               child: (_loaded && _ad != null && !_failed)
                   ? AdWidget(ad: _ad!)
                   : Container(
-                      color: AppColors.surface,
+                      color: context.colors.surface,
                       alignment: Alignment.center,
                       child: const CircularProgressIndicator(
                           color: AppColors.attraRed),

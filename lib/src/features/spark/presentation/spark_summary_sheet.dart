@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../domain/spark_summary.dart';
@@ -21,7 +22,7 @@ Future<void> showSparkSummarySheet(
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.colors.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -60,7 +61,7 @@ class _SparkSummaryBody extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLine,
+                  color: context.colors.surfaceLine,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -77,7 +78,7 @@ class _SparkSummaryBody extends StatelessWidget {
             Text(summary.chatLine,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: AppColors.textSecondary)),
+                    ?.copyWith(color: context.colors.textSecondary)),
             const SizedBox(height: 18),
             if (summary.coincidences.isNotEmpty)
               _section(
@@ -88,7 +89,7 @@ class _SparkSummaryBody extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: summary.coincidences
-                      .map((String c) => _chip(c, AppColors.attraRed))
+                      .map((String c) => _chip(context, c, AppColors.attraRed))
                       .toList(growable: false),
                 ),
               ),
@@ -165,7 +166,7 @@ class _SparkSummaryBody extends StatelessWidget {
     );
   }
 
-  Widget _chip(String label, Color color) {
+  Widget _chip(BuildContext context, String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
@@ -174,8 +175,8 @@ class _SparkSummaryBody extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(label,
-          style: const TextStyle(
-              color: AppColors.textPrimary,
+          style: TextStyle(
+              color: context.colors.textPrimary,
               fontSize: 13,
               fontWeight: FontWeight.w600)),
     );
@@ -194,15 +195,15 @@ class _QuestionTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.surfaceLine),
+        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
           Expanded(
             child: Text(question,
-                style: const TextStyle(color: AppColors.textPrimary)),
+                style: TextStyle(color: context.colors.textPrimary)),
           ),
           TextButton(
             onPressed: onUse,

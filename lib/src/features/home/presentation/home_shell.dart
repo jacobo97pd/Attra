@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../l10n/app_localizations.dart';
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
@@ -79,6 +80,7 @@ class HomeShell extends StatefulWidget {
     required this.aiVisualService,
     required this.onSetAiConsent,
     required this.onSetSlowDating,
+    required this.onSetThemeMode,
     required this.onSetTravelLocation,
     required this.onLoadProfileByUid,
     this.integrationConnector,
@@ -142,6 +144,9 @@ class HomeShell extends StatefulWidget {
   final AiVisualService aiVisualService;
   final Future<void> Function(bool granted) onSetAiConsent;
   final Future<void> Function(bool value) onSetSlowDating;
+
+  /// Cambia el modo de tema (claro/oscuro/sistema) desde Ajustes.
+  final Future<void> Function(ThemeMode mode) onSetThemeMode;
 
   /// Modo viajes (Plus/Pro): fija/desactiva el destino del feed.
   final Future<void> Function({
@@ -329,13 +334,13 @@ class _HomeShellState extends State<HomeShell> {
                       size: 16, color: AppColors.attraRed),
                   const SizedBox(width: 6),
                   RichText(
-                    text: const TextSpan(
-                      style: TextStyle(fontSize: 12.5),
+                    text: TextSpan(
+                      style: const TextStyle(fontSize: 12.5),
                       children: <TextSpan>[
                         TextSpan(
                             text: 'Tus likes están\n',
-                            style: TextStyle(color: AppColors.textSecondary)),
-                        TextSpan(
+                            style: TextStyle(color: context.colors.textSecondary)),
+                        const TextSpan(
                             text: 'protegidos',
                             style: TextStyle(
                                 color: AppColors.attraRed,
@@ -597,7 +602,10 @@ class _HomeShellState extends State<HomeShell> {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => Scaffold(
         appBar: AppBar(title: const Text('Ajustes')),
-        body: SettingsScreen(controller: c),
+        body: SettingsScreen(
+          controller: c,
+          onSetThemeMode: widget.onSetThemeMode,
+        ),
       ),
     ));
   }

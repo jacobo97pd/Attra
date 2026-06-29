@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../data/notification_service.dart';
@@ -39,7 +40,7 @@ class NotificationsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: context.colors.bg,
       appBar: AppBar(
         title: const Text('Notificaciones'),
         actions: <Widget>[
@@ -102,11 +103,11 @@ class _NotifTile extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
-          color: AppColors.surfaceHigh,
+          color: context.colors.surfaceHigh,
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         ),
-        child: const Icon(Icons.delete_outline_rounded,
-            color: AppColors.textMuted),
+        child: Icon(Icons.delete_outline_rounded,
+            color: context.colors.textMuted),
       ),
       child: Material(
         color: Colors.transparent,
@@ -117,11 +118,11 @@ class _NotifTile extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color:
-                  n.read ? AppColors.surface : accent.withValues(alpha: 0.10),
+                  n.read ? context.colors.surface : accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
               border: Border.all(
                   color: n.read
-                      ? AppColors.surfaceLine
+                      ? context.colors.surfaceLine
                       : accent.withValues(alpha: 0.45)),
             ),
             child: Row(
@@ -145,18 +146,18 @@ class _NotifTile extends StatelessWidget {
                       Text(n.title,
                           style: theme.textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary)),
+                              color: context.colors.textPrimary)),
                       const SizedBox(height: 2),
                       Text(n.body,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: AppColors.textSecondary)),
+                              ?.copyWith(color: context.colors.textSecondary)),
                       if (n.createdAt != null) ...<Widget>[
                         const SizedBox(height: 4),
                         Text(_timeAgo(n.createdAt!),
                             style: theme.textTheme.bodySmall
-                                ?.copyWith(color: AppColors.textMuted)),
+                                ?.copyWith(color: context.colors.textMuted)),
                       ],
                     ],
                   ),
@@ -204,12 +205,12 @@ class _Empty extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Sin novedades por ahora',
                 style: theme.textTheme.titleLarge
-                    ?.copyWith(color: AppColors.textPrimary)),
+                    ?.copyWith(color: context.colors.textPrimary)),
             const SizedBox(height: 8),
             Text('Cuando alguien te dé like o te escriba, lo verás aquí 🔔',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: AppColors.textSecondary)),
+                    ?.copyWith(color: context.colors.textSecondary)),
           ],
         ),
       ),
@@ -255,7 +256,7 @@ class NotificationBell extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.attraRed,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.black, width: 1.5),
+                    border: Border.all(color: context.colors.bg, width: 1.5),
                   ),
                   child: Text(
                     n > 9 ? '9+' : '$n',
