@@ -18,6 +18,7 @@ import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/attra_loader.dart';
 import '../data/onboarding_repository.dart';
 import '../domain/onboarding_draft.dart';
 
@@ -380,12 +381,18 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     });
 
     try {
-      await _persistCurrentDraft(force: true);
+      await runWithAttraLoader(
+        context,
+        () async {
+          await _persistCurrentDraft(force: true);
 
-      await widget.onSubmitOnboarding(
-        draft: normalizedDraft.copyWith(currentStep: _totalSteps - 1),
-        liveSelfieBytes: _liveSelfieBytes,
-        liveSelfieFileExtension: _liveSelfieFileExtension,
+          await widget.onSubmitOnboarding(
+            draft: normalizedDraft.copyWith(currentStep: _totalSteps - 1),
+            liveSelfieBytes: _liveSelfieBytes,
+            liveSelfieFileExtension: _liveSelfieFileExtension,
+          );
+        },
+        message: 'Creando tu perfil…',
       );
     } catch (error) {
       if (!mounted) {

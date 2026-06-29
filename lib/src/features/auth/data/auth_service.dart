@@ -53,6 +53,10 @@ class AuthService {
   final FirebaseAuth _firebaseAuth;
   final GoogleSignIn _googleSignIn;
 
+  // DIAGNOSTICO TEMPORAL: guarda el resultado de Apple para anexarlo al mensaje
+  // de error si Firebase rechaza la credencial. Borrar al terminar el debug.
+  String? _appleDebug;
+
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
   User? get currentUser => _firebaseAuth.currentUser;
 
@@ -140,20 +144,34 @@ class AuthService {
         rawNonce: rawNonce,
       );
 
+      // DIAGNOSTICO TEMPORAL: confirma que Apple devolvio token antes de Firebase.
+      _appleDebug =
+          'Apple OK · idToken=${idToken.length} · nonce=${rawNonce.length}';
+
       await _firebaseAuth.signInWithCredential(credential);
     } on SignInWithAppleAuthorizationException catch (error) {
       if (error.code == AuthorizationErrorCode.canceled) {
         throw const SignInWithAppleCancelledFailure();
       }
-      throw AuthFailure('Error de Apple Sign-In: ${error.code.name}');
+      // DIAGNOSTICO TEMPORAL: el fallo viene de Apple (antes de Firebase).
+      throw AuthFailure(
+        'APPLE-ERR code=${error.code.name} · msg=${error.message}',
+      );
     } on FirebaseAuthException catch (error) {
-      throw AuthFailure(_firebaseErrorMessage(error));
+      // DIAGNOSTICO TEMPORAL: Apple dio token pero Firebase lo rechazo. Muestra
+      // el code+message crudos en pantalla para capturarlos.
+      throw AuthFailure(
+        'FB-ERR code=${error.code} · msg=${error.message ?? 'sin mensaje'}'
+        '${_appleDebug == null ? '' : ' · [$_appleDebug]'}',
+      );
     } catch (error) {
       if (error is AuthFailure) {
         rethrow;
       }
-      throw const AuthFailure(
-        'No fue posible iniciar sesion con Apple. Intentalo de nuevo.',
+      // DIAGNOSTICO TEMPORAL: error inesperado, muestra tipo y contenido.
+      throw AuthFailure(
+        'APPLE-UNEXPECTED ${error.runtimeType}: $error'
+        '${_appleDebug == null ? '' : ' · [$_appleDebug]'}',
       );
     }
   }

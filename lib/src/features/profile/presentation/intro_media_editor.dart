@@ -9,6 +9,7 @@ import 'package:video_compress/video_compress.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_loader.dart';
 import '../domain/intro_media.dart';
 import 'intro_media_view.dart';
 
@@ -168,14 +169,20 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
     }
     setState(() => _busy = true);
     try {
-      final Uint8List bytes = await XFile(path).readAsBytes();
-      await widget.onUploadAudio(
-        bytes: bytes,
-        contentType: _recordContentType,
-        extension: _recordExt,
-        durationMs: durationMs,
+      await runWithAttraLoader(
+        context,
+        () async {
+          final Uint8List bytes = await XFile(path!).readAsBytes();
+          await widget.onUploadAudio(
+            bytes: bytes,
+            contentType: _recordContentType,
+            extension: _recordExt,
+            durationMs: durationMs,
+          );
+          await _load();
+        },
+        message: 'Guardando audio…',
       );
-      await _load();
     } catch (e) {
       _snack('No se pudo guardar el audio.');
     } finally {
@@ -206,34 +213,40 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
 
     setState(() => _busy = true);
     try {
-      Uint8List bytes;
-      String contentType = file.mimeType ?? 'video/mp4';
-      int durationMs = 0;
+      await runWithAttraLoader(
+        context,
+        () async {
+          Uint8List bytes;
+          String contentType = file.mimeType ?? 'video/mp4';
+          int durationMs = 0;
 
-      if (kIsWeb) {
-        bytes = await file.readAsBytes();
-      } else {
-        try {
-          final MediaInfo? info = await VideoCompress.compressVideo(
-            file.path,
-            quality: VideoQuality.MediumQuality,
-            deleteOrigin: false,
-            includeAudio: true,
+          if (kIsWeb) {
+            bytes = await file.readAsBytes();
+          } else {
+            try {
+              final MediaInfo? info = await VideoCompress.compressVideo(
+                file.path,
+                quality: VideoQuality.MediumQuality,
+                deleteOrigin: false,
+                includeAudio: true,
+              );
+              bytes = await XFile(info?.path ?? file.path).readAsBytes();
+              contentType = 'video/mp4';
+              durationMs = (info?.duration ?? 0).round();
+            } catch (_) {
+              bytes = await file.readAsBytes();
+            }
+          }
+          await widget.onUploadVideo(
+            bytes: bytes,
+            contentType: contentType,
+            extension: 'mp4',
+            durationMs: durationMs,
           );
-          bytes = await XFile(info?.path ?? file.path).readAsBytes();
-          contentType = 'video/mp4';
-          durationMs = (info?.duration ?? 0).round();
-        } catch (_) {
-          bytes = await file.readAsBytes();
-        }
-      }
-      await widget.onUploadVideo(
-        bytes: bytes,
-        contentType: contentType,
-        extension: 'mp4',
-        durationMs: durationMs,
+          await _load();
+        },
+        message: 'Subiendo vídeo…',
       );
-      await _load();
     } catch (e) {
       _snack('No se pudo subir el vídeo.');
     } finally {

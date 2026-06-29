@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_image.dart';
+import '../../../widgets/attra_loader.dart';
 import '../data/ai_visual_service.dart';
 import '../domain/profile_insight.dart';
 
@@ -76,8 +77,11 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
     if (!mounted) return;
     setState(() => _busy = true);
     try {
-      final String status =
-          await widget.service.analyzeReference(uid: widget.uid, bytes: bytes);
+      final String status = await runWithAttraLoader(
+        context,
+        () => widget.service.analyzeReference(uid: widget.uid, bytes: bytes),
+        message: 'Analizando tu referencia…',
+      );
       if (mounted) {
         _snack(status == 'pending_provider'
             ? 'Referencia guardada. El análisis visual se activará al integrar el motor de IA.'

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../widgets/attra_loader.dart';
 import '../data/story_service.dart';
 import '../domain/story.dart';
 
@@ -74,12 +75,16 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
     if (video == null || _publishing) return;
     setState(() => _publishing = true);
     try {
-      await widget.storyService.createStory(
-        uid: widget.currentUid,
-        video: video,
-        durationSeconds: _durationSeconds <= 0 ? 10 : _durationSeconds,
-        caption: _caption.text.trim(),
-        visibility: _visibility,
+      await runWithAttraLoader(
+        context,
+        () => widget.storyService.createStory(
+          uid: widget.currentUid,
+          video: video,
+          durationSeconds: _durationSeconds <= 0 ? 10 : _durationSeconds,
+          caption: _caption.text.trim(),
+          visibility: _visibility,
+        ),
+        message: 'Publicando tu story…',
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

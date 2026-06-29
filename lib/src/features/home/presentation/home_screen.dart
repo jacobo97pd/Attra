@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../widgets/attra_loader.dart';
 import '../../../widgets/attra_image.dart';
 import '../../auth/domain/app_user.dart';
 import '../../profile/domain/intro_media.dart';
@@ -214,18 +215,27 @@ class _HomeScreenState extends State<HomeScreen> {
     final int dot = file.name.lastIndexOf('.');
     final String extension = dot > -1 ? file.name.substring(dot + 1) : 'jpg';
     final Uint8List bytes = await file.readAsBytes();
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await widget.onUploadAdditionalPhoto(
-        photoBytes: bytes,
-        fileExtension: extension,
-        source: source == ImageSource.camera ? 'camera' : 'gallery',
+      await runWithAttraLoader(
+        context,
+        () async {
+          await widget.onUploadAdditionalPhoto(
+            photoBytes: bytes,
+            fileExtension: extension,
+            source: source == ImageSource.camera ? 'camera' : 'gallery',
+          );
+          await _reload();
+        },
+        message: 'Subiendo foto…',
       );
-      await _reload();
     } catch (error) {
       if (!mounted) {
         return;
