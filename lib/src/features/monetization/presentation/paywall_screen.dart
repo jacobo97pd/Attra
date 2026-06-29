@@ -32,6 +32,10 @@ class PaywallScreen extends StatefulWidget {
     this.onPurchased,
     this.plusProductId = 'attra_plus',
     this.proProductId = 'attra_pro',
+    this.plusMonthlyProductId = 'attra_plus_monthly',
+    this.plusYearlyProductId = 'attra_plus_yearly',
+    this.proMonthlyProductId = 'attra_pro_monthly',
+    this.proYearlyProductId = 'attra_pro_yearly',
   });
 
   final SubscriptionTier currentTier;
@@ -44,6 +48,10 @@ class PaywallScreen extends StatefulWidget {
 
   final String plusProductId;
   final String proProductId;
+  final String plusMonthlyProductId;
+  final String plusYearlyProductId;
+  final String proMonthlyProductId;
+  final String proYearlyProductId;
 
   @override
   State<PaywallScreen> createState() => _PaywallScreenState();
@@ -54,17 +62,48 @@ class _PaywallScreenState extends State<PaywallScreen> {
   bool _busy = false;
   // Periodo elegido (planes básicos de Play): false = mensual, true = anual.
   bool _yearly = false;
+  final Map<String, String> _pendingPeriodsByProductId = <String, String>{};
 
-  Set<String> get _ids => <String>{widget.plusProductId, widget.proProductId};
+  Set<String> get _ids => <String>{
+        widget.plusProductId,
+        widget.plusMonthlyProductId,
+        widget.plusYearlyProductId,
+        widget.proProductId,
+        widget.proMonthlyProductId,
+        widget.proYearlyProductId,
+      };
 
-  /// Oferta (plan básico) de [productId] según el periodo: la más barata es la
-  /// mensual y la más cara la anual. Null si la tienda no la tiene aún.
-  ProductDetails? _offerFor(String productId) {
-    final List<ProductDetails> offers = _iap.offersFor(productId);
+  String get _period => _yearly ? 'yearly' : 'monthly';
+
+  /// Oferta según el periodo:
+  /// - iOS/App Store suele usar IDs separados por periodo.
+  /// - Android/Play puede devolver varios planes básicos bajo el mismo ID.
+  ProductDetails? _offerFor({
+    required String baseProductId,
+    required String monthlyProductId,
+    required String yearlyProductId,
+  }) {
+    final String periodProductId = _yearly ? yearlyProductId : monthlyProductId;
+    final ProductDetails? periodProduct = _iap.productById(periodProductId);
+    if (periodProduct != null) return periodProduct;
+
+    final List<ProductDetails> offers = _iap.offersFor(baseProductId);
     if (offers.isEmpty) return null;
-    if (offers.length == 1) return offers.first;
+    if (offers.length == 1) return _yearly ? null : offers.first;
     return _yearly ? offers.last : offers.first;
   }
+
+  ProductDetails? _plusOffer() => _offerFor(
+        baseProductId: widget.plusProductId,
+        monthlyProductId: widget.plusMonthlyProductId,
+        yearlyProductId: widget.plusYearlyProductId,
+      );
+
+  ProductDetails? _proOffer() => _offerFor(
+        baseProductId: widget.proProductId,
+        monthlyProductId: widget.proMonthlyProductId,
+        yearlyProductId: widget.proYearlyProductId,
+      );
 
   @override
   void initState() {
@@ -121,32 +160,51 @@ class _PaywallScreenState extends State<PaywallScreen> {
       platform: platform,
       verificationData: purchase.verificationData.serverVerificationData,
       purchaseId: purchase.purchaseID,
-      period: _yearly ? 'yearly' : 'monthly',
+      period: _periodForPurchase(purchase.productID),
     );
+    if (ok) {
+      _pendingPeriodsByProductId.remove(purchase.productID);
+    }
     return IapDeliveryResult(
       delivered: ok,
       message: ok ? null : 'No se pudo verificar la compra.',
     );
   }
 
-  Future<void> _buy(String productId) async {
+  String _periodForPurchase(String productId) {
+    if (productId.endsWith('_yearly')) return 'yearly';
+    if (productId.endsWith('_monthly')) return 'monthly';
+    return _pendingPeriodsByProductId[productId] ?? _period;
+  }
+
+  Future<void> _buyPlan({
+    required ProductDetails? offer,
+    required String fallbackProductId,
+  }) async {
     if (_busy) return;
     if (widget.verifySubscription == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Compras disponibles próximamente.')));
       return;
     }
-    final ProductDetails? offer = _offerFor(productId);
     if (offer == null) {
-      await _iap.buy(productId); // deja que IapService informe del error
+      await _iap
+          .buy(fallbackProductId); // deja que IapService informe del error
       return;
     }
-    await _iap.buyProduct(offer);
+    _pendingPeriodsByProductId[offer.id] = _period;
+    final bool started = await _iap.buyProduct(offer);
+    if (!started) {
+      _pendingPeriodsByProductId.remove(offer.id);
+    }
   }
 
-  String _priceFor(String productId, String fallback) {
-    final ProductDetails? offer = _offerFor(productId);
-    if (offer == null) return fallback;
+  String _priceFor({
+    required ProductDetails? offer,
+    required String monthlyFallback,
+    required String yearlyFallback,
+  }) {
+    if (offer == null) return _yearly ? yearlyFallback : monthlyFallback;
     return _yearly ? '${offer.price} / año' : '${offer.price} / mes';
   }
 
@@ -154,6 +212,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final SubscriptionTier currentTier = widget.currentTier;
+    final ProductDetails? plusOffer = _plusOffer();
+    final ProductDetails? proOffer = _proOffer();
     return Scaffold(
       body: AttraGradientBackground(
         child: SafeArea(
@@ -214,7 +274,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     _PlanCard(
                       kind: AttraBadgeKind.plus,
                       title: 'Attra Plus',
-                      price: _priceFor(widget.plusProductId, '9,99 € / mes'),
+                      price: _priceFor(
+                        offer: plusOffer,
+                        monthlyFallback: '9,99 € / mes',
+                        yearlyFallback: '99,99 € / año',
+                      ),
                       tagline: 'Ventajas sociales y más alcance',
                       highlightLabel: 'Más popular',
                       features: const <String>[
@@ -234,13 +298,22 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       onTap:
                           (currentTier.atLeast(SubscriptionTier.plus) || _busy)
                               ? null
-                              : () => _buy(widget.plusProductId),
+                              : () => _buyPlan(
+                                    offer: plusOffer,
+                                    fallbackProductId: _yearly
+                                        ? widget.plusYearlyProductId
+                                        : widget.plusMonthlyProductId,
+                                  ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     _PlanCard(
                       kind: AttraBadgeKind.pro,
                       title: 'Attra Pro',
-                      price: _priceFor(widget.proProductId, '19,99 € / mes'),
+                      price: _priceFor(
+                        offer: proOffer,
+                        monthlyFallback: '19,99 € / mes',
+                        yearlyFallback: '199,99 € / año',
+                      ),
                       tagline: 'Todo Plus + IA visual flagship',
                       highlightLabel: 'IA avanzada',
                       features: const <String>[
@@ -258,7 +331,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           : 'Hazte Pro',
                       onTap: (currentTier == SubscriptionTier.pro || _busy)
                           ? null
-                          : () => _buy(widget.proProductId),
+                          : () => _buyPlan(
+                                offer: proOffer,
+                                fallbackProductId: _yearly
+                                    ? widget.proYearlyProductId
+                                    : widget.proMonthlyProductId,
+                              ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     Text(
@@ -301,8 +379,8 @@ class _PeriodToggle extends StatelessWidget {
               child: _segment(
                   context, 'Mensual', !yearly, () => onChanged(false))),
           Expanded(
-              child:
-                  _segment(context, 'Anual · ahorra', yearly, () => onChanged(true))),
+              child: _segment(
+                  context, 'Anual · ahorra', yearly, () => onChanged(true))),
         ],
       ),
     );
@@ -363,7 +441,8 @@ class _PlanCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     // Plus usa champagne (claro) => texto oscuro sobre sus acentos para que se lea.
     final bool onLight = kind == AttraBadgeKind.plus;
-    final Color accentText = onLight ? context.colors.bg : context.colors.textPrimary;
+    final Color accentText =
+        onLight ? context.colors.bg : context.colors.textPrimary;
     return AttraCard(
       padding: const EdgeInsets.all(AppSpacing.lg),
       borderColor: gradient.last.withValues(alpha: 0.55),
@@ -397,7 +476,8 @@ class _PlanCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(price,
               style: theme.textTheme.titleLarge?.copyWith(
-                  color: context.colors.textPrimary, fontWeight: FontWeight.w800)),
+                  color: context.colors.textPrimary,
+                  fontWeight: FontWeight.w800)),
           const SizedBox(height: AppSpacing.md),
           ...features.map((String f) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
