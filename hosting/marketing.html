@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attra - App de citas con intencion</title>
+  <meta name="description" content="Attra es una app de citas moderna para descubrir perfiles reales, crear matches con contexto y empezar conversaciones con mas intencion.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e0e10;
+      --surface: #19191d;
+      --surface-high: #242428;
+      --text: #fffefd;
+      --muted: #b8b8bf;
+      --line: rgba(255, 255, 255, 0.1);
+      --accent: #ff4f68;
+      --gold: #d8b76e;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 70% 6%, rgba(255, 79, 104, 0.22), transparent 30rem),
+        linear-gradient(180deg, #150b10 0%, var(--bg) 42%, var(--bg) 100%);
+      line-height: 1.58;
+    }
+
+    a { color: inherit; }
+
+    main {
+      width: min(1140px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 26px 0 64px;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 30px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 900;
+    }
+
+    .brand img {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      object-fit: cover;
+      background: #fff;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+      font-size: 0.95rem;
+    }
+
+    .links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .hero {
+      min-height: 78svh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 30px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      margin: 0 0 16px;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 79, 104, 0.35);
+      border-radius: 999px;
+      color: var(--accent);
+      background: rgba(255, 79, 104, 0.08);
+      font-weight: 900;
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(3rem, 12vw, 7.4rem);
+      line-height: 0.92;
+      letter-spacing: 0;
+    }
+
+    .headline-copy {
+      max-width: 690px;
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: clamp(1.08rem, 2.6vw, 1.34rem);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-high);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 900;
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .product-visual {
+      min-height: 500px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(145deg, rgba(255, 79, 104, 0.18), rgba(216, 183, 110, 0.09)),
+        rgba(25, 25, 29, 0.88);
+      box-shadow: 0 28px 74px rgba(0, 0, 0, 0.32);
+    }
+
+    .phone {
+      width: 246px;
+      min-height: 456px;
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 34px;
+      background: #101014;
+      box-shadow: 0 30px 60px rgba(0, 0, 0, 0.38);
+    }
+
+    .phone-screen {
+      min-height: 420px;
+      padding: 18px;
+      border-radius: 24px;
+      background:
+        linear-gradient(180deg, rgba(255, 79, 104, 0.2), transparent 38%),
+        #19191d;
+    }
+
+    .app-icon {
+      width: 86px;
+      height: 86px;
+      display: block;
+      margin: 10px auto 22px;
+      border-radius: 24px;
+      object-fit: cover;
+      background: #fff;
+    }
+
+    .mock-card {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.06);
+      margin-top: 12px;
+    }
+
+    .mock-card strong { display: block; }
+    .mock-card span { color: var(--muted); font-size: 0.92rem; }
+
+    section {
+      margin-top: 30px;
+    }
+
+    .section-head {
+      max-width: 740px;
+      margin-bottom: 18px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      line-height: 1.04;
+    }
+
+    .section-head p, .card p {
+      color: var(--muted);
+    }
+
+    .section-head p {
+      margin: 12px 0 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      min-height: 180px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(25, 25, 29, 0.86);
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 1.12rem;
+    }
+
+    .card p {
+      margin: 10px 0 0;
+    }
+
+    footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-top: 34px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    footer a {
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+      .product-visual { min-height: 420px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      main { width: min(100% - 20px, 1140px); padding-top: 20px; }
+      .nav { align-items: flex-start; flex-direction: column; }
+      .links { justify-content: flex-start; }
+      .phone { width: min(246px, 100%); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="nav" aria-label="Navegacion principal">
+      <a class="brand" href="/" aria-label="Attra inicio">
+        <img src="/app-logo.png" alt="Attra app logo">
+        <span>Attra</span>
+      </a>
+      <div class="links">
+        <a href="/support.html">Soporte</a>
+        <a href="/privacy.html">Privacidad</a>
+        <a href="/delete-account.html">Eliminar cuenta</a>
+      </div>
+    </nav>
+
+    <section class="hero" aria-labelledby="marketing-title">
+      <div>
+        <p class="eyebrow">Citas con intencion</p>
+        <h1 id="marketing-title">Attra</h1>
+        <p class="headline-copy">Una app de citas moderna para descubrir perfiles reales, crear matches con contexto y empezar conversaciones que no mueren en el primer mensaje.</p>
+        <div class="actions">
+          <a class="button primary" href="mailto:soporte.attra.app@gmail.com?subject=Attra%20Marketing">Contactar</a>
+          <a class="button" href="/support.html">Soporte</a>
+        </div>
+      </div>
+
+      <div class="product-visual" aria-label="Vista previa de Attra">
+        <div class="phone">
+          <div class="phone-screen">
+            <img class="app-icon" src="/app-logo.png" alt="Attra">
+            <div class="mock-card">
+              <strong>Matches con contexto</strong>
+              <span>Perfiles, prompts y senales para empezar mejor.</span>
+            </div>
+            <div class="mock-card">
+              <strong>Attra Spark</strong>
+              <span>Juegos breves para romper el hielo.</span>
+            </div>
+            <div class="mock-card">
+              <strong>IA visual Pro</strong>
+              <span>Busqueda por parecido cuando el usuario la activa.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="features-title">
+      <div class="section-head">
+        <h2 id="features-title">Construida para conversar mejor</h2>
+        <p>Attra combina intencion, seguridad y funciones premium sin convertir el descubrimiento en ruido.</p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <h3>Descubrimiento cuidado</h3>
+          <p>Filtros, preferencias y contexto para encontrar perfiles con mas afinidad.</p>
+        </article>
+        <article class="card">
+          <h3>Conversaciones con juego</h3>
+          <p>Prompts, Attra Spark y senales suaves para evitar chats vacios.</p>
+        </article>
+        <article class="card">
+          <h3>Privacidad y control</h3>
+          <p>Paginas publicas de privacidad, eliminacion de cuenta y soporte directo.</p>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      <span>&copy; 2026 Attra</span>
+      <a href="/support.html">Soporte</a>
+      <a href="/privacy.html">Privacidad</a>
+      <a href="/child-safety.html">Seguridad infantil</a>
+      <a href="mailto:soporte.attra.app@gmail.com">soporte.attra.app@gmail.com</a>
+    </footer>
+  </main>
+</body>
+</html>
