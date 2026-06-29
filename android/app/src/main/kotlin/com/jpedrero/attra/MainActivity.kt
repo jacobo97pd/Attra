@@ -1,5 +1,6 @@
 package com.jpedrero.attra
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity: FlutterActivity()
+// local_auth (biometría) requiere FragmentActivity para mostrar el prompt.
+class MainActivity: FlutterFragmentActivity()

@@ -27,7 +27,8 @@ void main() {
       expect(r.conversationStartRate, closeTo(0.5, 1e-9));
       expect(r.replyRate, closeTo(0.6, 1e-9));
       expect(r.gameCompletionRate, closeTo(0.625, 1e-9));
-      expect(r.dateProposalRate, closeTo(14 / 70 == 0.2 ? 4 / 14 : 4 / 14, 1e-9));
+      expect(
+          r.dateProposalRate, closeTo(14 / 70 == 0.2 ? 4 / 14 : 4 / 14, 1e-9));
       expect(r.dateAcceptanceRate, closeTo(0.5, 1e-9));
       expect(r.newUserMinExposureRate, closeTo(0.9, 1e-9));
     });

@@ -133,8 +133,7 @@ class _ThemeModeTile extends StatelessWidget {
                 showSelectedIcon: false,
                 onSelectionChanged: onSetThemeMode == null
                     ? null
-                    : (Set<ThemeMode> sel) =>
-                        onSetThemeMode!(sel.first),
+                    : (Set<ThemeMode> sel) => onSetThemeMode!(sel.first),
               ),
             ],
           ),

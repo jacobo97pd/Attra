@@ -86,8 +86,7 @@ class AttraCoin extends StatelessWidget {
               const SizedBox(width: 6),
               Text('$balance',
                   style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800)),
+                      color: Colors.white, fontWeight: FontWeight.w800)),
             ],
           ),
         ),

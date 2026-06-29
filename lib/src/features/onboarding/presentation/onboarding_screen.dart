@@ -852,12 +852,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             children: <Widget>[
               Icon(Icons.verified_user_rounded,
                   size: 16,
-                  color: hasSelfie ? AppColors.success : context.colors.textMuted),
+                  color:
+                      hasSelfie ? AppColors.success : context.colors.textMuted),
               const SizedBox(width: 6),
               Text(
                 hasSelfie ? 'Selfie capturada' : 'Pendiente de capturar',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: hasSelfie ? AppColors.success : context.colors.textMuted,
+                  color:
+                      hasSelfie ? AppColors.success : context.colors.textMuted,
                 ),
               ),
             ],
@@ -1672,8 +1674,8 @@ class _StepLayout extends StatelessWidget {
                 )),
             const SizedBox(height: 6),
             Text(subtitle,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: context.colors.textSecondary, height: 1.4)),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                    color: context.colors.textSecondary, height: 1.4)),
             const SizedBox(height: 22),
             child,
           ],
@@ -1740,7 +1742,9 @@ class _CircleNavButton extends StatelessWidget {
           width: 54,
           height: 54,
           child: Icon(icon,
-              color: enabled ? context.colors.textPrimary : context.colors.textMuted),
+              color: enabled
+                  ? context.colors.textPrimary
+                  : context.colors.textMuted),
         ),
       ),
     );
@@ -1771,7 +1775,10 @@ class _SelfieRing extends StatelessWidget {
           gradient: LinearGradient(
             colors: hasSelfie
                 ? AppColors.action
-                : <Color>[context.colors.surfaceLine, context.colors.surfaceHigh],
+                : <Color>[
+                    context.colors.surfaceLine,
+                    context.colors.surfaceHigh
+                  ],
           ),
           boxShadow: hasSelfie
               ? <BoxShadow>[
@@ -1908,8 +1915,9 @@ class _SelectablePill extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color:
-                    selected ? context.colors.textPrimary : context.colors.textSecondary,
+                color: selected
+                    ? context.colors.textPrimary
+                    : context.colors.textSecondary,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 fontSize: 14,
               ),

@@ -43,6 +43,17 @@ class DiscoveryPublisher {
         (profile['currentCity'] ?? profile['city'] ?? '').toString();
     final String realCountry = (profile['currentCountryName'] ?? '').toString();
 
+    // Ajustes de privacidad/ubicación que afectan a lo que se publica.
+    // - location.showOnProfile=false → no exponer la ciudad (sí el país, que se
+    //   usa para filtrar por país; la ciudad es lo identificativo).
+    // - privacy.showDistance / showActiveStatus → banderas que el feed respeta.
+    final bool showCity = settings['location.showOnProfile'] != false;
+    final bool showDistance = settings['privacy.showDistance'] != false;
+    final bool showActiveStatus = settings['privacy.showActiveStatus'] != false;
+
+    final String pubCity =
+        traveling ? (travel['city'] ?? '').toString() : realCity;
+
     // Núcleo público no sensible (identidad/matching mínimos).
     final Map<String, dynamic> out = <String, dynamic>{
       'uid': uid,
@@ -54,9 +65,11 @@ class DiscoveryPublisher {
       'interestedIn': prefs['interestedIn'] ?? <dynamic>[],
       'age': age,
       'bio': profile['bio'] ?? '',
-      'currentCity': traveling ? (travel['city'] ?? '') : realCity,
+      'currentCity': showCity ? pubCity : '',
       'currentCountryName': traveling ? (travel['country'] ?? '') : realCountry,
       'traveling': traveling,
+      'showDistance': showDistance,
+      'showActiveStatus': showActiveStatus,
     };
 
     // Rasgos del catálogo: se publican bajo su `field` si son utilizables y
@@ -109,6 +122,13 @@ class DiscoveryPublisher {
       out['introVideo'] = introVideo;
     }
 
+    // Instagram (enlace, sin API de Meta): publica el @usuario si está activado.
+    if (settings['integrations.instagram'] == true) {
+      final String ig =
+          (settings['integrations.instagramHandle'] ?? '').toString().trim();
+      if (ig.isNotEmpty) out['instagram'] = ig;
+    }
+
     // Verificación (selfie/identidad) — bool público.
     final Map<String, dynamic> verification = _map(userData['verification']);
     final String selfie =
@@ -121,9 +141,15 @@ class DiscoveryPublisher {
     final double? lat = _asDouble(location['latitude']);
     final double? lng = _asDouble(location['longitude']);
     if (lat != null && lng != null) {
+      // Precisión: 'precise' redondea ~1.1km (2 decimales); 'approximate'
+      // difumina a ~11km (1 decimal) para no revelar la zona exacta.
+      final bool approx = (settings['location.precision'] ?? 'precise')
+              .toString()
+              .toLowerCase() ==
+          'approximate';
       out['geo'] = <String, dynamic>{
-        'lat': _round2(lat),
-        'lng': _round2(lng),
+        'lat': approx ? _round1(lat) : _round2(lat),
+        'lng': approx ? _round1(lng) : _round2(lng),
       };
     }
 
@@ -131,6 +157,7 @@ class DiscoveryPublisher {
   }
 
   static double _round2(double v) => (v * 100).roundToDouble() / 100;
+  static double _round1(double v) => (v * 10).roundToDouble() / 10;
 
   static double? _asDouble(Object? v) {
     if (v is num) return v.toDouble();

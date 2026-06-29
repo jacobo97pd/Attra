@@ -77,7 +77,10 @@ class SeedProfile {
     this.ethnicity = '',
     this.religion = '',
     this.verified = false,
+    this.instagram = '',
     this.traveling = false,
+    this.showDistance = true,
+    this.showActiveStatus = true,
     this.lat,
     this.lng,
     required this.age,
@@ -124,8 +127,16 @@ class SeedProfile {
   /// Verificado (selfie/identidad).
   final bool verified;
 
+  /// @usuario de Instagram (sin @). Vacío = no enlazado. Solo enlace, sin API.
+  final String instagram;
+
   /// Modo viajes: el perfil aparece "de viaje" en este destino (discovery).
   final bool traveling;
+
+  /// Visibilidad (Privacidad del dueño): si false, no se muestra su distancia
+  /// ni su estado de actividad a otros. Default true (compat docs antiguos).
+  final bool showDistance;
+  final bool showActiveStatus;
 
   /// Ubicación aproximada (coords redondeadas) para distancia.
   final double? lat;
@@ -269,7 +280,10 @@ class SeedProfile {
       ethnicity: (filterTraits['ethnicity'] as String?) ?? '',
       religion: (filterTraits['religion'] as String?) ?? '',
       verified: (data['verified'] as bool?) ?? false,
+      instagram: (data['instagram'] as String?)?.trim() ?? '',
       traveling: (data['traveling'] as bool?) ?? false,
+      showDistance: (data['showDistance'] as bool?) ?? true,
+      showActiveStatus: (data['showActiveStatus'] as bool?) ?? true,
       lat: (geo['lat'] as num?)?.toDouble(),
       lng: (geo['lng'] as num?)?.toDouble(),
       age: age,

@@ -379,8 +379,8 @@ class _SectionHeader extends StatelessWidget {
         if (subtitle != null) ...<Widget>[
           const SizedBox(height: 4),
           Text(subtitle!,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: context.colors.textSecondary, height: 1.35)),
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: context.colors.textSecondary, height: 1.35)),
         ],
       ],
     );
@@ -488,7 +488,8 @@ class _AnalysisPanel extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.auto_awesome, size: 16, color: AppColors.aiViolet),
+              const Icon(Icons.auto_awesome,
+                  size: 16, color: AppColors.aiViolet),
               const SizedBox(width: 8),
               Text('Cómo trabaja la IA',
                   style: TextStyle(

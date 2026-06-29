@@ -402,8 +402,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
                   strokeWidth: 2, color: context.colors.textMuted)),
           const SizedBox(width: 8),
           Text('Esperando a ${widget.otherName}…',
-              style: TextStyle(
-                  color: context.colors.textSecondary, fontSize: 12)),
+              style:
+                  TextStyle(color: context.colors.textSecondary, fontSize: 12)),
         ],
       ),
     );
@@ -586,8 +586,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style:
-                TextStyle(color: context.colors.textSecondary, fontSize: 12),
+            style: TextStyle(color: context.colors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 4),
           Text(
@@ -609,7 +608,9 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: selected ? color.withValues(alpha: 0.18) : context.colors.surfaceHigh,
+        color: selected
+            ? color.withValues(alpha: 0.18)
+            : context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         child: InkWell(
           onTap: onTap,

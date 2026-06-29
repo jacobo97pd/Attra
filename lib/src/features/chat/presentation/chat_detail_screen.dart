@@ -1544,8 +1544,8 @@ class _TextBubble extends StatelessWidget {
     } else if (pending) {
       status = Padding(
         padding: const EdgeInsets.only(right: 4, bottom: 4),
-        child:
-            Icon(Icons.schedule_rounded, size: 12, color: context.colors.textMuted),
+        child: Icon(Icons.schedule_rounded,
+            size: 12, color: context.colors.textMuted),
       );
     }
 
@@ -2151,8 +2151,7 @@ class _Composer extends StatelessWidget {
               tile(Icons.photo_outlined, 'Enviar foto', onPhoto),
               tile(Icons.visibility_off_outlined, 'Foto bomba', onBombPhoto),
               tile(Icons.event, 'Proponer cita', onPropose),
-              if (showGames)
-                tile(Icons.casino_outlined, 'Juegos', onGames),
+              if (showGames) tile(Icons.casino_outlined, 'Juegos', onGames),
               const SizedBox(height: 8),
             ],
           ),

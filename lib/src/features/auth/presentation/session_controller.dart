@@ -860,7 +860,17 @@ class SessionController extends ChangeNotifier {
     ThemeController.instance.set(mode);
     final String? uid = _state.user?.uid;
     if (uid == null) return;
-    await _settingsRepository.patchValues(
-        uid, <String, Object?>{'appearance.themeMode': ThemeController.toWire(mode)});
+    await _settingsRepository.patchValues(uid, <String, Object?>{
+      'appearance.themeMode': ThemeController.toWire(mode)
+    });
+  }
+
+  /// Re-publica el doc público de discovery del usuario actual. Lo llama Ajustes
+  /// tras cambiar una opción de visibilidad/ubicación para que tenga efecto
+  /// inmediato (ocultarse del feed, ocultar ciudad, fuzz de ubicación…).
+  Future<void> republishDiscovery() async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.republishDiscovery(uid);
   }
 }

@@ -317,7 +317,8 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
             const SizedBox(width: 10),
             Text('Grabando  ${_fmt(_recordElapsed)}',
                 style: TextStyle(
-                    color: context.colors.textPrimary, fontWeight: FontWeight.w600)),
+                    color: context.colors.textPrimary,
+                    fontWeight: FontWeight.w600)),
             const Spacer(),
             IconButton(
               tooltip: 'Cancelar',

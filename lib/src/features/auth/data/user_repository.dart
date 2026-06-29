@@ -312,9 +312,18 @@ class UserRepository {
   Future<void> _syncDiscoveryProfile(
       String uid, Map<String, dynamic> data) async {
     try {
+      // Ajustes de visibilidad (Privacidad): si el usuario se oculta, está en
+      // incognito o pidió no aparecer en recomendaciones, NO se publica en el
+      // feed (se borra su doc de discovery). Sus matches actuales no dependen de
+      // discovery, así que pueden seguir escribiéndole.
+      final Map<String, dynamic> settings = _asMap(data['settings']);
+      final bool hidden = settings['privacy.hideProfile'] == true ||
+          settings['privacy.incognito'] == true ||
+          settings['privacy.showInRecommendations'] == false;
       final bool discoverable = data['onboardingCompleted'] == true &&
           data['profileCompleted'] == true &&
-          data['isBot'] != true;
+          data['isBot'] != true &&
+          !hidden;
       final DocumentReference<Map<String, dynamic>> ref =
           _discoveryCollection.doc(uid);
       if (!discoverable) {
@@ -335,6 +344,30 @@ class UserRepository {
     } catch (error) {
       if (kDebugMode) {
         debugPrint('[Attra][Discovery] sync fallo (se ignora): $error');
+      }
+    }
+  }
+
+  static Map<String, dynamic> _asMap(Object? v) {
+    if (v is Map<String, dynamic>) return v;
+    if (v is Map) {
+      return v.map((dynamic k, dynamic val) => MapEntry(k.toString(), val));
+    }
+    return <String, dynamic>{};
+  }
+
+  /// Re-publica `discovery/{uid}` leyendo el doc del usuario. Lo llama Ajustes
+  /// al cambiar una opción de visibilidad/ubicación para que tenga efecto
+  /// inmediato en el feed (ocultarse, fuzz de ubicación, ciudad…).
+  Future<void> republishDiscovery(String uid) async {
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snap =
+          await _usersCollection.doc(uid).get();
+      final Map<String, dynamic>? data = snap.data();
+      if (data != null) await _syncDiscoveryProfile(uid, data);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[Attra][Discovery] republish fallo (se ignora): $error');
       }
     }
   }

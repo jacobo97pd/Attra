@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../theme/app_colors.dart';
 import '../../../widgets/attra_image.dart';
 import '../domain/profile_state.dart';
 import 'intro_media_view.dart';
@@ -23,6 +25,19 @@ class ProfileViewScreen extends StatelessWidget {
       if (p.url.isNotEmpty && p.url != profile.photoUrl) out.add(p);
     }
     return out;
+  }
+
+  /// Abre el Instagram del perfil: intenta la app nativa y, si no, el navegador.
+  Future<void> _openInstagram(String handle) async {
+    final String h = handle.replaceAll('@', '').trim();
+    if (h.isEmpty) return;
+    final Uri appUri = Uri.parse('instagram://user?username=$h');
+    final Uri webUri = Uri.parse('https://instagram.com/$h');
+    if (await canLaunchUrl(appUri)) {
+      await launchUrl(appUri);
+    } else {
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -76,6 +91,27 @@ class ProfileViewScreen extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(child: Text(work)),
               ]),
+            ),
+          if (profile.instagram.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _openInstagram(profile.instagram),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                    const Icon(Icons.camera_alt_outlined,
+                        size: 18, color: AppColors.attraRed),
+                    const SizedBox(width: 6),
+                    Text('@${profile.instagram}',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: AppColors.attraRed,
+                          fontWeight: FontWeight.w600,
+                        )),
+                  ]),
+                ),
+              ),
             ),
           if (profile.bio.isNotEmpty) ...<Widget>[
             const SizedBox(height: 14),

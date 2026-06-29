@@ -25,6 +25,9 @@ class AppUser {
     this.countryName = '',
     this.maxDistanceKm,
     this.slowDatingEnabled = false,
+    this.screenshotProtectionEnabled = false,
+    this.analyticsConsent = true,
+    this.aiPersonalization = true,
     this.themeModeWire = 'dark',
     this.relationshipIntent = '',
     this.interests = const <String>[],
@@ -62,6 +65,17 @@ class AppUser {
   /// perfiles pero más afines (ranking/visibilidad), priorizando conexiones
   /// intencionales. Opt-in desde Ajustes (`settings['privacy.slowDating']`).
   final bool slowDatingEnabled;
+
+  /// Protección anti-captura global (`settings['security.screenshotProtection']`).
+  final bool screenshotProtectionEnabled;
+
+  /// Consentimiento de analítica (`settings['data.analyticsConsent']`, default
+  /// true). Si es false, no se registra telemetría del feed.
+  final bool analyticsConsent;
+
+  /// Consentimiento de personalización con IA (`settings['data.aiPersonalization']`,
+  /// default true). Si es false, el feed no usa señales personalizadas.
+  final bool aiPersonalization;
 
   /// Modo de tema elegido: 'system' | 'light' | 'dark'. De
   /// `settings['appearance.themeMode']`. Default 'dark'.
@@ -144,6 +158,10 @@ class AppUser {
           '',
       maxDistanceKm: _asIntOrNull(preferences['maxDistanceKm']),
       slowDatingEnabled: _asBool(settings['privacy.slowDating']),
+      screenshotProtectionEnabled:
+          _asBool(settings['security.screenshotProtection']),
+      analyticsConsent: settings['data.analyticsConsent'] != false,
+      aiPersonalization: settings['data.aiPersonalization'] != false,
       themeModeWire:
           (settings['appearance.themeMode'] as String?)?.trim().isNotEmpty ==
                   true

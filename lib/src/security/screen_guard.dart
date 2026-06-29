@@ -23,6 +23,21 @@ class ScreenGuard {
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
+  /// Protección GLOBAL pedida por el ajuste "Proteger capturas" (Seguridad).
+  /// Cuando está activa, [disable] (que usan flujos puntuales como las fotos
+  /// bomba al salir) NO la apaga: la app queda protegida en todas las pantallas.
+  static bool _globalOn = false;
+
+  /// Activa/desactiva la protección a nivel de toda la app según el ajuste.
+  static Future<void> setGlobal(bool on) async {
+    _globalOn = on;
+    if (on) {
+      await enable();
+    } else {
+      await _applyOff();
+    }
+  }
+
   /// Activa la protección: evita capturas (Android) / capa segura (iOS) y
   /// difumina el contenido en el app switcher. Best-effort.
   static Future<void> enable() async {
@@ -35,8 +50,14 @@ class ScreenGuard {
     }
   }
 
-  /// Desactiva la protección al salir del contenido sensible.
+  /// Desactiva la protección al salir del contenido sensible. Si la protección
+  /// global está activa, se mantiene (no-op).
   static Future<void> disable() async {
+    if (_globalOn) return;
+    await _applyOff();
+  }
+
+  static Future<void> _applyOff() async {
     if (!isSupported) return;
     try {
       await ScreenProtector.preventScreenshotOff();

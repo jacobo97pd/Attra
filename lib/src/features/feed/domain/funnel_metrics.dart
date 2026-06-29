@@ -108,8 +108,7 @@ class FunnelMetrics {
       gameCompletionRate: _ratio(c.gamesCompleted, c.gamesStarted),
       dateProposalRate: _ratio(c.datesProposed, c.matches),
       dateAcceptanceRate: _ratio(c.datesAccepted, c.datesProposed),
-      newUserMinExposureRate:
-          _ratio(c.newUsersWithMinExposure, c.newUsers),
+      newUserMinExposureRate: _ratio(c.newUsersWithMinExposure, c.newUsers),
     );
   }
 }

@@ -66,6 +66,12 @@
 	<string>Attra necesita acceso al microfono para grabar notas de voz en chats y perfil.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Attra usa tu ubicacion aproximada para mostrarte perfiles cercanos segun tu radio de busqueda.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Attra usa Face ID para desbloquear la app de forma segura.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram</string>
+	</array>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-3940256099942544~1458002511</string>
 	<key>SKAdNetworkItems</key>

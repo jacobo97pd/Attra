@@ -115,8 +115,8 @@ class _FeedNativeAdCardState extends State<FeedNativeAdCard> {
               ),
               const Spacer(),
               Text('Anuncio',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: context.colors.textMuted, fontSize: 11)),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: context.colors.textMuted, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 8),

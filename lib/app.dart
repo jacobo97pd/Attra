@@ -33,6 +33,8 @@ import 'src/features/settings/data/settings_repository.dart';
 import 'src/features/spark/data/spark_analytics.dart';
 import 'src/features/spark/data/spark_repository.dart';
 import 'src/features/spark/data/spark_service.dart';
+import 'src/features/security/presentation/lock_screen.dart';
+import 'src/security/app_lock_controller.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/theme_controller.dart';
 import 'src/features/stories/data/story_repository.dart';
@@ -45,7 +47,7 @@ class AttraApp extends StatefulWidget {
   State<AttraApp> createState() => _AttraAppState();
 }
 
-class _AttraAppState extends State<AttraApp> {
+class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
   late final SessionController _sessionController;
   static const String _firestoreDatabaseId = String.fromEnvironment(
     'FIREBASE_FIRESTORE_DATABASE_ID',
@@ -55,6 +57,11 @@ class _AttraAppState extends State<AttraApp> {
   @override
   void initState() {
     super.initState();
+    // Bloqueo de app: lee el estado (PIN/biometría) del almacenamiento seguro.
+    // Si está activo, la app arranca bloqueada. Observa el ciclo de vida para
+    // re-bloquear al pasar a segundo plano.
+    WidgetsBinding.instance.addObserver(this);
+    AppLockController.instance.load();
     if (kDebugMode) {
       debugPrint(
         '[Attra] Firebase projectId=${Firebase.app().options.projectId} databaseId=$_firestoreDatabaseId',
@@ -131,8 +138,7 @@ class _AttraAppState extends State<AttraApp> {
         storage: FirebaseStorage.instance,
       ),
       profileSummaryRepository: ProfileSummaryRepository(firestore: firestore),
-      rankingSignalsRepository:
-          RankingSignalsRepository(firestore: firestore),
+      rankingSignalsRepository: RankingSignalsRepository(firestore: firestore),
       integrationConnector:
           CompositeIntegrationConnector(<IntegrationConnector>[
         SpotifyAuthService(functions: functions),
@@ -176,7 +182,17 @@ class _AttraAppState extends State<AttraApp> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-bloquea al salir de primer plano: al volver, se pide PIN/biometría.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      AppLockController.instance.lock();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sessionController.dispose();
     super.dispose();
   }
@@ -198,6 +214,28 @@ class _AttraAppState extends State<AttraApp> {
           // un idioma soportado (es/en) se usa ese; si no, cae a español.
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
+          // Gate de bloqueo: sobre TODA la app (incluido login). Cuando el PIN
+          // está activo y la app bloqueada, tapa el contenido con LockScreen.
+          builder: (BuildContext context, Widget? child) {
+            return AnimatedBuilder(
+              animation: AppLockController.instance,
+              builder: (BuildContext context, _) {
+                final AppLockController lock = AppLockController.instance;
+                // Hasta saber si hay bloqueo, tapa el contenido (evita que se
+                // vea algo antes de pedir el PIN al arrancar).
+                final bool cover = !lock.isLoaded || lock.isLocked;
+                return Stack(
+                  children: <Widget>[
+                    if (child != null) child,
+                    if (cover && lock.isLoaded)
+                      LockScreen(controller: lock)
+                    else if (cover)
+                      const ColoredBox(color: Color(0xFF0E0E10)),
+                  ],
+                );
+              },
+            );
+          },
           home: SessionGate(controller: _sessionController),
         );
       },

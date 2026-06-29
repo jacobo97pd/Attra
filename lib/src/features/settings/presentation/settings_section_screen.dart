@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../security/app_lock_controller.dart';
+import '../../security/presentation/lock_screen.dart';
 import '../domain/consent_record.dart';
 import '../domain/setting_definition.dart';
 import '../domain/settings_catalog.dart';
@@ -40,7 +42,8 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(section.title)),
       body: AnimatedBuilder(
-        animation: _c,
+        animation:
+            Listenable.merge(<Listenable>[_c, AppLockController.instance]),
         builder: (BuildContext context, _) {
           final List<Widget> children = <Widget>[];
 
@@ -79,12 +82,129 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
 
   /// Cambia un toggle y, si era una integracion que fallo, muestra el error.
   Future<void> _onBoolChanged(SettingDefinition def, bool value) async {
+    // Bloqueo de app: el PIN/biometría se gestionan en el dispositivo (flujo de
+    // UI), no solo persistiendo un flag. El flag de Firestore es un espejo.
+    if (def.key == 'security.appLock') {
+      await _onAppLockChanged(value);
+      return;
+    }
+    if (def.key == 'security.biometricUnlock') {
+      await _onBiometricChanged(value);
+      return;
+    }
+    // Instagram: en vez de la API de Meta, pide el @usuario y lo enlaza en el
+    // perfil. Al tocar (on u off) abre el editor con el handle actual.
+    if (def.key == 'integrations.instagram') {
+      await _onInstagramTapped();
+      return;
+    }
     await _c.toggle(def, value);
     final String? error = _c.lastIntegrationError;
     if (error != null && mounted) {
       _c.lastIntegrationError = null;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Editor del @usuario de Instagram (sin API de Meta). Vacío = desactiva.
+  Future<void> _onInstagramTapped() async {
+    final TextEditingController text =
+        TextEditingController(text: _c.instagramHandle);
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Tu Instagram'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+                'Escribe tu @usuario. Se mostrará como enlace en tu perfil. '
+                'Déjalo vacío para quitarlo.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: text,
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixText: '@',
+                hintText: 'tu_usuario',
+              ),
+              onSubmitted: (String v) => Navigator.of(context).pop(v),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(text.text),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return; // cancelado
+    await _c.setInstagramHandle(result);
+    _snack(_c.instagramHandle.isEmpty
+        ? 'Instagram quitado del perfil.'
+        : 'Instagram añadido a tu perfil.');
+  }
+
+  /// Activa/desactiva el PIN de la app (con confirmación). Persiste el espejo.
+  Future<void> _onAppLockChanged(bool value) async {
+    final AppLockController lock = AppLockController.instance;
+    final SettingDefinition? def =
+        SettingsCatalog.definitionByKey('security.appLock');
+    if (value) {
+      final bool ok = await runAppLockSetup(context, lock);
+      if (ok && def != null) await _c.setValue(def, true);
+      if (ok) _snack('Bloqueo con PIN activado.');
+    } else {
+      final bool ok = await confirmAppLockPin(context, lock);
+      if (!ok) {
+        _snack('PIN incorrecto. El bloqueo sigue activo.');
+        return;
+      }
+      await lock.disable();
+      if (def != null) await _c.setValue(def, false);
+      final SettingDefinition? bio =
+          SettingsCatalog.definitionByKey('security.biometricUnlock');
+      if (bio != null) await _c.setValue(bio, false);
+      _snack('Bloqueo desactivado.');
+    }
+  }
+
+  /// Activa/desactiva el desbloqueo biométrico (requiere PIN ya configurado).
+  Future<void> _onBiometricChanged(bool value) async {
+    final AppLockController lock = AppLockController.instance;
+    final SettingDefinition? def =
+        SettingsCatalog.definitionByKey('security.biometricUnlock');
+    if (value) {
+      if (!lock.enabled) {
+        _snack('Primero activa el "Bloqueo con PIN".');
+        return;
+      }
+      if (!await lock.isBiometricAvailable()) {
+        _snack('No hay biometría configurada en este dispositivo.');
+        return;
+      }
+      if (!await lock.authenticateBiometric()) {
+        _snack('No se pudo verificar la biometría.');
+        return;
+      }
+      await lock.setBiometricEnabled(true);
+      if (def != null) await _c.setValue(def, true);
+    } else {
+      await lock.setBiometricEnabled(false);
+      if (def != null) await _c.setValue(def, false);
     }
   }
 
@@ -97,8 +217,15 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
     switch (def.type) {
       case SettingType.boolean:
         final bool connecting = _c.isConnecting(def);
+        // El bloqueo de app vive en el dispositivo: el switch refleja el estado
+        // real del AppLockController, no solo el espejo de Firestore.
+        final bool value = def.key == 'security.appLock'
+            ? AppLockController.instance.enabled
+            : def.key == 'security.biometricUnlock'
+                ? AppLockController.instance.biometricEnabled
+                : eff.boolValue;
         return SwitchListTile(
-          value: eff.boolValue,
+          value: value,
           onChanged: eff.locked || connecting
               ? null
               : (bool v) => _onBoolChanged(def, v),
@@ -147,8 +274,13 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
 
   Widget _subtitle(
       BuildContext context, SettingDefinition def, EffectiveSetting eff) {
+    // Instagram: muestra el @usuario guardado en lugar de la descripción genérica.
+    final String desc =
+        def.key == 'integrations.instagram' && _c.instagramHandle.isNotEmpty
+            ? '@${_c.instagramHandle} · toca para editar'
+            : def.description;
     final List<Widget> lines = <Widget>[
-      Text(def.description),
+      Text(desc),
     ];
     if (eff.locked && eff.lockedReason != null) {
       lines.add(

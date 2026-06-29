@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../../../l10n/app_localizations.dart';
+import '../../../security/screen_guard.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 
@@ -81,6 +82,7 @@ class HomeShell extends StatefulWidget {
     required this.onSetAiConsent,
     required this.onSetSlowDating,
     required this.onSetThemeMode,
+    required this.onRepublishDiscovery,
     required this.onSetTravelLocation,
     required this.onLoadProfileByUid,
     this.integrationConnector,
@@ -148,6 +150,10 @@ class HomeShell extends StatefulWidget {
   /// Cambia el modo de tema (claro/oscuro/sistema) desde Ajustes.
   final Future<void> Function(ThemeMode mode) onSetThemeMode;
 
+  /// Re-publica el doc público de discovery (efecto inmediato de los ajustes de
+  /// visibilidad/ubicación en el feed).
+  final Future<void> Function() onRepublishDiscovery;
+
   /// Modo viajes (Plus/Pro): fija/desactiva el destino del feed.
   final Future<void> Function({
     required bool active,
@@ -172,6 +178,11 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _maybeBuildSessionControllers();
+    // Protección anti-captura global según el ajuste del usuario (Seguridad).
+    ScreenGuard.setGlobal(widget.user?.screenshotProtectionEnabled ?? false);
+    // Consentimiento de analítica (Datos): opt-out detiene la telemetría.
+    widget.feedMetricsService?.analyticsEnabled =
+        widget.user?.analyticsConsent ?? true;
     // Routing de notificaciones push: consume una ruta pendiente (tap con la
     // app cerrada) y escucha futuros taps (background).
     NotificationRouter.instance.pendingRoute.addListener(_onPushRoute);
@@ -195,6 +206,12 @@ class _HomeShellState extends State<HomeShell> {
       // Mismo uid, datos espejo (consent/saldo) actualizados.
       _entitlementController?.updateUser(widget.user);
     }
+    if (oldWidget.user?.screenshotProtectionEnabled !=
+        widget.user?.screenshotProtectionEnabled) {
+      ScreenGuard.setGlobal(widget.user?.screenshotProtectionEnabled ?? false);
+    }
+    widget.feedMetricsService?.analyticsEnabled =
+        widget.user?.analyticsConsent ?? true;
   }
 
   void _maybeBuildSessionControllers() {
@@ -218,6 +235,7 @@ class _HomeShellState extends State<HomeShell> {
       onDeleteAccount: () async => widget.onDeleteAccount(),
       premiumResolver: () => entitlements.isPremiumActive,
       integrationConnector: widget.integrationConnector,
+      onVisibilityChanged: widget.onRepublishDiscovery,
     );
   }
 
@@ -314,7 +332,8 @@ class _HomeShellState extends State<HomeShell> {
         // flag `ranking_enabled` (default off hasta desplegar el backend).
         rankingSignals: widget.rankingSignalsRepository,
         rankingConfig: RankingConfig.fromMap(
-            _entitlementController?.flags.rawConfig ?? const <String, dynamic>{}),
+            _entitlementController?.flags.rawConfig ??
+                const <String, dynamic>{}),
       ),
     );
 
@@ -339,7 +358,8 @@ class _HomeShellState extends State<HomeShell> {
                       children: <TextSpan>[
                         TextSpan(
                             text: 'Tus likes están\n',
-                            style: TextStyle(color: context.colors.textSecondary)),
+                            style:
+                                TextStyle(color: context.colors.textSecondary)),
                         const TextSpan(
                             text: 'protegidos',
                             style: TextStyle(

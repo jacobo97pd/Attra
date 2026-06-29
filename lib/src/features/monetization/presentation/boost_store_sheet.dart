@@ -376,8 +376,8 @@ class _BalanceTile extends StatelessWidget {
                   fontSize: 22,
                   fontWeight: FontWeight.w800)),
           Text(label,
-              style: TextStyle(
-                  color: context.colors.textSecondary, fontSize: 12)),
+              style:
+                  TextStyle(color: context.colors.textSecondary, fontSize: 12)),
         ],
       ),
     );

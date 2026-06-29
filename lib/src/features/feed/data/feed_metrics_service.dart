@@ -17,6 +17,10 @@ class FeedMetricsService {
 
   final FirebaseFirestore _db;
 
+  /// Consentimiento de analítica (Ajustes → Datos: `data.analyticsConsent`).
+  /// Si el usuario lo desactiva, NO se registra telemetría (opt-out real).
+  bool analyticsEnabled = true;
+
   // --- Nombres de evento (única fuente de verdad) ---
   static const String feedImpression = 'feedImpression';
   static const String profileOpened = 'profileOpened';
@@ -49,6 +53,7 @@ class FeedMetricsService {
     String? targetUid,
     Map<String, dynamic> meta = const <String, dynamic>{},
   }) {
+    if (!analyticsEnabled) return;
     _db.collection('feedEvents').add(<String, dynamic>{
       'event': event,
       'uid': uid,
@@ -65,6 +70,7 @@ class FeedMetricsService {
   /// Acumula una impresión (perfil mostrado). Vuelca en batch al llegar al
   /// umbral. Llama [flush] al salir del feed para no perder las pendientes.
   void recordImpression(String uid, String shownUid) {
+    if (!analyticsEnabled) return;
     if (shownUid.isEmpty) return;
     _bufferUid = uid;
     if (_impressionBuffer.add(shownUid) &&

@@ -18,13 +18,15 @@ class AppTheme {
   static ThemeData get light =>
       _build(AttraColors.light, Brightness.light, Typography.blackMountainView);
 
-  static ThemeData _build(AttraColors c, Brightness brightness, TextTheme base) {
+  static ThemeData _build(
+      AttraColors c, Brightness brightness, TextTheme base) {
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: AppColors.attraRed,
       onPrimary: Colors.white,
       secondary: AppColors.coral,
-      onSecondary: brightness == Brightness.dark ? AppColors.black : Colors.white,
+      onSecondary:
+          brightness == Brightness.dark ? AppColors.black : Colors.white,
       surface: c.surface,
       onSurface: c.textPrimary,
       surfaceContainerHighest: c.surfaceHigh,

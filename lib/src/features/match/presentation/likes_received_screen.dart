@@ -647,8 +647,8 @@ class _SecretLikesBanner extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'Activa Likes ilimitados para descubrir a quién le gustas sin límites.',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: context.colors.textSecondary, height: 1.3),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: context.colors.textSecondary, height: 1.3),
                 ),
               ],
             ),
@@ -1377,8 +1377,8 @@ class _ImproveProfileBanner extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   'Completa tu perfil y sube más fotos para recibir más likes cada día.',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: context.colors.textSecondary, height: 1.3),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: context.colors.textSecondary, height: 1.3),
                 ),
               ],
             ),

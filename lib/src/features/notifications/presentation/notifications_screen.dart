@@ -106,8 +106,8 @@ class _NotifTile extends StatelessWidget {
           color: context.colors.surfaceHigh,
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         ),
-        child: Icon(Icons.delete_outline_rounded,
-            color: context.colors.textMuted),
+        child:
+            Icon(Icons.delete_outline_rounded, color: context.colors.textMuted),
       ),
       child: Material(
         color: Colors.transparent,
@@ -117,8 +117,9 @@ class _NotifTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color:
-                  n.read ? context.colors.surface : accent.withValues(alpha: 0.10),
+              color: n.read
+                  ? context.colors.surface
+                  : accent.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
               border: Border.all(
                   color: n.read

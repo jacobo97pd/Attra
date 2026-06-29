@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../security/screen_guard.dart';
 import '../../integrations/domain/integration_connector.dart';
 import '../data/settings_repository.dart';
 import '../domain/consent_record.dart';
@@ -38,6 +39,7 @@ class SettingsController extends ChangeNotifier {
     bool locationPermissionGranted = false,
     String region = 'EU',
     IntegrationConnector? integrationConnector,
+    Future<void> Function()? onVisibilityChanged,
   })  : _repository = repository,
         _uid = uid,
         _onDeleteAccount = onDeleteAccount,
@@ -45,7 +47,23 @@ class SettingsController extends ChangeNotifier {
         _premiumResolver = premiumResolver,
         _locationGranted = locationPermissionGranted,
         _region = region,
-        _integrationConnector = integrationConnector;
+        _integrationConnector = integrationConnector,
+        _onVisibilityChanged = onVisibilityChanged;
+
+  /// Claves de visibilidad/ubicación que, al cambiar, requieren re-publicar el
+  /// doc público de discovery para tener efecto inmediato en el feed.
+  static const Set<String> _visibilityKeys = <String>{
+    'privacy.hideProfile',
+    'privacy.incognito',
+    'privacy.showInRecommendations',
+    'privacy.showDistance',
+    'privacy.showActiveStatus',
+    'location.showOnProfile',
+    'location.precision',
+  };
+
+  /// Se invoca tras cambiar un ajuste de [_visibilityKeys] (re-publica discovery).
+  final Future<void> Function()? _onVisibilityChanged;
 
   final SettingsRepository _repository;
   final String _uid;
@@ -74,6 +92,29 @@ class SettingsController extends ChangeNotifier {
 
   bool get hasPremium => _hasPremium;
   String get region => _region;
+
+  /// @usuario de Instagram guardado (sin la @). Vacío si no hay.
+  String get instagramHandle =>
+      (_raw['integrations.instagramHandle'] as String?)?.trim() ?? '';
+
+  /// Guarda (o borra) el @usuario de Instagram que se muestra en el perfil.
+  /// No usa la API de Meta: solo enlaza el perfil público. Vacío = desactiva.
+  Future<void> setInstagramHandle(String? handle) async {
+    final String clean = (handle ?? '')
+        .trim()
+        .replaceAll('@', '')
+        .replaceAll(RegExp(r'\s+'), '');
+    final bool enabled = clean.isNotEmpty;
+    _raw['integrations.instagram'] = enabled;
+    _raw['integrations.instagramHandle'] = clean;
+    notifyListeners();
+    await _repository.patchValues(_uid, <String, Object?>{
+      'integrations.instagram': enabled,
+      'integrations.instagramHandle': clean,
+    });
+    // Se muestra en tu perfil público → re-publica discovery.
+    await _onVisibilityChanged?.call();
+  }
 
   Future<void> load() async {
     _loading = true;
@@ -163,6 +204,17 @@ class SettingsController extends ChangeNotifier {
         definition: def,
         granted: granted,
       );
+    }
+
+    // Si el ajuste afecta a cómo te ven los demás, re-publica discovery para que
+    // surta efecto al instante (ocultarte, ciudad, precisión de ubicación…).
+    if (_visibilityKeys.contains(def.key)) {
+      await _onVisibilityChanged?.call();
+    }
+
+    // Efecto de dispositivo inmediato: protección anti-captura global.
+    if (def.key == 'security.screenshotProtection' && newValue is bool) {
+      await ScreenGuard.setGlobal(newValue);
     }
   }
 

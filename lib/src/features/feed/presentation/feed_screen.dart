@@ -435,8 +435,11 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted) return;
       // Ranking inteligente: si está activo el flag, precarga las señales
       // server-side (prefetch en lote) y construye el inyector signalsFor.
-      final bool useSignals =
-          widget.rankingConfig.enabled && widget.rankingSignals != null;
+      // Personalización con IA (Datos→consentimiento): si el usuario la
+      // desactiva, NO se usan señales personalizadas (orden orgánico neutro).
+      final bool useSignals = widget.rankingConfig.enabled &&
+          widget.rankingSignals != null &&
+          (widget.user?.aiPersonalization ?? true);
       RankingSignals Function(SeedProfile)? signalsFor;
       if (useSignals) {
         try {
