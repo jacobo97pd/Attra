@@ -53,10 +53,6 @@ class AuthService {
   final FirebaseAuth _firebaseAuth;
   final GoogleSignIn _googleSignIn;
 
-  // DIAGNOSTICO TEMPORAL: guarda el resultado de Apple para anexarlo al mensaje
-  // de error si Firebase rechaza la credencial. Borrar al terminar el debug.
-  String? _appleDebug;
-
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
   User? get currentUser => _firebaseAuth.currentUser;
 
@@ -119,65 +115,33 @@ class AuthService {
       );
     }
 
+    // NUEVO CAMINO: deja que el SDK nativo de Firebase gestione por completo el
+    // flujo de Apple (sheet nativo + nonce + intercambio de credencial). Evita
+    // cualquier problema en la construccion manual de la credencial. Es el
+    // metodo recomendado por Firebase para iOS.
     try {
-      final String rawNonce = _generateNonce();
-      final String hashedNonce = _sha256ofString(rawNonce);
+      final AppleAuthProvider provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
 
-      final AuthorizationCredentialAppleID appleCredential =
-          await SignInWithApple.getAppleIDCredential(
-        scopes: const <AppleIDAuthorizationScopes>[
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        nonce: hashedNonce,
-      );
-
-      final String? idToken = appleCredential.identityToken;
-      if (idToken == null || idToken.isEmpty) {
-        throw const AuthFailure(
-          'No se pudo obtener el token de Apple.',
-        );
-      }
-
-      final OAuthCredential credential = OAuthProvider('apple.com').credential(
-        idToken: idToken,
-        rawNonce: rawNonce,
-      );
-
-      // DIAGNOSTICO TEMPORAL: decodifica el JWT de Apple para ver el audience
-      // (aud) real y si el nonce del token coincide con SHA256(rawNonce). Esto
-      // distingue un fallo de audience de uno de nonce.
-      final Map<String, dynamic> claims = _decodeJwtPayload(idToken);
-      final Object? tokenAud = claims['aud'];
-      final Object? tokenNonce = claims['nonce'];
-      final bool nonceOk = tokenNonce == hashedNonce;
-      _appleDebug = 'aud=$tokenAud · nonceOK=$nonceOk';
-
-      await _firebaseAuth.signInWithCredential(credential);
-    } on SignInWithAppleAuthorizationException catch (error) {
-      if (error.code == AuthorizationErrorCode.canceled) {
+      await _firebaseAuth.signInWithProvider(provider);
+    } on FirebaseAuthException catch (error) {
+      // Cancelacion del usuario (cierra el sheet de Apple).
+      if (error.code == 'canceled' ||
+          error.code == 'web-context-canceled' ||
+          error.code == 'user-canceled') {
         throw const SignInWithAppleCancelledFailure();
       }
-      // DIAGNOSTICO TEMPORAL: el fallo viene de Apple (antes de Firebase).
+      // DIAGNOSTICO TEMPORAL: muestra el code+message crudos en pantalla.
       throw AuthFailure(
-        'APPLE-ERR code=${error.code.name} · msg=${error.message}',
-      );
-    } on FirebaseAuthException catch (error) {
-      // DIAGNOSTICO TEMPORAL: Apple dio token pero Firebase lo rechazo. Muestra
-      // el code+message crudos en pantalla para capturarlos.
-      throw AuthFailure(
-        'FB-ERR code=${error.code} · msg=${error.message ?? 'sin mensaje'}'
-        '${_appleDebug == null ? '' : ' · [$_appleDebug]'}',
+        'FB-ERR2 code=${error.code} · msg=${error.message ?? 'sin mensaje'}',
       );
     } catch (error) {
       if (error is AuthFailure) {
         rethrow;
       }
       // DIAGNOSTICO TEMPORAL: error inesperado, muestra tipo y contenido.
-      throw AuthFailure(
-        'APPLE-UNEXPECTED ${error.runtimeType}: $error'
-        '${_appleDebug == null ? '' : ' · [$_appleDebug]'}',
-      );
+      throw AuthFailure('APPLE2-UNEXPECTED ${error.runtimeType}: $error');
     }
   }
 
@@ -528,27 +492,5 @@ class AuthService {
     final List<int> bytes = utf8.encode(input);
     final Digest digest = sha256.convert(bytes);
     return digest.toString();
-  }
-
-  /// DIAGNOSTICO TEMPORAL: decodifica (sin verificar firma) el payload de un JWT
-  /// para inspeccionar sus claims (aud, nonce…). Devuelve {} si no es válido.
-  Map<String, dynamic> _decodeJwtPayload(String token) {
-    try {
-      final List<String> parts = token.split('.');
-      if (parts.length != 3) return <String, dynamic>{};
-      String payload = parts[1].replaceAll('-', '+').replaceAll('_', '/');
-      switch (payload.length % 4) {
-        case 2:
-          payload += '==';
-          break;
-        case 3:
-          payload += '=';
-          break;
-      }
-      final Object? decoded = jsonDecode(utf8.decode(base64.decode(payload)));
-      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
-    } catch (_) {
-      return <String, dynamic>{};
-    }
   }
 }
