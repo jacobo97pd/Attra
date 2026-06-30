@@ -41,6 +41,7 @@ import '../../profile/domain/profile_trait.dart';
 import '../../settings/data/settings_repository.dart';
 import '../../settings/presentation/settings_controller.dart';
 import '../../settings/presentation/settings_screen.dart';
+import '../../tutorial/presentation/tutorial_screen.dart';
 import 'home_screen.dart';
 
 /// Contenedor principal tras el onboarding: bottom-nav con Feed (por defecto)
@@ -88,10 +89,16 @@ class HomeShell extends StatefulWidget {
     this.integrationConnector,
     this.user,
     this.errorMessage,
+    this.showTutorial = false,
   });
 
   final AppUser? user;
   final String? errorMessage;
+
+  /// True cuando el usuario acaba de completar el onboarding (nuevo): muestra el
+  /// tutorial de bienvenida una sola vez. Los usuarios existentes lo reciben en
+  /// false (y pueden reverlo desde Ajustes).
+  final bool showTutorial;
   final VoidCallback onLogout;
   final Future<ProfileCompletionState> Function() onLoadProfileState;
   final Future<void> Function({
@@ -187,6 +194,12 @@ class _HomeShellState extends State<HomeShell> {
     // app cerrada) y escucha futuros taps (background).
     NotificationRouter.instance.pendingRoute.addListener(_onPushRoute);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onPushRoute());
+    // Tutorial de bienvenida: solo para usuarios recién registrados, una vez.
+    if (widget.showTutorial) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) TutorialScreen.show(context);
+      });
+    }
   }
 
   void _onPushRoute() {

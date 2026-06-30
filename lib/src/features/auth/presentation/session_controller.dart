@@ -430,6 +430,9 @@ class SessionController extends ChangeNotifier {
         SessionState(
           status: SessionStatus.authenticated,
           user: updatedUser,
+          // Usuario NUEVO recién registrado: HomeShell mostrará el tutorial una
+          // sola vez. Los usuarios existentes nunca pasan por aquí.
+          justOnboarded: true,
         ),
       );
     } catch (error) {

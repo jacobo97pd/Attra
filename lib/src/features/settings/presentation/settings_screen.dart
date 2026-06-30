@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme_controller.dart';
+import '../../tutorial/presentation/tutorial_screen.dart';
 import '../domain/settings_catalog.dart';
 import '../domain/setting_definition.dart';
 import 'settings_controller.dart';
@@ -50,13 +51,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (BuildContext context, _) {
         return ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: sections.length + 1, // +1 = sección Apariencia (tema)
+          // +2 = sección Apariencia (tema) + "Cómo funciona Attra" (tutorial).
+          itemCount: sections.length + 2,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (BuildContext context, int index) {
             if (index == 0) {
               return _ThemeModeTile(onSetThemeMode: widget.onSetThemeMode);
             }
-            final SettingsSection section = sections[index - 1];
+            if (index == 1) {
+              return ListTile(
+                leading: Icon(
+                  Icons.help_outline_rounded,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: const Text(
+                  'Cómo funciona Attra',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text('Vuelve a ver el tutorial de bienvenida'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => TutorialScreen.show(context),
+              );
+            }
+            final SettingsSection section = sections[index - 2];
             final bool destructive =
                 section.key == SettingsCatalog.secLifecycle;
             return ListTile(

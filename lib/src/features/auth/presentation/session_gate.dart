@@ -54,6 +54,7 @@ class SessionGate extends StatelessWidget {
             screen = HomeShell(
               user: state.user,
               errorMessage: state.errorMessage,
+              showTutorial: state.justOnboarded,
               onLogout: controller.signOut,
               onLoadProfileState: controller.loadProfileCompletionState,
               onUploadAdditionalPhoto: controller.uploadAdditionalPhoto,

@@ -144,9 +144,14 @@ class AuthService {
         rawNonce: rawNonce,
       );
 
-      // DIAGNOSTICO TEMPORAL: confirma que Apple devolvio token antes de Firebase.
-      _appleDebug =
-          'Apple OK · idToken=${idToken.length} · nonce=${rawNonce.length}';
+      // DIAGNOSTICO TEMPORAL: decodifica el JWT de Apple para ver el audience
+      // (aud) real y si el nonce del token coincide con SHA256(rawNonce). Esto
+      // distingue un fallo de audience de uno de nonce.
+      final Map<String, dynamic> claims = _decodeJwtPayload(idToken);
+      final Object? tokenAud = claims['aud'];
+      final Object? tokenNonce = claims['nonce'];
+      final bool nonceOk = tokenNonce == hashedNonce;
+      _appleDebug = 'aud=$tokenAud · nonceOK=$nonceOk';
 
       await _firebaseAuth.signInWithCredential(credential);
     } on SignInWithAppleAuthorizationException catch (error) {
@@ -523,5 +528,27 @@ class AuthService {
     final List<int> bytes = utf8.encode(input);
     final Digest digest = sha256.convert(bytes);
     return digest.toString();
+  }
+
+  /// DIAGNOSTICO TEMPORAL: decodifica (sin verificar firma) el payload de un JWT
+  /// para inspeccionar sus claims (aud, nonce…). Devuelve {} si no es válido.
+  Map<String, dynamic> _decodeJwtPayload(String token) {
+    try {
+      final List<String> parts = token.split('.');
+      if (parts.length != 3) return <String, dynamic>{};
+      String payload = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+      switch (payload.length % 4) {
+        case 2:
+          payload += '==';
+          break;
+        case 3:
+          payload += '=';
+          break;
+      }
+      final Object? decoded = jsonDecode(utf8.decode(base64.decode(payload)));
+      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
   }
 }
