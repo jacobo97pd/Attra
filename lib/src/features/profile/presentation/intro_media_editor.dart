@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 
@@ -63,6 +64,7 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
   Timer? _recordTimer;
   String _recordContentType = 'audio/m4a';
   String _recordExt = 'm4a';
+  String _recordPath = '';
 
   @override
   void initState() {
@@ -125,8 +127,14 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
       return;
     }
     try {
-      final String path =
-          kIsWeb ? '' : '${DateTime.now().millisecondsSinceEpoch}.$_recordExt';
+      // Path ABSOLUTO en iOS/Android (un nombre relativo rompe la lectura).
+      String path = '';
+      if (!kIsWeb) {
+        final dir = await getTemporaryDirectory();
+        path =
+            '${dir.path}/intro_${DateTime.now().millisecondsSinceEpoch}.$_recordExt';
+      }
+      _recordPath = path;
       await _recorder.start(RecordConfig(encoder: encoder), path: path);
     } catch (_) {
       _snack('No se pudo iniciar la grabación.');
@@ -161,6 +169,9 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
     try {
       path = await _recorder.stop();
     } catch (_) {}
+    if ((path == null || path.isEmpty) && _recordPath.isNotEmpty) {
+      path = _recordPath;
+    }
     if (!mounted) return;
     setState(() => _recording = false);
     if (path == null || path.isEmpty || durationMs < 1000) {

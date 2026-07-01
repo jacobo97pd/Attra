@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../../../widgets/attra_image.dart';
@@ -151,6 +152,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Duration _recordElapsed = Duration.zero;
   Timer? _recordTimer;
+
+  /// Path absoluto donde `record` guarda la nota de voz (fallback si stop() no
+  /// lo devuelve). Vacío en web.
+  String _recordPath = '';
 
   // Duelo de Química activo: para etiquetar mensajes con su sesión y cerrar el
   // reto cuando vence el tiempo (lo dispara el cliente; el backend es idempotente).
@@ -340,8 +345,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
 
     try {
-      final String path =
-          kIsWeb ? '' : '${DateTime.now().millisecondsSinceEpoch}.$_recordExt';
+      // iOS/Android necesitan un path ABSOLUTO y escribible; un nombre relativo
+      // provoca PathNotFoundException al leer el archivo. En web se deja vacío.
+      String path = '';
+      if (!kIsWeb) {
+        final dir = await getTemporaryDirectory();
+        path =
+            '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.$_recordExt';
+      }
+      _recordPath = path;
       await _recorder.start(RecordConfig(encoder: encoder), path: path);
     } catch (e) {
       _snack('No se pudo iniciar la grabación.');
@@ -374,6 +386,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     try {
       path = await _recorder.stop();
     } catch (_) {}
+    // En iOS, stop() puede devolver un path relativo o null; usamos el absoluto
+    // que fijamos al empezar como respaldo.
+    if ((path == null || path.isEmpty) && _recordPath.isNotEmpty) {
+      path = _recordPath;
+    }
     if (!mounted) return;
     setState(() => _recording = false);
     if (path == null || path.isEmpty || durationMs < 800) {
