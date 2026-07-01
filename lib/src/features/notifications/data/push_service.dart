@@ -32,6 +32,23 @@ class PushService {
       final FirebaseMessaging messaging = FirebaseMessaging.instance;
       await messaging.requestPermission(alert: true, badge: true, sound: true);
 
+      // iOS: el token FCM (getToken) requiere que el token APNs esté disponible.
+      // Justo tras arrancar puede tardar un instante; si pedimos getToken antes,
+      // devuelve null y el token nunca se registra. Esperamos el APNs token
+      // (con reintentos cortos) antes de pedir el FCM. No-op en Android.
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        String? apns = await messaging.getAPNSToken();
+        int tries = 0;
+        while (apns == null && tries < 6) {
+          await Future<void>.delayed(const Duration(seconds: 1));
+          apns = await messaging.getAPNSToken();
+          tries++;
+        }
+        if (apns == null && kDebugMode) {
+          debugPrint('[push] sin token APNs (¿entitlement/APNs key?).');
+        }
+      }
+
       final String? token = await messaging.getToken();
       if (token != null && token.isNotEmpty) {
         _lastToken = token;
