@@ -130,6 +130,37 @@ class SessionController extends ChangeNotifier {
     await _refreshAuthenticatedUser(uid);
   }
 
+  /// MODO OCUPADO (Attra Clear §4): pausa temporal. Persiste en `settings`
+  /// (escribible por el dueño, sin tocar reglas). Si [enabled] es false, limpia
+  /// la pausa. Refresca el usuario para que la UI reaccione al instante.
+  Future<void> setBusyMode({
+    required bool enabled,
+    DateTime? until,
+    String reason = '',
+    bool visibleToMatches = true,
+  }) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    final Map<String, Object?> values;
+    if (!enabled) {
+      values = <String, Object?>{
+        'privacy.busyModeEnabled': false,
+        'privacy.busyModeUntil': null,
+        'privacy.busyModeReason': '',
+      };
+    } else {
+      values = <String, Object?>{
+        'privacy.busyModeEnabled': true,
+        'privacy.busyModeUntil': until?.millisecondsSinceEpoch,
+        'privacy.busyModeStartedAt': DateTime.now().millisecondsSinceEpoch,
+        'privacy.busyModeReason': reason,
+        'privacy.busyModeVisibleToMatches': visibleToMatches,
+      };
+    }
+    await _settingsRepository.patchValues(uid, values);
+    await _refreshAuthenticatedUser(uid);
+  }
+
   /// MODO VIAJES (Plus/Pro): fija (active=true) o desactiva el destino. Refresca
   /// el usuario para que el feed reaccione (lee `AppUser.travel*`).
   Future<void> setTravelLocation({

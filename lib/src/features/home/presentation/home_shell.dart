@@ -9,6 +9,8 @@ import '../../../theme/attra_colors.dart';
 
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
+import '../../anti_ghosting/data/pending_conversations_controller.dart';
+import '../../anti_ghosting/domain/anti_ghosting_config.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chats_screen.dart';
@@ -82,6 +84,7 @@ class HomeShell extends StatefulWidget {
     required this.aiVisualService,
     required this.onSetAiConsent,
     required this.onSetSlowDating,
+    this.onSetBusyMode,
     required this.onSetThemeMode,
     required this.onRepublishDiscovery,
     required this.onSetTravelLocation,
@@ -154,6 +157,14 @@ class HomeShell extends StatefulWidget {
   final Future<void> Function(bool granted) onSetAiConsent;
   final Future<void> Function(bool value) onSetSlowDating;
 
+  /// Attra Clear §4: activa/desactiva el modo ocupado. Opcional.
+  final Future<void> Function({
+    required bool enabled,
+    DateTime? until,
+    String reason,
+    bool visibleToMatches,
+  })? onSetBusyMode;
+
   /// Cambia el modo de tema (claro/oscuro/sistema) desde Ajustes.
   final Future<void> Function(ThemeMode mode) onSetThemeMode;
 
@@ -180,6 +191,11 @@ class _HomeShellState extends State<HomeShell> {
   int _feedReloadToken = 0;
   SettingsController? _settingsController;
   EntitlementController? _entitlementController;
+  PendingConversationsController? _pendingController;
+
+  /// Attra Clear: config remota (flags `anti_ghosting_*`) con fallback seguro.
+  AntiGhostingConfig get _antiGhosting =>
+      AntiGhostingConfig.fromMap(_entitlementController?.flags.rawConfig);
 
   @override
   void initState() {
@@ -250,6 +266,12 @@ class _HomeShellState extends State<HomeShell> {
       integrationConnector: widget.integrationConnector,
       onVisibilityChanged: widget.onRepublishDiscovery,
     );
+
+    // Attra Clear §2: observa los chats para contar conversaciones pendientes.
+    _pendingController = PendingConversationsController(
+      chatService: widget.chatService,
+      uid: uid,
+    )..addListener(_onEntitlementsChanged);
   }
 
   void _onEntitlementsChanged() {
@@ -262,6 +284,9 @@ class _HomeShellState extends State<HomeShell> {
     _entitlementController = null;
     _settingsController?.dispose();
     _settingsController = null;
+    _pendingController?.removeListener(_onEntitlementsChanged);
+    _pendingController?.dispose();
+    _pendingController = null;
   }
 
   @override
@@ -347,6 +372,12 @@ class _HomeShellState extends State<HomeShell> {
         rankingConfig: RankingConfig.fromMap(
             _entitlementController?.flags.rawConfig ??
                 const <String, dynamic>{}),
+        // Attra Clear §2: límite suave de conversaciones pendientes.
+        antiGhostingConfig: _antiGhosting,
+        pendingController: _pendingController,
+        isBusy: widget.user?.busyModeActive ?? false,
+        isPro: _entitlementController?.isProActive ?? false,
+        onOpenChats: () => setState(() => _tab = 2),
       ),
     );
 
@@ -446,6 +477,13 @@ class _HomeShellState extends State<HomeShell> {
                           false) &&
                       (_entitlementController?.journeyLimits.canReactivate ??
                           false),
+              antiGhostingEnabled: _antiGhosting.enabled,
+              closeGracefullyEnabled:
+                  _antiGhosting.enabled && _antiGhosting.closeGracefullyEnabled,
+              nudgesEnabled:
+                  _antiGhosting.enabled && _antiGhosting.nudgesEnabled,
+              dateFollowupEnabled:
+                  _antiGhosting.enabled && _antiGhosting.dateFollowupEnabled,
             ),
     );
 
@@ -638,6 +676,10 @@ class _HomeShellState extends State<HomeShell> {
         body: SettingsScreen(
           controller: c,
           onSetThemeMode: widget.onSetThemeMode,
+          busyModeFeatureEnabled:
+              _antiGhosting.enabled && _antiGhosting.busyModeEnabled,
+          initialBusyUntil: widget.user?.busyModeUntilOrNull,
+          onSetBusyMode: widget.onSetBusyMode,
         ),
       ),
     ));

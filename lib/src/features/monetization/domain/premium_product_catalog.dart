@@ -63,14 +63,6 @@ class PremiumProductCatalog {
       badge: 'Más comprado',
     ),
     PremiumProductDefinition(
-      id: 'attra_pack_25',
-      type: PremiumProductType.attraPack,
-      title: '25 Attras',
-      description: 'Mas margen para destacar sin esperar al siguiente grant.',
-      attraAmount: 25,
-      badge: 'Ahorro',
-    ),
-    PremiumProductDefinition(
       id: 'attra_pack_50',
       type: PremiumProductType.attraPack,
       title: '50 Attras',

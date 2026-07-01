@@ -6,6 +6,10 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../ads/presentation/feed_native_ad_card.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
+import '../../anti_ghosting/data/anti_ghosting_analytics.dart';
+import '../../anti_ghosting/data/pending_conversations_controller.dart';
+import '../../anti_ghosting/domain/anti_ghosting_config.dart';
+import '../../anti_ghosting/presentation/pending_limit_sheet.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chat_detail_screen.dart';
@@ -66,7 +70,26 @@ class FeedScreen extends StatefulWidget {
     this.onOpenTravel,
     this.rankingSignals,
     this.rankingConfig = const RankingConfig(),
+    this.antiGhostingConfig,
+    this.pendingController,
+    this.isBusy = false,
+    this.isPro = false,
+    this.onOpenChats,
   });
+
+  /// Attra Clear §2: límite suave de conversaciones pendientes. Si null o
+  /// deshabilitado, el feed no aplica ningún bloqueo (comportamiento previo).
+  final AntiGhostingConfig? antiGhostingConfig;
+  final PendingConversationsController? pendingController;
+
+  /// Modo ocupado activo (§4): exime del límite de pendientes (no penaliza).
+  final bool isBusy;
+
+  /// Para el límite por plan (free/plus/pro).
+  final bool isPro;
+
+  /// Abre la pestaña de chats (CTA "Ver conversaciones").
+  final VoidCallback? onOpenChats;
 
   final AppUser? user;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
@@ -659,6 +682,55 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  String get _planLabel => widget.isPro
+      ? 'pro'
+      : widget.isPlus
+          ? 'plus'
+          : 'free';
+
+  /// Attra Clear §2: ¿bloquear este like/Attra por exceso de conversaciones
+  /// pendientes? Muestra el bottom sheet (bloqueo SUAVE) y devuelve true si se
+  /// debe abortar la acción. Nunca bloquea acciones de seguridad ni en modo
+  /// ocupado, y solo si el flag está activo.
+  Future<bool> _pendingBlocks({required bool isAttra}) async {
+    final AntiGhostingConfig? cfg = widget.antiGhostingConfig;
+    final PendingConversationsController? pc = widget.pendingController;
+    if (cfg == null || pc == null || !cfg.enabled || !cfg.pendingLimitEnabled) {
+      return false;
+    }
+    if (widget.isBusy) return false; // §12: no penaliza en modo ocupado
+    final bool softBlock = isAttra
+        ? cfg.softBlockAttrasWhenPendingExceeded
+        : cfg.softBlockLikesWhenPendingExceeded;
+    if (!softBlock) return false;
+    final int limit =
+        cfg.pendingLimitForPlan(isPlus: widget.isPlus, isPro: widget.isPro);
+    final int count = pc.pendingCount(cfg.pendingMaxAgeHours);
+    if (count < limit) return false;
+
+    final AntiGhostingAnalytics analytics =
+        AntiGhostingAnalytics(uid: _uid, metrics: widget.metrics);
+    analytics.logPendingLimitReached(pendingCount: count, userPlan: _planLabel);
+    if (!mounted) return true;
+    final PendingLimitAction? action =
+        await PendingLimitBottomSheet.show(context, pendingCount: count);
+    if (action != null && action != PendingLimitAction.notNow) {
+      analytics.logPendingLimitCta(
+          action: action.name, pendingCount: count, userPlan: _planLabel);
+      if (action == PendingLimitAction.viewConversations ||
+          action == PendingLimitAction.closeSome) {
+        widget.onOpenChats?.call();
+      }
+    }
+    return true; // bloqueado: no se envía el like/Attra
+  }
+
+  /// Like desde el botón corazón: comprueba el límite ANTES de animar la tarjeta.
+  Future<void> _guardedLike() async {
+    if (await _pendingBlocks(isAttra: false)) return;
+    _cardKey.currentState?.triggerSwipe(true);
+  }
+
   Future<void> _onLikeProfile(SeedProfile profile) async {
     widget.metrics
         ?.log(FeedMetricsService.likeSent, uid: _uid, targetUid: profile.id);
@@ -679,6 +751,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _onAttraProfile(SeedProfile profile) async {
+    if (await _pendingBlocks(isAttra: true)) return;
     if (widget.attrasBalance <= 0) {
       _snack('No tienes Attras suficientes.');
       return;
@@ -1100,7 +1173,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   gradient: AppColors.action,
                   glow: AppColors.attraRed,
                   tooltip: 'Me gusta',
-                  onPressed: () => _cardKey.currentState?.triggerSwipe(true),
+                  onPressed: _guardedLike,
                 ),
               ],
             ),

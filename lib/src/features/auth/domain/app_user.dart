@@ -37,6 +37,12 @@ class AppUser {
     this.travelIso2 = '',
     this.travelCity = '',
     this.travelCountry = '',
+    this.busyModeEnabled = false,
+    this.busyModeUntil,
+    this.busyModeStartedAt,
+    this.busyModeReason = '',
+    this.busyModeVisibleToMatches = true,
+    this.hasReliabilityBadge = false,
   });
 
   final String uid;
@@ -113,6 +119,29 @@ class AppUser {
 
   bool get isTraveling => travelActive && travelCountry.trim().isNotEmpty;
 
+  /// Modo ocupado (Attra Clear §4): pausa suave. De `settings.privacy.busyMode*`.
+  final bool busyModeEnabled;
+  final DateTime? busyModeUntil;
+  final DateTime? busyModeStartedAt;
+  final String busyModeReason;
+  final bool busyModeVisibleToMatches;
+
+  /// True si el modo ocupado está ACTIVO ahora. Expiración **defensiva en
+  /// cliente**: si `busyModeUntil` ya pasó, se considera inactivo aunque el flag
+  /// siga en `true` (no dependemos de un job de backend para apagarlo).
+  bool get busyModeActive =>
+      busyModeEnabled &&
+      busyModeUntil != null &&
+      busyModeUntil!.isAfter(DateTime.now());
+
+  /// Etiqueta del fin de la pausa ("hasta el domingo" se compone en UI).
+  DateTime? get busyModeUntilOrNull => busyModeActive ? busyModeUntil : null;
+
+  /// Attra Clear §8: badge POSITIVO "Responde con intención". Lo calcula y
+  /// escribe SOLO el backend (el `connectionReliabilityScore` es interno y nunca
+  /// se expone al cliente). Aquí solo se lee este booleano.
+  final bool hasReliabilityBadge;
+
   /// Etiqueta del destino: "Ciudad, País" o solo país.
   String get travelLabel {
     final List<String> parts = <String>[travelCity.trim(), travelCountry.trim()]
@@ -177,7 +206,26 @@ class AppUser {
       travelIso2: ((travel['iso2'] as String?) ?? '').toUpperCase(),
       travelCity: (travel['city'] as String?) ?? '',
       travelCountry: (travel['country'] as String?) ?? '',
+      busyModeEnabled: _asBool(settings['privacy.busyModeEnabled']),
+      busyModeUntil: _asEpochDate(settings['privacy.busyModeUntil']),
+      busyModeStartedAt: _asEpochDate(settings['privacy.busyModeStartedAt']),
+      busyModeReason: (settings['privacy.busyModeReason'] as String?) ?? '',
+      // Default true: por defecto los matches ven que estás ocupado.
+      busyModeVisibleToMatches:
+          settings['privacy.busyModeVisibleToMatches'] != false,
+      hasReliabilityBadge: _asBool(data['hasReliabilityBadge']),
     );
+  }
+
+  /// Parsea una fecha guardada como millis (int), Timestamp o ISO string.
+  static DateTime? _asEpochDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+    if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+    return null;
   }
 
   static double? _asDouble(dynamic value) {

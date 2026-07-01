@@ -115,10 +115,8 @@ class AuthService {
       );
     }
 
-    // NUEVO CAMINO: deja que el SDK nativo de Firebase gestione por completo el
-    // flujo de Apple (sheet nativo + nonce + intercambio de credencial). Evita
-    // cualquier problema en la construccion manual de la credencial. Es el
-    // metodo recomendado por Firebase para iOS.
+    // Flujo nativo gestionado por el SDK de Firebase (sheet de Apple + nonce +
+    // intercambio de credencial). Es el método recomendado para iOS.
     try {
       final AppleAuthProvider provider = AppleAuthProvider()
         ..addScope('email')
@@ -126,22 +124,20 @@ class AuthService {
 
       await _firebaseAuth.signInWithProvider(provider);
     } on FirebaseAuthException catch (error) {
-      // Cancelacion del usuario (cierra el sheet de Apple).
+      // Cancelación del usuario (cierra el sheet de Apple).
       if (error.code == 'canceled' ||
           error.code == 'web-context-canceled' ||
           error.code == 'user-canceled') {
         throw const SignInWithAppleCancelledFailure();
       }
-      // DIAGNOSTICO TEMPORAL: muestra el code+message crudos en pantalla.
-      throw AuthFailure(
-        'FB-ERR2 code=${error.code} · msg=${error.message ?? 'sin mensaje'}',
-      );
+      throw AuthFailure(_firebaseErrorMessage(error));
     } catch (error) {
       if (error is AuthFailure) {
         rethrow;
       }
-      // DIAGNOSTICO TEMPORAL: error inesperado, muestra tipo y contenido.
-      throw AuthFailure('APPLE2-UNEXPECTED ${error.runtimeType}: $error');
+      throw const AuthFailure(
+        'No fue posible iniciar sesion con Apple. Intentalo de nuevo.',
+      );
     }
   }
 

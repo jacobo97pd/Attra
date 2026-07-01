@@ -194,8 +194,13 @@ export const onMessageCreated = onDocumentCreated(
     const data = event.data?.data() as DocumentData | undefined;
     if (!data) return;
     const type = (data.type ?? "text").toString();
-    // Solo mensajes "humanos" (no contexto/sistema).
-    if (["system", "like_context", "attra_context"].includes(type)) return;
+    // Solo mensajes "humanos" (no contexto/sistema). El mensaje de cierre
+    // (`closure`, Attra Clear §3) NO genera push "te ha escrito": se ve in-app.
+    if (
+      ["system", "like_context", "attra_context", "closure"].includes(type)
+    ) {
+      return;
+    }
     const senderId = (data.senderId ?? "").toString();
     const receiverId = (data.receiverId ?? "").toString();
     if (!receiverId || receiverId === senderId || senderId === "system") return;

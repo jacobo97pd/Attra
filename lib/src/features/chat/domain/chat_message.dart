@@ -14,7 +14,8 @@ enum MessageType {
   dateProposal('date_proposal'),
   doubleAnswer('double_answer'),
   twoTruths('two_truths'),
-  chatGame('chat_game');
+  chatGame('chat_game'),
+  closure('closure');
 
   const MessageType(this.wireName);
 
@@ -32,6 +33,9 @@ enum MessageType {
   /// Tarjeta del "Duelo de Química" (invitación / activo / resultado). El detalle
   /// se lee de la sesión `chats/{chatId}/gameSessions/{gameSessionId}`.
   bool get isChatGame => this == MessageType.chatGame;
+
+  /// Mensaje de cierre respetuoso (Attra Clear §3). Se renderiza como texto.
+  bool get isClosure => this == MessageType.closure;
 
   bool get isImage => this == MessageType.image;
 

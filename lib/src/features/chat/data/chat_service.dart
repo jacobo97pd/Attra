@@ -310,6 +310,35 @@ class ChatService {
     });
   }
 
+  /// Cierra el chat con elegancia (Attra Clear §3): envía el mensaje de
+  /// despedida [message] y marca el chat como cerrado con [reason]. Devuelve el
+  /// id del mensaje de cierre.
+  Future<String> closeConversation({
+    required String chatId,
+    required String reason,
+    required String message,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('closeConversationGracefully', <String, dynamic>{
+      'chatId': chatId,
+      'reason': reason,
+      'message': message,
+    });
+    return (data['messageId'] as String?) ?? '';
+  }
+
+  /// Attra Clear §6: registra la respuesta al follow-up post-cita. El cierre o
+  /// reporte posterior se encadena con [closeConversation] / reporte normal.
+  Future<void> answerDateFollowUp({
+    required String chatId,
+    required String answer,
+  }) async {
+    await _call('answerDateFollowUp', <String, dynamic>{
+      'chatId': chatId,
+      'answer': answer,
+    });
+  }
+
   Future<void> setTyping(String chatId, bool isTyping) async {
     await _call('setTyping', <String, dynamic>{
       'chatId': chatId,

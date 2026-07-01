@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/app_colors.dart';
 import '../../../theme/theme_controller.dart';
+import '../../anti_ghosting/presentation/busy_mode_sheet.dart';
 import '../../tutorial/presentation/tutorial_screen.dart';
 import '../domain/settings_catalog.dart';
 import '../domain/setting_definition.dart';
@@ -14,12 +16,25 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.controller,
     this.onSetThemeMode,
+    this.busyModeFeatureEnabled = false,
+    this.initialBusyUntil,
+    this.onSetBusyMode,
   });
 
   final SettingsController controller;
 
   /// Cambia el modo de tema (claro/oscuro/sistema). Persiste en ajustes.
   final Future<void> Function(ThemeMode mode)? onSetThemeMode;
+
+  /// Attra Clear §4: muestra la entrada de Modo ocupado si el flag está activo.
+  final bool busyModeFeatureEnabled;
+  final DateTime? initialBusyUntil;
+  final Future<void> Function({
+    required bool enabled,
+    DateTime? until,
+    String reason,
+    bool visibleToMatches,
+  })? onSetBusyMode;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -49,10 +64,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, _) {
+        // Cabeceras fijas: Apariencia (0), Tutorial (1) y, si procede, Modo
+        // ocupado (2). Las secciones del catálogo van detrás.
+        final bool showBusy =
+            widget.busyModeFeatureEnabled && widget.onSetBusyMode != null;
+        final int leading = showBusy ? 3 : 2;
         return ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          // +2 = sección Apariencia (tema) + "Cómo funciona Attra" (tutorial).
-          itemCount: sections.length + 2,
+          itemCount: sections.length + leading,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (BuildContext context, int index) {
             if (index == 0) {
@@ -73,7 +92,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () => TutorialScreen.show(context),
               );
             }
-            final SettingsSection section = sections[index - 2];
+            if (showBusy && index == 2) {
+              return _BusyModeTile(
+                initialUntil: widget.initialBusyUntil,
+                onSetBusyMode: widget.onSetBusyMode!,
+              );
+            }
+            final SettingsSection section = sections[index - leading];
             final bool destructive =
                 section.key == SettingsCatalog.secLifecycle;
             return ListTile(
@@ -100,6 +125,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
+}
+
+/// Attra Clear §4: entrada de Modo ocupado. Autónomo (estado optimista local)
+/// para reflejar el cambio al instante sin depender de recargar la pantalla.
+class _BusyModeTile extends StatefulWidget {
+  const _BusyModeTile({required this.initialUntil, required this.onSetBusyMode});
+
+  final DateTime? initialUntil;
+  final Future<void> Function({
+    required bool enabled,
+    DateTime? until,
+    String reason,
+    bool visibleToMatches,
+  }) onSetBusyMode;
+
+  @override
+  State<_BusyModeTile> createState() => _BusyModeTileState();
+}
+
+class _BusyModeTileState extends State<_BusyModeTile> {
+  DateTime? _until;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Expiración defensiva: si la fecha ya pasó, se considera inactivo.
+    final DateTime? u = widget.initialUntil;
+    _until = (u != null && u.isAfter(DateTime.now())) ? u : null;
+  }
+
+  bool get _active => _until != null;
+
+  Future<void> _toggle() async {
+    if (_busy) return;
+    if (_active) {
+      setState(() => _busy = true);
+      await widget.onSetBusyMode(enabled: false);
+      if (mounted) {
+        setState(() {
+          _until = null;
+          _busy = false;
+        });
+      }
+      return;
+    }
+    final BusyModeChoice? choice = await BusyModeSheet.show(context);
+    if (choice == null || !mounted) return;
+    setState(() => _busy = true);
+    await widget.onSetBusyMode(
+      enabled: true,
+      until: choice.until,
+      visibleToMatches: choice.visibleToMatches,
+    );
+    if (mounted) {
+      setState(() {
+        _until = choice.until;
+        _busy = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String subtitle = _active
+        ? 'Activo hasta ${_fmt(_until!)} · toca para desactivar'
+        : 'Pausa tu actividad y avisa suavemente a tus matches';
+    return ListTile(
+      leading: Icon(Icons.bedtime_outlined,
+          color: _active ? AppColors.attraRed : theme.colorScheme.primary),
+      title: Row(
+        children: <Widget>[
+          const Text('Modo ocupado',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          if (_active) ...<Widget>[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.attraRed.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(99),
+              ),
+              child: const Text('Activo',
+                  style: TextStyle(
+                      color: AppColors.attraRed,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ],
+      ),
+      subtitle: Text(subtitle),
+      trailing: _busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : Icon(_active ? Icons.toggle_on : Icons.chevron_right,
+              color: _active ? AppColors.attraRed : null, size: _active ? 30 : 24),
+      onTap: _busy ? null : _toggle,
+    );
+  }
+
+  static String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
 }
 
 /// Sección "Apariencia": elige Sistema / Claro / Oscuro. Refleja el estado del

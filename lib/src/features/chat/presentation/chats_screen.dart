@@ -10,6 +10,8 @@ import '../../spark/data/spark_service.dart';
 import '../../stories/data/story_service.dart';
 import '../../stories/domain/story.dart';
 import '../../stories/presentation/story_viewer_screen.dart';
+import '../../anti_ghosting/domain/conversation_turn.dart';
+import '../../anti_ghosting/presentation/your_turn_badge.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
@@ -38,7 +40,25 @@ class ChatsScreen extends StatelessWidget {
     this.twoTruthsEnabled = false,
     this.matchReactivationEnabled = false,
     this.chatGameEnabled = false,
+    this.antiGhostingEnabled = false,
+    this.closeGracefullyEnabled = false,
+    this.nudgesEnabled = false,
+    this.dateFollowupEnabled = false,
   });
+
+  /// Attra Clear §1: si está activo, las conversaciones donde te toca responder
+  /// se agrupan arriba en una sección "Tu turno". Default false = comportamiento
+  /// idéntico al anterior.
+  final bool antiGhostingEnabled;
+
+  /// Attra Clear §3: habilita "Cerrar con elegancia" en el menú del chat.
+  final bool closeGracefullyEnabled;
+
+  /// Attra Clear §5: habilita los nudges in-chat.
+  final bool nudgesEnabled;
+
+  /// Attra Clear §6: habilita el follow-up post-cita.
+  final bool dateFollowupEnabled;
 
   final String currentUid;
   final ChatService chatService;
@@ -80,7 +100,8 @@ class ChatsScreen extends StatelessWidget {
       c.lastMessageType == MessageType.voiceNote ||
       c.lastMessageType == MessageType.system ||
       c.lastMessageType == MessageType.doubleAnswer ||
-      c.lastMessageType == MessageType.twoTruths;
+      c.lastMessageType == MessageType.twoTruths ||
+      c.lastMessageType == MessageType.closure;
 
   Future<void> _open(BuildContext context, Chat chat) async {
     final ProfileSummary other =
@@ -106,6 +127,9 @@ class ChatsScreen extends StatelessWidget {
         twoTruthsEnabled: twoTruthsEnabled,
         matchReactivationEnabled: matchReactivationEnabled,
         chatGameEnabled: chatGameEnabled,
+        closeGracefullyEnabled: closeGracefullyEnabled,
+        nudgesEnabled: nudgesEnabled,
+        dateFollowupEnabled: dateFollowupEnabled,
       ),
     ));
   }
@@ -143,7 +167,44 @@ class ChatsScreen extends StatelessWidget {
             all.where((Chat c) => !_isConversation(c)).toList();
         final List<Chat> convos = all.where(_isConversation).toList();
 
+        // Attra Clear §1: separa las conversaciones donde TE TOCA responder.
+        // Orden: "Tu turno" por más antiguo esperando primero; el resto por
+        // último mensaje más reciente. Si el flag está off, no se altera nada.
+        final DateTime now = DateTime.now();
+        final List<Chat> myTurn = <Chat>[];
+        final List<Chat> rest = <Chat>[];
+        if (antiGhostingEnabled) {
+          for (final Chat c in convos) {
+            (c.isMyTurn(currentUid) ? myTurn : rest).add(c);
+          }
+          myTurn.sort((Chat a, Chat b) {
+            final DateTime aw = a.lastMessageAt ?? now;
+            final DateTime bw = b.lastMessageAt ?? now;
+            return aw.compareTo(bw); // más antiguo esperando primero
+          });
+          rest.sort((Chat a, Chat b) {
+            final DateTime aw = a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final DateTime bw = b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bw.compareTo(aw); // más reciente primero
+          });
+        } else {
+          rest.addAll(convos);
+        }
+
         Story? storyFor(Chat c) => storyByOwner[c.otherUid(currentUid)];
+
+        Widget convoRow(Chat c, {bool yourTurn = false}) => _ConversationRow(
+              chat: c,
+              currentUid: currentUid,
+              summaries: summaries,
+              story: storyFor(c),
+              yourTurn: yourTurn,
+              waitingLabel: yourTurn && c.lastMessageAt != null
+                  ? formatWaiting(now.difference(c.lastMessageAt!))
+                  : null,
+              onTap: () => _open(context, c),
+              onOpenStory: (Story s) => _openStory(context, s),
+            );
 
         return ListView(
           children: <Widget>[
@@ -168,24 +229,24 @@ class ChatsScreen extends StatelessWidget {
               ),
               const Divider(height: 24),
             ],
+            if (antiGhostingEnabled && myTurn.isNotEmpty) ...<Widget>[
+              const _SectionTitle('Tu turno'),
+              ...myTurn.map((Chat c) => convoRow(c, yourTurn: true)),
+              const Divider(height: 24),
+            ],
             const _SectionTitle('Conversaciones'),
-            if (convos.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(24),
+            if (rest.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Cuando escribas a un match, la conversación aparecerá aquí.',
+                  antiGhostingEnabled && myTurn.isNotEmpty
+                      ? 'No tienes otras conversaciones activas ahora mismo.'
+                      : 'Cuando escribas a un match, la conversación aparecerá aquí.',
                   textAlign: TextAlign.center,
                 ),
               )
             else
-              ...convos.map((Chat c) => _ConversationRow(
-                    chat: c,
-                    currentUid: currentUid,
-                    summaries: summaries,
-                    story: storyFor(c),
-                    onTap: () => _open(context, c),
-                    onOpenStory: (Story s) => _openStory(context, s),
-                  )),
+              ...rest.map((Chat c) => convoRow(c)),
           ],
         );
       },
@@ -329,6 +390,8 @@ class _ConversationRow extends StatelessWidget {
     required this.onTap,
     this.story,
     this.onOpenStory,
+    this.yourTurn = false,
+    this.waitingLabel,
   });
 
   final Chat chat;
@@ -337,6 +400,10 @@ class _ConversationRow extends StatelessWidget {
   final VoidCallback onTap;
   final Story? story;
   final void Function(Story story)? onOpenStory;
+
+  /// Attra Clear §1: fila de la sección "Tu turno" (muestra el badge).
+  final bool yourTurn;
+  final String? waitingLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -360,14 +427,27 @@ class _ConversationRow extends StatelessWidget {
               style: isUnread
                   ? const TextStyle(fontWeight: FontWeight.bold)
                   : null),
-          subtitle: Text(chat.lastMessage ?? '',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: isUnread
-                  ? TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface)
-                  : null),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (yourTurn) ...<Widget>[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: YourTurnBadge(waitingLabel: waitingLabel),
+                ),
+                const SizedBox(height: 3),
+              ],
+              Text(chat.lastMessage ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: isUnread
+                      ? TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface)
+                      : null),
+            ],
+          ),
           trailing: !isUnread
               ? null
               : unread > 0

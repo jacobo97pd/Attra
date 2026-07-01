@@ -19,6 +19,16 @@ function numberField(data: DocumentData, key: string): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/// Combina "yyyy-MM-dd" + "HH:mm" en un Date. Devuelve null si no es válido.
+function parseDateTime(date: unknown, time: unknown): Date | null {
+  const d = typeof date === "string" ? date.trim() : "";
+  const t = typeof time === "string" ? time.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const hhmm = /^\d{2}:\d{2}$/.test(t) ? t : "00:00";
+  const parsed = new Date(`${d}T${hhmm}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function journeyPatch(
   tx: Transaction,
   matchId: string,
@@ -524,6 +534,109 @@ export const sendDateProposal = onCall({ region: REGION }, async (request) => {
   return { messageId };
 });
 
+const CLOSURE_REASONS = [
+  "no_connection",
+  "different_goals",
+  "not_now",
+  "save_time",
+  "custom",
+];
+const MAX_CLOSURE_LENGTH = 500;
+
+/// closeConversationGracefully (Attra Clear §3): cierra un chat ACTIVO con un
+/// mensaje de despedida respetuoso. Es autoritativo: escribe el mensaje `closure`
+/// y marca el chat `closed` con metadatos (closedBy/Reason/Message) en una única
+/// transacción. Tras cerrar, el chat no admite más mensajes (status != active).
+/// Cuenta positivamente en métricas de fiabilidad (best-effort, §7).
+export const closeConversationGracefully = onCall(
+  { region: REGION },
+  async (request) => {
+    const senderId = requireAuthUid(request.auth);
+    const chatId = requireStringArg(request.data?.chatId, "chatId");
+    const reason = requireStringArg(request.data?.reason, "reason");
+    if (!CLOSURE_REASONS.includes(reason)) {
+      throw new HttpsError("invalid-argument", "Motivo de cierre no válido.");
+    }
+    const message = requireStringArg(request.data?.message, "message").slice(
+      0,
+      MAX_CLOSURE_LENGTH
+    );
+
+    const chatRef = col.chats.doc(chatId);
+    const messageRef = chatRef.collection("messages").doc();
+
+    const messageId = await db.runTransaction(async (tx): Promise<string> => {
+      const chatSnap = await tx.get(chatRef);
+      if (!chatSnap.exists) {
+        throw new HttpsError("not-found", "El chat no existe.");
+      }
+      const chat = chatSnap.data() ?? {};
+      const users: string[] = (chat.users ?? []) as string[];
+      if (!users.includes(senderId)) {
+        throw new HttpsError("permission-denied", "No participas en este chat.");
+      }
+      if ((chat.status ?? "active") !== "active") {
+        throw new HttpsError(
+          "failed-precondition",
+          "Este chat ya no esta disponible."
+        );
+      }
+      const receiverId = users.find((u) => u !== senderId) ?? "";
+      const matchId = (chat.matchId ?? chatId).toString();
+      const now = FieldValue.serverTimestamp();
+      const journey = journeyPatch(
+        tx,
+        matchId,
+        chat.journeyStatus,
+        "archived",
+        now
+      );
+
+      tx.set(messageRef, {
+        senderId,
+        receiverId,
+        type: "closure",
+        text: message,
+        status: "sent",
+        createdAt: now,
+      });
+      tx.update(chatRef, {
+        status: "closed",
+        closedAt: now,
+        closedByUserId: senderId,
+        closedReason: reason,
+        closedMessage: message,
+        lastMessage: message,
+        lastMessageType: "closure",
+        lastMessageSenderId: senderId,
+        lastMessageAt: now,
+        updatedAt: now,
+        realMessageCount: FieldValue.increment(1),
+        ...journey,
+        [`unreadCountByUser.${receiverId}`]: FieldValue.increment(1),
+      });
+      return messageRef.id;
+    });
+
+    // Métrica de fiabilidad (§7): cerrar con respeto suma. Best-effort: nunca
+    // tumba el cierre si falla.
+    await col.users
+      .doc(senderId)
+      .set(
+        {
+          connectionReliabilityStats: {
+            closedChatsRespectfullyCount: FieldValue.increment(1),
+          },
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      )
+      .catch(() => undefined);
+
+    return { messageId };
+  }
+);
+
 /// respondDateProposal: el RECEPTOR responde a una propuesta (accepted |
 /// declined | countered). Solo el receptor (no el proponente) puede responder.
 export const respondDateProposal = onCall({ region: REGION }, async (request) => {
@@ -574,9 +687,18 @@ export const respondDateProposal = onCall({ region: REGION }, async (request) =>
         "date_accepted",
         now
       );
+      // Attra Clear §6: arma el follow-up post-cita. dateScheduledAt = fecha+hora
+      // propuestas (UTC aprox); el cliente muestra "¿Cómo fue la cita?" pasadas
+      // 24h. Si la fecha es inválida, queda null y no hay follow-up automático.
+      const dp = (msg.dateProposal ?? {}) as DocumentData;
+      const scheduledAt = parseDateTime(dp.proposedDate, dp.proposedTime);
       tx.update(chatRef, {
         updatedAt: now,
         ...journey,
+        hasDateProposal: true,
+        dateProposalStatus: "accepted",
+        dateScheduledAt: scheduledAt,
+        dateFollowUpStatus: "pending",
       });
     }
   });

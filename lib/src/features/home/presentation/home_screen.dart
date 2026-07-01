@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../widgets/attra_loader.dart';
 import '../../../widgets/attra_image.dart';
+import '../../anti_ghosting/presentation/reliability_badge.dart';
 import '../../auth/domain/app_user.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_state.dart';
@@ -512,6 +513,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: theme.textTheme.bodyMedium,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
+                      // Attra Clear §8: badge positivo (lo escribe el backend).
+                      if (widget.user?.hasReliabilityBadge ?? false) ...<Widget>[
+                        const SizedBox(height: 6),
+                        const ReliabilityBadge(compact: true),
+                      ],
                     ],
                   ),
                 ),

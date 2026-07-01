@@ -18,6 +18,12 @@ import '../../match/domain/match_journey.dart';
 import '../../match/presentation/date_builder_sheet.dart';
 import '../../match/presentation/icebreaker_sheet.dart';
 import '../../match/presentation/match_journey_card.dart';
+import '../../anti_ghosting/data/anti_ghosting_analytics.dart';
+import '../../anti_ghosting/domain/conversation_turn.dart';
+import '../../anti_ghosting/domain/nudge_tier.dart';
+import '../../anti_ghosting/presentation/anti_ghosting_nudge_card.dart';
+import '../../anti_ghosting/presentation/close_conversation_sheet.dart';
+import '../../anti_ghosting/presentation/date_follow_up_sheet.dart';
 import '../../safety/domain/report.dart';
 import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_entry_card.dart';
@@ -55,6 +61,9 @@ class ChatDetailScreen extends StatefulWidget {
     this.twoTruthsEnabled = false,
     this.matchReactivationEnabled = false,
     this.chatGameEnabled = false,
+    this.closeGracefullyEnabled = false,
+    this.nudgesEnabled = false,
+    this.dateFollowupEnabled = false,
   });
 
   final String chatId;
@@ -89,6 +98,15 @@ class ChatDetailScreen extends StatefulWidget {
   /// "Duelo de Química" (reto de 5 min con resultado IA). Opt-in por flag.
   final bool chatGameEnabled;
 
+  /// Attra Clear §3: muestra "Cerrar conversación" en el menú del chat.
+  final bool closeGracefullyEnabled;
+
+  /// Attra Clear §5: muestra nudges in-chat cuando llevas tiempo sin responder.
+  final bool nudgesEnabled;
+
+  /// Attra Clear §6: muestra el follow-up "¿Cómo fue la cita?" tras una cita.
+  final bool dateFollowupEnabled;
+
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
@@ -119,6 +137,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// Journey derivado del chat (Fase 8) + si el usuario ocultó la card.
   MatchJourney? _journey;
   bool _journeyDismissed = false;
+
+  /// Attra Clear §5: nudge in-chat. Se oculta esta sesión al pulsar "luego" y se
+  /// registra "shown" una sola vez por nivel.
+  bool _nudgeDismissed = false;
+  String? _nudgeShownKey;
+
+  /// Attra Clear §6: follow-up post-cita, ocultable esta sesión.
+  bool _followUpDismissed = false;
+
+  AntiGhostingAnalytics get _antiGhostingAnalytics =>
+      AntiGhostingAnalytics(uid: widget.currentUid, metrics: widget.metrics);
 
   Duration _recordElapsed = Duration.zero;
   Timer? _recordTimer;
@@ -845,9 +874,159 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           if (mounted) Navigator.of(context).pop();
         }
         break;
+      case 'close':
+        await _closeGracefully();
+        break;
       case 'report':
         await _report();
         break;
+    }
+  }
+
+  /// Attra Clear §6: card del follow-up post-cita. Aparece si la cita fue
+  /// aceptada, pasaron ≥24h y el follow-up sigue pendiente.
+  Widget _buildFollowUp(Chat? chat, bool canSend) {
+    if (!widget.dateFollowupEnabled ||
+        _followUpDismissed ||
+        chat == null ||
+        !canSend ||
+        !chat.isDateFollowUpDue()) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.celebration_rounded,
+              size: 20, color: AppColors.gold),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('¿Cómo fue tu cita con ${widget.other.displayName}?',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          TextButton(
+            onPressed: () => _openFollowUp(canSend),
+            child: const Text('Responder'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openFollowUp(bool canSend) async {
+    final DateFollowUpAnswer? answer = await DateFollowUpSheet.show(context);
+    if (answer == null || !mounted) return;
+    setState(() => _followUpDismissed = true);
+    _antiGhostingAnalytics.metrics?.log(
+      AntiGhostingAnalytics.dateFollowupAnswered,
+      uid: widget.currentUid,
+      meta: <String, dynamic>{'answer': answer.wire},
+    );
+    try {
+      await widget.chatService
+          .answerDateFollowUp(chatId: widget.chatId, answer: answer.wire);
+    } catch (_) {/* best-effort: el estado se reintenta en la próxima */}
+    if (!mounted) return;
+    switch (answer) {
+      case DateFollowUpAnswer.keepTalking:
+        _snack('¡Genial! Seguid hablando 💬');
+        break;
+      case DateFollowUpAnswer.noConnection:
+      case DateFollowUpAnswer.preferEnd:
+        if (widget.closeGracefullyEnabled) {
+          await _closeGracefully();
+        }
+        break;
+      case DateFollowUpAnswer.uncomfortable:
+      case DateFollowUpAnswer.report:
+        await _report();
+        break;
+    }
+  }
+
+  /// Attra Clear §5: tarjeta de nudge in-chat. Solo cuando es TU turno y la
+  /// espera supera el primer umbral. Se puede ocultar esta sesión.
+  Widget _buildNudge(Chat? chat, bool canSend) {
+    if (!widget.nudgesEnabled ||
+        _nudgeDismissed ||
+        chat == null ||
+        !canSend ||
+        chat.lastMessageAt == null ||
+        !chat.isMyTurn(widget.currentUid)) {
+      return const SizedBox.shrink();
+    }
+    final Duration waited = DateTime.now().difference(chat.lastMessageAt!);
+    final NudgeTier tier = nudgeTierForDuration(waited);
+    if (!tier.isActive) return const SizedBox.shrink();
+
+    // "Shown" una sola vez por nivel (evita spam de eventos en cada rebuild).
+    final String key = '${chat.id}:${tier.name}';
+    if (_nudgeShownKey != key) {
+      _nudgeShownKey = key;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _antiGhostingAnalytics
+            .logNudgeShown(tier: tier.name, hoursWaiting: waited.inHours);
+      });
+    }
+
+    final bool canPropose = canSend;
+    return AntiGhostingNudgeCard(
+      tier: tier,
+      canProposePlan: canPropose,
+      canClose: widget.closeGracefullyEnabled,
+      onAction: (NudgeAction action) =>
+          _onNudgeAction(action, tier, canSend),
+    );
+  }
+
+  void _onNudgeAction(NudgeAction action, NudgeTier tier, bool canSend) {
+    _antiGhostingAnalytics
+        .logNudgeAction(tier: tier.name, action: action.name);
+    switch (action) {
+      case NudgeAction.reply:
+        setState(() => _nudgeDismissed = true);
+        _inputFocus.requestFocus();
+        break;
+      case NudgeAction.proposePlan:
+        setState(() => _nudgeDismissed = true);
+        _proposePlanFlow(canSend);
+        break;
+      case NudgeAction.closeGracefully:
+        _closeGracefully();
+        break;
+      case NudgeAction.remindLater:
+        setState(() => _nudgeDismissed = true);
+        break;
+    }
+  }
+
+  /// Attra Clear §3: abre el sheet de cierre con elegancia y, si el usuario
+  /// confirma, envía el mensaje de despedida y cierra el chat (Cloud Function).
+  Future<void> _closeGracefully() async {
+    final ClosureChoice? choice = await CloseConversationSheet.show(
+      context,
+      otherName: widget.other.displayName,
+    );
+    if (choice == null || !mounted) return;
+    try {
+      await widget.chatService.closeConversation(
+        chatId: widget.chatId,
+        reason: choice.reason,
+        message: choice.message,
+      );
+      if (mounted) _snack('Conversación cerrada con respeto.');
+    } on ChatServiceException catch (e) {
+      _snack(e.code == 'failed-precondition'
+          ? 'Esta conversación ya no está disponible.'
+          : 'No se pudo cerrar la conversación.');
+    } catch (_) {
+      _snack('No se pudo cerrar la conversación.');
     }
   }
 
@@ -942,14 +1121,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         actions: <Widget>[
           PopupMenuButton<String>(
             onSelected: _onMenu,
-            itemBuilder: (BuildContext context) =>
-                const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
                   value: 'unread', child: Text('Marcar como no leído')),
-              PopupMenuItem<String>(
+              if (widget.closeGracefullyEnabled)
+                const PopupMenuItem<String>(
+                    value: 'close', child: Text('Cerrar conversación')),
+              const PopupMenuItem<String>(
                   value: 'unmatch', child: Text('Deshacer match')),
-              PopupMenuItem<String>(value: 'block', child: Text('Bloquear')),
-              PopupMenuItem<String>(value: 'report', child: Text('Reportar')),
+              const PopupMenuItem<String>(
+                  value: 'block', child: Text('Bloquear')),
+              const PopupMenuItem<String>(
+                  value: 'report', child: Text('Reportar')),
             ],
           ),
         ],
@@ -999,11 +1182,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   onReport: () => _report(),
                   onUseQuestion: _useSparkQuestion,
                 ),
+              // Attra Clear §6: follow-up post-cita "¿Cómo fue la cita?".
+              _buildFollowUp(chat, canSend),
+              // Attra Clear §5: nudge in-chat si llevas tiempo sin responder.
+              _buildNudge(chat, canSend),
               Expanded(
                   child: _messageList(persistedStatus: chat?.journeyStatus)),
               if (_uploadingMedia) const LinearProgressIndicator(minHeight: 2),
               if (!canSend)
-                _ClosedBanner(status: chat?.status)
+                _ClosedBanner(chat: chat, currentUid: widget.currentUid)
               else if (_recording)
                 _RecordingBar(
                   elapsed: _recordElapsed,
@@ -2509,22 +2696,46 @@ class _BombImageViewerState extends State<_BombImageViewer> {
 }
 
 class _ClosedBanner extends StatelessWidget {
-  const _ClosedBanner({required this.status});
+  const _ClosedBanner({required this.chat, required this.currentUid});
 
-  final ChatStatus? status;
+  final Chat? chat;
+  final String currentUid;
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    // Attra Clear §3: si fue un cierre con elegancia, etiqueta respetuosa.
+    final bool graceful = chat?.isGracefullyClosed ?? false;
+    final String label;
+    if (graceful) {
+      label = (chat!.closedByMe(currentUid))
+          ? 'Cerraste esta conversación con respeto'
+          : 'Conversación cerrada con respeto';
+    } else {
+      label = 'Este chat ya no está disponible';
+    }
     return SafeArea(
       top: false,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: Text(
-          'Este chat ya no está disponible',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Theme.of(context).colorScheme.outline),
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            if (graceful) ...<Widget>[
+              Icon(Icons.verified_outlined,
+                  size: 16, color: theme.colorScheme.outline),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: theme.colorScheme.outline),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -29,7 +29,13 @@ export {
   openBombImage,
   sendDateProposal,
   respondDateProposal,
+  closeConversationGracefully,
 } from "./chat";
+export {
+  sendPendingReplyNudges,
+  answerDateFollowUp,
+  recomputeReliabilityScores,
+} from "./antiGhosting";
 export { unmatch, blockUser, reportUser } from "./safety";
 export { grantMonthlyAttras, runMonthlyAttraGrant } from "./grants";
 export { onUserWrittenSyncDiscovery, backfillDiscovery } from "./discovery";

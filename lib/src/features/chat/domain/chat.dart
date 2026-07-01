@@ -47,6 +47,15 @@ class Chat {
     this.lastMessageAt,
     this.createdAt,
     this.updatedAt,
+    this.closedAt,
+    this.closedByUserId,
+    this.closedReason,
+    this.closedMessage,
+    this.hasDateProposal = false,
+    this.dateProposalStatus,
+    this.dateScheduledAt,
+    this.dateFollowUpStatus,
+    this.dateFollowUpAnswer,
   });
 
   final String id;
@@ -67,6 +76,36 @@ class Chat {
   final DateTime? lastMessageAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  // Attra Clear §3: cierre con elegancia. Solo presentes si status == closed.
+  final DateTime? closedAt;
+  final String? closedByUserId;
+  final String? closedReason;
+  final String? closedMessage;
+
+  // Attra Clear §6: follow-up post-cita.
+  final bool hasDateProposal;
+  final String? dateProposalStatus;
+  final DateTime? dateScheduledAt;
+  final String? dateFollowUpStatus;
+  final String? dateFollowUpAnswer;
+
+  /// True si toca mostrar "¿Cómo fue la cita?": cita aceptada, fecha conocida,
+  /// follow-up pendiente y han pasado ≥24h desde la cita.
+  bool isDateFollowUpDue([DateTime? now]) {
+    if (dateFollowUpStatus != 'pending' || dateScheduledAt == null) {
+      return false;
+    }
+    final DateTime ref = now ?? DateTime.now();
+    return ref.isAfter(dateScheduledAt!.add(const Duration(hours: 24)));
+  }
+
+  /// True si fue cerrado con elegancia (cierre respetuoso) por algún usuario.
+  bool get isGracefullyClosed =>
+      status == ChatStatus.closed && closedByUserId != null;
+
+  /// True si el cierre lo hizo [uid] (para mensajes "tú cerraste" vs "X cerró").
+  bool closedByMe(String uid) => closedByUserId == uid;
 
   String otherUid(String uid) =>
       users.firstWhere((String u) => u != uid, orElse: () => '');
@@ -104,6 +143,15 @@ class Chat {
       lastMessageAt: _asDate(map['lastMessageAt']),
       createdAt: _asDate(map['createdAt']),
       updatedAt: _asDate(map['updatedAt']),
+      closedAt: _asDate(map['closedAt']),
+      closedByUserId: map['closedByUserId'] as String?,
+      closedReason: map['closedReason'] as String?,
+      closedMessage: map['closedMessage'] as String?,
+      hasDateProposal: (map['hasDateProposal'] as bool?) ?? false,
+      dateProposalStatus: map['dateProposalStatus'] as String?,
+      dateScheduledAt: _asDate(map['dateScheduledAt']),
+      dateFollowUpStatus: map['dateFollowUpStatus'] as String?,
+      dateFollowUpAnswer: map['dateFollowUpAnswer'] as String?,
     );
   }
 
