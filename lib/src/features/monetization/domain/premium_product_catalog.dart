@@ -89,7 +89,7 @@ class PremiumProductCatalog {
       badge: 'Ahorro',
     ),
     PremiumProductDefinition(
-      id: 'attra_swipe_25',
+      id: 'attra_swipes_25',
       type: PremiumProductType.swipePack,
       title: '25 Attra Swipes',
       description: 'Likes extra cuando se acaban los del día.',
