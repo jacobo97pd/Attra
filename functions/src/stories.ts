@@ -15,75 +15,173 @@ import {
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 15;
 const FREE_MAX_ACTIVE_STORIES = 1;
+
+type StoryMediaType = "video" | "image";
+type StoryOverlayType = "text" | "sticker";
+type StoryOverlayAlign = "left" | "center" | "right";
+
+type StoryOverlay = {
+  type: StoryOverlayType;
+  text: string;
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  color: number;
+  background: boolean;
+  align: StoryOverlayAlign;
+};
 
 function bucket() {
   return getStorage().bucket(STORAGE_BUCKET);
 }
 
-/// createStory: el cliente ya subio video+thumb a Storage (ruta segura por uid);
-/// aqui se valida y se crea el doc autoritativo. Verifica metadata real del
-/// objeto (size/contentType), limite de 1 story activa free y caduca en 24h.
+function optionalString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sanitizeOverlays(value: unknown): StoryOverlay[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, 12)
+    .map((raw): StoryOverlay | null => {
+      if (!raw || typeof raw !== "object") return null;
+      const data = raw as Record<string, unknown>;
+      const text = optionalString(data.text).slice(0, 80);
+      if (!text) return null;
+      const type: StoryOverlayType =
+        data.type === "sticker" ? "sticker" : "text";
+      const align: StoryOverlayAlign =
+        data.align === "left" || data.align === "right" ? data.align : "center";
+      const color = Math.round(finiteNumber(data.color, 0xffffffff));
+      return {
+        type,
+        text,
+        x: clamp(finiteNumber(data.x, 0.5), 0, 1),
+        y: clamp(finiteNumber(data.y, 0.5), 0, 1),
+        scale: clamp(finiteNumber(data.scale, 1), 0.4, 3),
+        rotation: clamp(finiteNumber(data.rotation, 0), -6.2832, 6.2832),
+        color: clamp(color, 0, 0xffffffff),
+        background: data.background === true,
+        align,
+      };
+    })
+    .filter((overlay): overlay is StoryOverlay => overlay !== null);
+}
+
+function assertPathBelongsToStory(path: string, prefix: string): void {
+  if (!path.startsWith(prefix)) {
+    throw new HttpsError("permission-denied", "Ruta de archivo no valida.");
+  }
+}
+
+async function validateStorageObject(params: {
+  path: string;
+  expectedMimePrefix: "video/" | "image/";
+  maxBytes: number;
+  missingMessage: string;
+  invalidMimeMessage: string;
+  invalidSizeMessage: string;
+}): Promise<void> {
+  const file = bucket().file(params.path);
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new HttpsError("failed-precondition", params.missingMessage);
+  }
+  const [meta] = await file.getMetadata();
+  const mime = (meta.contentType ?? "").toString();
+  const size = Number(meta.size ?? 0);
+  if (!mime.startsWith(params.expectedMimePrefix)) {
+    throw new HttpsError("invalid-argument", params.invalidMimeMessage);
+  }
+  if (size <= 0 || size > params.maxBytes) {
+    throw new HttpsError("invalid-argument", params.invalidSizeMessage);
+  }
+}
+
 export const createStory = onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request.auth);
   const storyId = requireStringArg(request.data?.storyId, "storyId");
-  const videoPath = requireStringArg(request.data?.videoPath, "videoPath");
-  const thumbnailPath = requireStringArg(request.data?.thumbnailPath, "thumbnailPath");
-  // downloadUrls tokenizadas que el cliente obtuvo de Storage (getDownloadURL).
-  const videoUrl = requireStringArg(request.data?.videoUrl, "videoUrl");
-  const thumbnailUrl =
-    typeof request.data?.thumbnailUrl === "string" ? request.data.thumbnailUrl : "";
+  const mediaType: StoryMediaType =
+    request.data?.mediaType === "image" ? "image" : "video";
+
+  const videoPath = optionalString(request.data?.videoPath);
+  const videoUrl = optionalString(request.data?.videoUrl);
+  const imagePath = optionalString(request.data?.imagePath);
+  const imageUrl = optionalString(request.data?.imageUrl);
+  const thumbnailPath = optionalString(request.data?.thumbnailPath);
+  const thumbnailUrl = optionalString(request.data?.thumbnailUrl);
   const visibility =
     request.data?.visibility === "matches" ? "matches" : "discovery";
   const caption =
     typeof request.data?.caption === "string"
       ? (request.data.caption as string).slice(0, 200)
       : "";
-  // Posición normalizada del texto (editor). Se acota a [0,1] con fallback.
-  const unit = (v: unknown, d: number): number =>
-    typeof v === "number" && Number.isFinite(v)
-      ? Math.min(1, Math.max(0, v))
-      : d;
-  const captionX = unit(request.data?.captionX, 0.5);
-  const captionY = unit(request.data?.captionY, 0.85);
+  const captionX = clamp(finiteNumber(request.data?.captionX, 0.5), 0, 1);
+  const captionY = clamp(finiteNumber(request.data?.captionY, 0.85), 0, 1);
+  const overlays = sanitizeOverlays(request.data?.overlays);
   const durationSeconds = Number.isFinite(request.data?.durationSeconds)
     ? Math.round(Number(request.data.durationSeconds))
-    : 0;
+    : mediaType === "image"
+      ? 5
+      : 0;
 
-  // Los paths DEBEN pertenecer a este usuario + esta story.
-  const prefix = `stories/${uid}/${storyId}/`;
-  if (!videoPath.startsWith(prefix) || !thumbnailPath.startsWith(prefix)) {
-    throw new HttpsError("permission-denied", "Ruta de archivo no válida.");
-  }
   if (durationSeconds > MAX_DURATION_SECONDS) {
-    throw new HttpsError("invalid-argument", "El vídeo supera la duración máxima.");
+    throw new HttpsError(
+      "invalid-argument",
+      "La story supera la duracion maxima.",
+    );
   }
 
-  // Metadata REAL del vídeo (no confiamos en el cliente).
-  const videoFile = bucket().file(videoPath);
-  const [vExists] = await videoFile.exists();
-  if (!vExists) {
-    throw new HttpsError("failed-precondition", "El vídeo no existe en Storage.");
-  }
-  const [vMeta] = await videoFile.getMetadata();
-  const vMime = (vMeta.contentType ?? "").toString();
-  const vSize = Number(vMeta.size ?? 0);
-  if (!vMime.startsWith("video/")) {
-    throw new HttpsError("invalid-argument", "El archivo no es un vídeo.");
-  }
-  if (vSize <= 0 || vSize > MAX_VIDEO_BYTES) {
-    throw new HttpsError("invalid-argument", "El vídeo supera el tamaño permitido.");
+  const prefix = `stories/${uid}/${storyId}/`;
+  if (mediaType === "video") {
+    if (!videoPath || !videoUrl) {
+      throw new HttpsError("invalid-argument", "Falta el video de la story.");
+    }
+    assertPathBelongsToStory(videoPath, prefix);
+    if (thumbnailPath) assertPathBelongsToStory(thumbnailPath, prefix);
+    await validateStorageObject({
+      path: videoPath,
+      expectedMimePrefix: "video/",
+      maxBytes: MAX_VIDEO_BYTES,
+      missingMessage: "El video no existe en Storage.",
+      invalidMimeMessage: "El archivo no es un video.",
+      invalidSizeMessage: "El video supera el tamano permitido.",
+    });
+  } else {
+    if (!imagePath || !imageUrl) {
+      throw new HttpsError("invalid-argument", "Falta la foto de la story.");
+    }
+    assertPathBelongsToStory(imagePath, prefix);
+    if (thumbnailPath) assertPathBelongsToStory(thumbnailPath, prefix);
+    await validateStorageObject({
+      path: imagePath,
+      expectedMimePrefix: "image/",
+      maxBytes: MAX_IMAGE_BYTES,
+      missingMessage: "La foto no existe en Storage.",
+      invalidMimeMessage: "El archivo no es una imagen.",
+      invalidSizeMessage: "La foto supera el tamano permitido.",
+    });
   }
 
-  // Limite free: 1 story activa.
   const now = Date.now();
   const activeSnap = await col.stories
     .where("ownerUid", "==", uid)
     .where("status", "==", "active")
     .get();
   const activeLive = activeSnap.docs.filter(
-    (d) => (d.data().expiresAt?.toMillis?.() ?? 0) > now
+    (d) => (d.data().expiresAt?.toMillis?.() ?? 0) > now,
   );
   if (activeLive.length >= FREE_MAX_ACTIVE_STORIES) {
     throw new HttpsError("failed-precondition", "Ya tienes una story activa.");
@@ -97,13 +195,17 @@ export const createStory = onCall({ region: REGION }, async (request) => {
     storyId,
     ownerUid: uid,
     displayName,
+    mediaType,
     videoPath,
-    thumbnailPath,
     videoUrl,
+    imagePath,
+    imageUrl,
+    thumbnailPath,
     thumbnailUrl,
     caption,
     captionX,
     captionY,
+    overlays,
     status: "active",
     visibility,
     durationSeconds,
@@ -116,8 +218,6 @@ export const createStory = onCall({ region: REGION }, async (request) => {
   return { storyId, expiresAt: expiresAt.toISOString() };
 });
 
-/// viewStory: registra una vista (idempotente, una por viewer) e incrementa el
-/// contador una sola vez.
 export const viewStory = onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request.auth);
   const storyId = requireStringArg(request.data?.storyId, "storyId");
@@ -125,18 +225,20 @@ export const viewStory = onCall({ region: REGION }, async (request) => {
   const viewRef = storyRef.collection("views").doc(uid);
 
   await db.runTransaction(async (tx) => {
-    const [storySnap, viewSnap] = await Promise.all([tx.get(storyRef), tx.get(viewRef)]);
-    if (!storySnap.exists) throw new HttpsError("not-found", "La story no existe.");
-    if (viewSnap.exists) return; // ya vista
-    if (storySnap.data()?.ownerUid === uid) return; // el dueño no cuenta
+    const [storySnap, viewSnap] = await Promise.all([
+      tx.get(storyRef),
+      tx.get(viewRef),
+    ]);
+    if (!storySnap.exists)
+      throw new HttpsError("not-found", "La story no existe.");
+    if (viewSnap.exists) return;
+    if (storySnap.data()?.ownerUid === uid) return;
     tx.set(viewRef, { viewerUid: uid, viewedAt: FieldValue.serverTimestamp() });
     tx.update(storyRef, { viewsCount: FieldValue.increment(1) });
   });
   return { ok: true };
 });
 
-/// replyToStory: si hay match activo, manda mensaje al chat; si no, crea un like
-/// contextual (con origen story) que puede generar match si es reciproco.
 export const replyToStory = onCall({ region: REGION }, async (request) => {
   const fromUid = requireAuthUid(request.auth);
   const storyId = requireStringArg(request.data?.storyId, "storyId");
@@ -146,13 +248,20 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
   const asAttra = request.data?.asAttra === true;
 
   const storySnap = await col.stories.doc(storyId).get();
-  if (!storySnap.exists) throw new HttpsError("not-found", "La story no existe.");
+  if (!storySnap.exists)
+    throw new HttpsError("not-found", "La story no existe.");
   const toUid = (storySnap.data()?.ownerUid ?? "") as string;
   if (!toUid || toUid === fromUid) {
-    throw new HttpsError("invalid-argument", "No puedes responder a tu propia story.");
+    throw new HttpsError(
+      "invalid-argument",
+      "No puedes responder a tu propia story.",
+    );
   }
   if (await existsBlockBetween(fromUid, toUid)) {
-    throw new HttpsError("permission-denied", "No puedes interactuar con este perfil.");
+    throw new HttpsError(
+      "permission-denied",
+      "No puedes interactuar con este perfil.",
+    );
   }
 
   const chatId = pairId(fromUid, toUid);
@@ -162,31 +271,31 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
       chatSnap.exists && (chatSnap.data()?.status ?? "active") === "active";
 
     if (chatActive) {
-      // Hay match: el reply va al chat como mensaje.
       const now = FieldValue.serverTimestamp();
       const msgRef = col.chats.doc(chatId).collection("messages").doc();
       tx.set(msgRef, {
         senderId: fromUid,
         receiverId: toUid,
         type: "text",
-        text: text.length > 0 ? text : "Respondió a tu story",
+        text: text.length > 0 ? text : "Respondio a tu story",
         status: "sent",
         relatedStoryId: storyId,
         createdAt: now,
       });
       tx.update(col.chats.doc(chatId), {
-        lastMessage: text.length > 0 ? text : "Respondió a tu story",
+        lastMessage: text.length > 0 ? text : "Respondio a tu story",
         lastMessageType: "text",
         lastMessageSenderId: fromUid,
         lastMessageAt: now,
         updatedAt: now,
         [`unreadCountByUser.${toUid}`]: FieldValue.increment(1),
       });
-      tx.update(col.stories.doc(storyId), { repliesCount: FieldValue.increment(1) });
+      tx.update(col.stories.doc(storyId), {
+        repliesCount: FieldValue.increment(1),
+      });
       return { outcome: "message", chatId };
     }
 
-    // Sin match: like contextual con origen story.
     const likeRef = col.likes.doc(directedId(fromUid, toUid));
     const invSnap = await tx.get(col.likes.doc(directedId(toUid, fromUid)));
     tx.set(
@@ -201,9 +310,11 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
         commentText: text.length > 0 ? text : null,
         createdAt: FieldValue.serverTimestamp(),
       },
-      { merge: true }
+      { merge: true },
     );
-    tx.update(col.stories.doc(storyId), { repliesCount: FieldValue.increment(1) });
+    tx.update(col.stories.doc(storyId), {
+      repliesCount: FieldValue.increment(1),
+    });
 
     const invActive =
       invSnap.exists && (invSnap.data()?.status ?? "active") !== "rejected";
@@ -229,7 +340,6 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
   return result;
 });
 
-/// deleteStory: solo el dueño. Borra ficheros de Storage y marca deleted.
 export const deleteStory = onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request.auth);
   const storyId = requireStringArg(request.data?.storyId, "storyId");
@@ -239,22 +349,36 @@ export const deleteStory = onCall({ region: REGION }, async (request) => {
   if (snap.data()?.ownerUid !== uid) {
     throw new HttpsError("permission-denied", "No es tu story.");
   }
-  await deleteStoryFiles(snap.data()?.videoPath, snap.data()?.thumbnailPath);
-  await storyRef.update({ status: "deleted", updatedAt: FieldValue.serverTimestamp() });
+  await deleteStoryFiles(
+    snap.data()?.videoPath,
+    snap.data()?.thumbnailPath,
+    snap.data()?.imagePath,
+  );
+  await storyRef.update({
+    status: "deleted",
+    updatedAt: FieldValue.serverTimestamp(),
+  });
   return { ok: true };
 });
 
-async function deleteStoryFiles(videoPath?: unknown, thumbnailPath?: unknown): Promise<void> {
-  const paths = [videoPath, thumbnailPath].filter(
-    (p): p is string => typeof p === "string" && p.length > 0
+async function deleteStoryFiles(...paths: unknown[]): Promise<void> {
+  const unique = Array.from(
+    new Set(
+      paths.filter(
+        (p): p is string => typeof p === "string" && p.trim().length > 0,
+      ),
+    ),
   );
   await Promise.all(
-    paths.map((p) => bucket().file(p).delete().catch(() => undefined))
+    unique.map((p) =>
+      bucket()
+        .file(p)
+        .delete()
+        .catch(() => undefined),
+    ),
   );
 }
 
-/// cleanupExpiredStories: cada hora marca expired las caducadas y borra sus
-/// ficheros de Storage. Requiere Blaze (Cloud Scheduler).
 export const cleanupExpiredStories = onSchedule(
   { schedule: "every 60 minutes", region: REGION },
   async () => {
@@ -265,8 +389,15 @@ export const cleanupExpiredStories = onSchedule(
       .limit(300)
       .get();
     for (const doc of snap.docs) {
-      await deleteStoryFiles(doc.data().videoPath, doc.data().thumbnailPath);
-      await doc.ref.update({ status: "expired", updatedAt: FieldValue.serverTimestamp() });
+      await deleteStoryFiles(
+        doc.data().videoPath,
+        doc.data().thumbnailPath,
+        doc.data().imagePath,
+      );
+      await doc.ref.update({
+        status: "expired",
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     }
-  }
+  },
 );

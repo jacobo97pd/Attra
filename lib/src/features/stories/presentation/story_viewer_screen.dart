@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -33,9 +36,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   final FocusNode _replyFocus = FocusNode();
   late int _index;
   VideoPlayerController? _controller;
+  Timer? _imageTimer;
+  Duration _imageElapsed = Duration.zero;
+  Duration _imageDuration = const Duration(seconds: 5);
+  DateTime? _lastImageTick;
   bool _sending = false;
   bool _paused = false;
-  String? _videoError;
+  String? _mediaError;
 
   /// storyId -> 'like' | 'attra' (reacción ya enviada esta sesión).
   final Map<String, String> _reactions = <String, String>{};
@@ -54,22 +61,43 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   void dispose() {
     _reply.dispose();
     _replyFocus.dispose();
+    _imageTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    _imageTimer?.cancel();
     _controller?.dispose();
+    _controller = null;
     setState(() {
-      _videoError = null;
+      _mediaError = null;
       _paused = false;
+      _imageElapsed = Duration.zero;
+      _lastImageTick = null;
     });
     final Story s = _story;
     if (!_isMine) {
       widget.storyService.viewStory(s.storyId).catchError((_) {});
     }
+    if (s.isImage) {
+      if (s.imageUrl.isEmpty) {
+        setState(() => _mediaError = 'La story no tiene imagen.');
+        return;
+      }
+      _imageDuration = Duration(
+        seconds: s.durationSeconds > 0 ? s.durationSeconds : 5,
+      );
+      _lastImageTick = DateTime.now();
+      _imageTimer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (_) => _onImageTick(),
+      );
+      setState(() {});
+      return;
+    }
     if (s.videoUrl.isEmpty) {
-      setState(() => _videoError = 'La story no tiene vídeo.');
+      setState(() => _mediaError = 'La story no tiene video.');
       return;
     }
     final VideoPlayerController c =
@@ -85,7 +113,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       setState(() {});
     } catch (e) {
       if (mounted) {
-        setState(() => _videoError = 'No se pudo reproducir el vídeo.');
+        setState(() => _mediaError = 'No se pudo reproducir el video.');
       }
     }
   }
@@ -98,6 +126,21 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         !_paused &&
         c.value.position >= c.value.duration &&
         c.value.duration > Duration.zero) {
+      _next();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _onImageTick() {
+    if (!mounted || !_story.isImage) return;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastImageTick;
+    if (last != null && !_paused) {
+      _imageElapsed += now.difference(last);
+    }
+    _lastImageTick = now;
+    if (_imageElapsed >= _imageDuration) {
       _next();
     } else {
       setState(() {});
@@ -126,7 +169,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   void _resume() {
-    if (_videoError != null) return;
+    if (_mediaError != null) return;
+    _lastImageTick = DateTime.now();
     _controller?.play();
     setState(() => _paused = false);
   }
@@ -141,8 +185,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       _reactions[id] = asAttra ? 'attra' : 'like';
     });
     try {
-      final StoryReplyResult r = await widget.storyService
-          .replyToStory(id, asAttra: asAttra);
+      final StoryReplyResult r =
+          await widget.storyService.replyToStory(id, asAttra: asAttra);
       if (!mounted) return;
       _snack(switch (r.outcome) {
         'matched' => '¡Match! Ya podéis chatear 🎉',
@@ -194,12 +238,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   @override
   Widget build(BuildContext context) {
     final VideoPlayerController? c = _controller;
-    final double progress = (c != null &&
-            c.value.isInitialized &&
-            c.value.duration > Duration.zero)
-        ? (c.value.position.inMilliseconds / c.value.duration.inMilliseconds)
-            .clamp(0.0, 1.0)
-        : 0.0;
+    final double progress = _story.isImage
+        ? (_imageDuration > Duration.zero
+            ? (_imageElapsed.inMilliseconds / _imageDuration.inMilliseconds)
+                .clamp(0.0, 1.0)
+            : 0.0)
+        : (c != null &&
+                c.value.isInitialized &&
+                c.value.duration > Duration.zero)
+            ? (c.value.position.inMilliseconds /
+                    c.value.duration.inMilliseconds)
+                .clamp(0.0, 1.0)
+            : 0.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -208,14 +258,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         fit: StackFit.expand,
         children: <Widget>[
           // Vídeo a pantalla completa (cover) con zonas de toque.
-          Positioned.fill(child: _videoLayer(c)),
+          Positioned.fill(child: _mediaLayer(c)),
 
           // Degradados superior e inferior para legibilidad.
           const _Scrim(alignment: Alignment.topCenter),
           const _Scrim(alignment: Alignment.bottomCenter),
 
           // Texto superpuesto en su posición guardada (editor tipo Instagram).
-          if (_story.caption.isNotEmpty) _captionOverlay(),
+          if (_story.visualOverlays.isNotEmpty) _overlaysLayer(),
 
           SafeArea(
             child: Column(
@@ -239,7 +289,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     );
   }
 
-  Widget _videoLayer(VideoPlayerController? c) {
+  Widget _mediaLayer(VideoPlayerController? c) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapUp: (TapUpDetails d) {
@@ -252,35 +302,50 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       },
       onLongPressStart: (_) => _pause(),
       onLongPressEnd: (_) => _resume(),
-      child: _videoError != null
+      child: _mediaError != null
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    const Icon(Icons.videocam_off_outlined,
+                    const Icon(Icons.hide_image_outlined,
                         color: Colors.white70, size: 48),
                     const SizedBox(height: 12),
-                    Text(_videoError!,
+                    Text(_mediaError!,
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Colors.white70)),
                   ],
                 ),
               ),
             )
-          : (c != null && c.value.isInitialized
-              ? FittedBox(
+          : (_story.isImage
+              ? CachedNetworkImage(
+                  imageUrl: _story.imageUrl,
                   fit: BoxFit.cover,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(
-                    width: c.value.size.width,
-                    height: c.value.size.height,
-                    child: VideoPlayer(c),
+                  placeholder: (BuildContext context, String url) =>
+                      const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget:
+                      (BuildContext context, String url, Object error) =>
+                          const Center(
+                    child: Icon(Icons.broken_image_outlined,
+                        color: Colors.white70, size: 48),
                   ),
                 )
-              : const Center(
-                  child: CircularProgressIndicator(color: Colors.white))),
+              : c != null && c.value.isInitialized
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox(
+                        width: c.value.size.width,
+                        height: c.value.size.height,
+                        child: VideoPlayer(c),
+                      ),
+                    )
+                  : const Center(
+                      child: CircularProgressIndicator(color: Colors.white))),
     );
   }
 
@@ -366,29 +431,17 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   /// Texto en su posición normalizada (misma referencia que el editor: sobre
   /// el vídeo a pantalla completa).
-  Widget _captionOverlay() {
+  Widget _overlaysLayer() {
     final Size size = MediaQuery.of(context).size;
     final double w = size.width;
     final double h = size.height;
-    return Positioned(
-      left: (_story.captionX * w) - w * 0.42,
-      top: (_story.captionY * h) - 22,
-      width: w * 0.84,
-      child: IgnorePointer(
-        child: Text(
-          _story.caption,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            height: 1.2,
-            shadows: <Shadow>[
-              Shadow(blurRadius: 8, color: Colors.black87),
-              Shadow(blurRadius: 2, color: Colors.black),
-            ],
-          ),
-        ),
+    return IgnorePointer(
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          for (final StoryOverlay overlay in _story.visualOverlays)
+            _StoryOverlayView(overlay: overlay, canvasSize: Size(w, h)),
+        ],
       ),
     );
   }
@@ -487,6 +540,82 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     } catch (_) {
       if (mounted) _snack('No se pudo borrar la story.');
     }
+  }
+}
+
+class _StoryOverlayView extends StatelessWidget {
+  const _StoryOverlayView({required this.overlay, required this.canvasSize});
+
+  final StoryOverlay overlay;
+  final Size canvasSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final double width = overlay.type == StoryOverlayType.sticker ? 120 : 240;
+    final double height = overlay.type == StoryOverlayType.sticker ? 90 : 92;
+    return Positioned(
+      left: overlay.x * canvasSize.width - width / 2,
+      top: overlay.y * canvasSize.height - height / 2,
+      width: width,
+      height: height,
+      child: Transform.rotate(
+        angle: overlay.rotation,
+        child: Transform.scale(
+          scale: overlay.scale,
+          child: _StoryOverlayContent(overlay: overlay),
+        ),
+      ),
+    );
+  }
+}
+
+class _StoryOverlayContent extends StatelessWidget {
+  const _StoryOverlayContent({required this.overlay});
+
+  final StoryOverlay overlay;
+
+  @override
+  Widget build(BuildContext context) {
+    if (overlay.type == StoryOverlayType.sticker) {
+      return Center(
+        child: Text(overlay.text, style: const TextStyle(fontSize: 48)),
+      );
+    }
+
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: overlay.background
+            ? Colors.black.withValues(alpha: 0.55)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        overlay.text,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        textAlign: _textAlign(overlay.align),
+        style: TextStyle(
+          color: Color(overlay.colorValue),
+          fontSize: 26,
+          fontWeight: FontWeight.w800,
+          height: 1.08,
+          shadows: const <Shadow>[
+            Shadow(blurRadius: 8, color: Colors.black87),
+            Shadow(blurRadius: 2, color: Colors.black),
+          ],
+        ),
+      ),
+    );
+  }
+
+  TextAlign _textAlign(StoryOverlayAlign align) {
+    return switch (align) {
+      StoryOverlayAlign.left => TextAlign.left,
+      StoryOverlayAlign.center => TextAlign.center,
+      StoryOverlayAlign.right => TextAlign.right,
+    };
   }
 }
 

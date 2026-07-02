@@ -81,7 +81,7 @@ service firebase.storage {
       allow write: if isOwner(uid) && isImageUpload();
     }
 
-    // Stories: el usuario sube SU video/thumb bajo su uid. La validacion de
+    // Stories: el usuario sube SU foto/video/thumb bajo su uid. La validacion de
     // limites/duracion/visibilidad la hace la Cloud Function createStory.
     match /stories/{uid}/{storyId}/{fileName} {
       allow read: if isSignedIn();

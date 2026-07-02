@@ -95,8 +95,8 @@ class StoriesBar extends StatelessWidget {
             children: <Widget>[
               StoryRing(
                 name: currentName,
-                imageUrl: mine?.thumbnailUrl.isNotEmpty == true
-                    ? mine!.thumbnailUrl
+                imageUrl: mine?.previewUrl.isNotEmpty == true
+                    ? mine!.previewUrl
                     : currentPhotoUrl,
                 hasLiveStory: mine != null,
                 isAdd: mine == null,
@@ -108,7 +108,7 @@ class StoriesBar extends StatelessWidget {
               for (int i = 0; i < others.length; i++) ...<Widget>[
                 StoryRing(
                   name: others[i].displayName,
-                  imageUrl: others[i].thumbnailUrl,
+                  imageUrl: others[i].previewUrl,
                   hasLiveStory: true,
                   onTap: () => _openViewer(context, others, i),
                 ),
