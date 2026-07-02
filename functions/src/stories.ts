@@ -40,6 +40,13 @@ export const createStory = onCall({ region: REGION }, async (request) => {
     typeof request.data?.caption === "string"
       ? (request.data.caption as string).slice(0, 200)
       : "";
+  // Posición normalizada del texto (editor). Se acota a [0,1] con fallback.
+  const unit = (v: unknown, d: number): number =>
+    typeof v === "number" && Number.isFinite(v)
+      ? Math.min(1, Math.max(0, v))
+      : d;
+  const captionX = unit(request.data?.captionX, 0.5);
+  const captionY = unit(request.data?.captionY, 0.85);
   const durationSeconds = Number.isFinite(request.data?.durationSeconds)
     ? Math.round(Number(request.data.durationSeconds))
     : 0;
@@ -95,6 +102,8 @@ export const createStory = onCall({ region: REGION }, async (request) => {
     videoUrl,
     thumbnailUrl,
     caption,
+    captionX,
+    captionY,
     status: "active",
     visibility,
     durationSeconds,

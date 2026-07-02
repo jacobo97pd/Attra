@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import '../../auth/domain/app_user.dart';
@@ -247,6 +248,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     try {
       final XFile? photo = await _imagePicker.pickImage(
         source: ImageSource.camera,
+        // La selfie de verificación es SIEMPRE frontal.
+        preferredCameraDevice: CameraDevice.front,
         imageQuality: 90,
         maxWidth: 1080,
       );
@@ -254,8 +257,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         return;
       }
 
-      final Uint8List bytes = await photo.readAsBytes();
-      final String extension = _extractFileExtension(photo.name, photo.path);
+      final Uint8List raw = await photo.readAsBytes();
+      // Des-espeja la selfie frontal (iOS suele guardarla reflejada) para que
+      // salga natural, como te ven los demás. Si falla, usa la original.
+      final Uint8List? unmirrored = _unmirrorSelfie(raw);
+      final Uint8List bytes = unmirrored ?? raw;
+      final String extension = unmirrored != null
+          ? 'jpg'
+          : _extractFileExtension(photo.name, photo.path);
 
       final LiveSelfieDraftUpload upload = await widget.onUploadLiveSelfieDraft(
         liveSelfieBytes: bytes,
@@ -298,6 +307,20 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         _localError =
             'No se pudo tomar la selfie. Revisa permisos de camara. ($error)';
       });
+    }
+  }
+
+  /// Voltea horizontalmente la selfie (quita el efecto espejo de la cámara
+  /// frontal) y la re-codifica a JPEG. Devuelve null si no se pudo procesar
+  /// (entonces se usa la imagen original tal cual).
+  Uint8List? _unmirrorSelfie(Uint8List bytes) {
+    try {
+      final img.Image? decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
+      final img.Image flipped = img.flipHorizontal(decoded);
+      return Uint8List.fromList(img.encodeJpg(flipped, quality: 90));
+    } catch (_) {
+      return null;
     }
   }
 

@@ -49,6 +49,8 @@ class Story {
     required this.status,
     required this.visibility,
     this.caption = '',
+    this.captionX = 0.5,
+    this.captionY = 0.85,
     this.durationSeconds = 0,
     this.viewsCount = 0,
     this.repliesCount = 0,
@@ -64,6 +66,13 @@ class Story {
   final String videoUrl;
   final String thumbnailUrl;
   final String caption;
+
+  /// Posición NORMALIZADA (0..1) del texto superpuesto sobre el vídeo (editor
+  /// tipo Instagram). Por defecto abajo-centrado. Compat: docs antiguos sin
+  /// estos campos caen al default.
+  final double captionX;
+  final double captionY;
+
   final StoryStatus status;
   final StoryVisibility visibility;
   final int durationSeconds;
@@ -89,6 +98,8 @@ class Story {
       videoUrl: (map['videoUrl'] as String?) ?? '',
       thumbnailUrl: (map['thumbnailUrl'] as String?) ?? '',
       caption: (map['caption'] as String?) ?? '',
+      captionX: _asUnit(map['captionX'], 0.5),
+      captionY: _asUnit(map['captionY'], 0.85),
       status: StoryStatus.fromValue(map['status']),
       visibility: StoryVisibility.fromValue(map['visibility']),
       durationSeconds: (map['durationSeconds'] as num?)?.toInt() ?? 0,
@@ -97,6 +108,12 @@ class Story {
       createdAt: _asDate(map['createdAt']),
       expiresAt: _asDate(map['expiresAt']),
     );
+  }
+
+  /// Lee un número en [0,1] con fallback (posición normalizada del texto).
+  static double _asUnit(Object? value, double fallback) {
+    final double v = value is num ? value.toDouble() : fallback;
+    return v.clamp(0.0, 1.0);
   }
 
   static DateTime? _asDate(Object? value) {

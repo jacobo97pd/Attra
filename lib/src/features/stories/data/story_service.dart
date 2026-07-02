@@ -62,6 +62,8 @@ class StoryService {
     required XFile video,
     required int durationSeconds,
     String caption = '',
+    double captionX = 0.5,
+    double captionY = 0.85,
     StoryVisibility visibility = StoryVisibility.discovery,
   }) async {
     final String storyId = _genId();
@@ -107,6 +109,8 @@ class StoryService {
       'videoUrl': videoUrl,
       'thumbnailUrl': thumbnailUrl,
       'caption': caption,
+      'captionX': captionX,
+      'captionY': captionY,
       'visibility': visibility.wireName,
       'durationSeconds': durationSeconds,
     });

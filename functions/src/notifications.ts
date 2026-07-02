@@ -60,6 +60,16 @@ function tplNewMessage(name: string, preview: string): NotifContent {
     route: "chats",
   };
 }
+function tplSparkChallenge(name: string): NotifContent {
+  return {
+    kind: "spark_challenge",
+    emoji: "⚡",
+    title: `${name} te ha retado`,
+    body: "Juega Attra Spark (5 min) para romper el hielo ⚡",
+    accent: "desire",
+    route: "chats",
+  };
+}
 function tplComeBack(days: number): NotifContent {
   return {
     kind: "come_back",
@@ -210,6 +220,30 @@ export const onMessageCreated = onDocumentCreated(
       type === "text" ? (data.text ?? "").toString() : "Te ha enviado algo";
     await createNotification(receiverId, tplNewMessage(name, preview), {
       chatId: event.params.chatId,
+    });
+  }
+);
+
+/// Reto de Attra Spark → avisa al INVITADO (userBId). La sesión la crea el
+/// cliente en `matches/{id}/sparkSessions/{sessionId}` con el invitador ya
+/// aceptado; notificamos solo cuando nace en estado `waiting`.
+export const onSparkSessionCreated = onDocumentCreated(
+  {
+    document: "matches/{matchId}/sparkSessions/{sessionId}",
+    database: DATABASE,
+    region: REGION,
+  },
+  async (event) => {
+    const data = event.data?.data() as DocumentData | undefined;
+    if (!data) return;
+    if ((data.status ?? "").toString() !== "waiting") return;
+    const invitedUid = (data.userBId ?? "").toString();
+    const inviterUid = (data.invitedBy ?? data.userAId ?? "").toString();
+    if (!invitedUid || invitedUid === inviterUid) return;
+    const inviterSnap = await col.users.doc(inviterUid).get();
+    const name = resolvePublicDisplayName(inviterSnap.data()) || "Alguien";
+    await createNotification(invitedUid, tplSparkChallenge(name), {
+      matchId: event.params.matchId,
     });
   }
 );

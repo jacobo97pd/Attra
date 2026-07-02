@@ -147,6 +147,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// Attra Clear §6: follow-up post-cita, ocultable esta sesión.
   bool _followUpDismissed = false;
 
+  /// Sugerencia de Attra Spark ocultada esta sesión.
+  bool _sparkDismissed = false;
+
   AntiGhostingAnalytics get _antiGhostingAnalytics =>
       AntiGhostingAnalytics(uid: widget.currentUid, metrics: widget.metrics);
 
@@ -1189,7 +1192,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   onDismiss: () => setState(() => _journeyDismissed = true),
                 ),
               // Attra Spark (opcional, tras la feature flag). No bloquea el chat.
-              if (widget.sparkEnabled && widget.sparkService != null && canSend)
+              if (widget.sparkEnabled &&
+                  widget.sparkService != null &&
+                  canSend &&
+                  !_sparkDismissed)
                 SparkEntryCard(
                   service: widget.sparkService!,
                   matchId: widget.chatId,
@@ -1198,6 +1204,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   otherName: widget.other.displayName,
                   onReport: () => _report(),
                   onUseQuestion: _useSparkQuestion,
+                  onDismiss: () => setState(() => _sparkDismissed = true),
                 ),
               // Attra Clear §6: follow-up post-cita "¿Cómo fue la cita?".
               _buildFollowUp(chat, canSend),

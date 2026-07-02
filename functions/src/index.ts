@@ -92,6 +92,7 @@ export {
   onLikeCreated,
   onMatchCreated,
   onMessageCreated,
+  onSparkSessionCreated,
   sendComeBackNotifications,
   registerPushToken,
   unregisterPushToken,

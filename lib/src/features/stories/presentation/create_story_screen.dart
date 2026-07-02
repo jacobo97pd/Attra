@@ -31,6 +31,18 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
   StoryVisibility _visibility = StoryVisibility.discovery;
   bool _publishing = false;
 
+  // Editor de texto superpuesto (estilo Instagram): texto + posición normalizada.
+  String _captionText = '';
+  double _capX = 0.5;
+  double _capY = 0.85;
+
+  @override
+  void initState() {
+    super.initState();
+    _caption.addListener(
+        () => setState(() => _captionText = _caption.text.trim()));
+  }
+
   @override
   void dispose() {
     _caption.dispose();
@@ -81,7 +93,9 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
           uid: widget.currentUid,
           video: video,
           durationSeconds: _durationSeconds <= 0 ? 10 : _durationSeconds,
-          caption: _caption.text.trim(),
+          caption: _captionText,
+          captionX: _capX,
+          captionY: _capY,
           visibility: _visibility,
         ),
         message: 'Publicando tu story…',
@@ -120,8 +134,44 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
                   ? _Picker(
                       onGallery: () => _pick(ImageSource.gallery),
                       onCamera: () => _pick(ImageSource.camera))
-                  : _Preview(controller: _preview),
+                  : LayoutBuilder(
+                      builder:
+                          (BuildContext context, BoxConstraints constraints) {
+                        final double w = constraints.maxWidth;
+                        final double h = constraints.maxHeight;
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: <Widget>[
+                            _Preview(controller: _preview),
+                            if (_captionText.isNotEmpty)
+                              Positioned(
+                                left: (_capX * w) - w * 0.42,
+                                top: (_capY * h) - 22,
+                                width: w * 0.84,
+                                child: GestureDetector(
+                                  onPanUpdate: (DragUpdateDetails d) {
+                                    setState(() {
+                                      _capX = (_capX + d.delta.dx / w)
+                                          .clamp(0.1, 0.9);
+                                      _capY = (_capY + d.delta.dy / h)
+                                          .clamp(0.06, 0.94);
+                                    });
+                                  },
+                                  child: _CaptionOverlay(text: _captionText),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
             ),
+            if (_video != null && _captionText.isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text('Arrastra el texto para colocarlo',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
             if (_video != null) ...<Widget>[
               const SizedBox(height: 12),
               TextField(
@@ -192,6 +242,30 @@ class _Picker extends StatelessWidget {
                   label: const Text('Grabar')),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Texto superpuesto de la story (mismo estilo en editor y visor).
+class _CaptionOverlay extends StatelessWidget {
+  const _CaptionOverlay({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        height: 1.2,
+        shadows: <Shadow>[
+          Shadow(blurRadius: 8, color: Colors.black87),
+          Shadow(blurRadius: 2, color: Colors.black),
         ],
       ),
     );

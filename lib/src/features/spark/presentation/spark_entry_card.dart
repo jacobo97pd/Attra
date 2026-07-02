@@ -2,16 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
-import '../../../theme/app_spacing.dart';
 import '../data/spark_service.dart';
 import '../domain/spark_session.dart';
 import 'spark_game_screen.dart';
 
-/// Card opcional dentro del chat para iniciar/continuar Attra Spark. Solo se
-/// renderiza si la feature está habilitada (lo decide quien la inserta). Si no
-/// hay sesión viva, ofrece invitar; si la hay, ofrece aceptar/continuar.
-///
-/// No bloquea el chat: es un añadido por encima de la conversación normal.
+/// Sugerencia COMPACTA (una línea) dentro del chat para iniciar/continuar Attra
+/// Spark. No bloquea el chat ni ocupa media pantalla: es una barra fina y
+/// cerrable ([onDismiss]). Si no hay sesión viva ofrece invitar; si la hay,
+/// aceptar/continuar.
 class SparkEntryCard extends StatelessWidget {
   const SparkEntryCard({
     super.key,
@@ -22,6 +20,7 @@ class SparkEntryCard extends StatelessWidget {
     required this.otherName,
     this.onReport,
     this.onUseQuestion,
+    this.onDismiss,
   });
 
   final SparkService service;
@@ -31,6 +30,9 @@ class SparkEntryCard extends StatelessWidget {
   final String otherName;
   final Future<void> Function()? onReport;
   final void Function(String question)? onUseQuestion;
+
+  /// Si se pasa, muestra una ✕ para ocultar la sugerencia esta sesión.
+  final VoidCallback? onDismiss;
 
   void _openGame(BuildContext context, String sessionId) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -68,41 +70,34 @@ class SparkEntryCard extends StatelessWidget {
       stream: service.watchActiveSession(matchId),
       builder: (BuildContext context, AsyncSnapshot<SparkSession?> snap) {
         final SparkSession? s = snap.data;
-
-        // Si hay sesión viva, ofrece aceptar/continuar. Si no, miramos si ya se
-        // jugó alguna vez: Spark es un rompehielos de un solo uso por match.
-        if (s == null) return _NoActiveSparkCard(parent: this);
+        if (s == null) return _NoActiveSpark(parent: this);
 
         final bool iAccepted = s.participants[currentUid]?.accepted ?? false;
         final bool incoming = s.invitedBy != currentUid && !iAccepted;
 
         if (s.status == SparkStatus.waiting && incoming) {
-          return _Card(
-            title: '$otherName te invita a Attra Spark',
-            subtitle: 'Un juego rápido para conoceros. ¿Jugamos?',
-            ctaLabel: 'Aceptar y jugar',
-            ctaIcon: Icons.play_arrow_rounded,
+          return _SparkBar(
+            label: '$otherName te reta a Attra Spark',
+            ctaLabel: 'Aceptar',
             onCta: () => _openGame(context, s.id),
+            onClose: onDismiss,
           );
         }
-
-        // Sesión viva en la que ya participo (esperando o activa): continuar.
-        return _Card(
-          title: 'Attra Spark en curso',
-          subtitle: s.status == SparkStatus.active
-              ? 'Ronda ${s.currentRound + 1} de ${s.totalRounds}'
+        return _SparkBar(
+          label: s.status == SparkStatus.active
+              ? 'Spark en curso · ronda ${s.currentRound + 1}/${s.totalRounds}'
               : 'Esperando a $otherName…',
           ctaLabel: 'Continuar',
-          ctaIcon: Icons.arrow_forward_rounded,
           onCta: () => _openGame(context, s.id),
+          onClose: onDismiss,
         );
       },
     );
   }
 }
 
-class _NoActiveSparkCard extends StatelessWidget {
-  const _NoActiveSparkCard({required this.parent});
+class _NoActiveSpark extends StatelessWidget {
+  const _NoActiveSpark({required this.parent});
 
   final SparkEntryCard parent;
 
@@ -113,100 +108,92 @@ class _NoActiveSparkCard extends StatelessWidget {
       builder: (BuildContext context, AsyncSnapshot<SparkSession?> snap) {
         final SparkSession? any = snap.data;
         if (any == null) {
-          return _Card(
-            title: 'Attra Spark',
-            subtitle: 'Jugad 5 minutos para romper el hielo. Opcional.',
-            ctaLabel: 'Jugar 5 minutos',
-            ctaIcon: Icons.bolt_rounded,
+          return _SparkBar(
+            label: 'Rompe el hielo con Attra Spark · 5 min',
+            ctaLabel: 'Jugar',
             onCta: () => parent._invite(context),
+            onClose: parent.onDismiss,
           );
         }
         if (any.status == SparkStatus.completed) {
-          return _Card(
-            title: 'Attra Spark completado',
-            subtitle: 'Ya usasteis este rompehielos. Podéis volver al resumen.',
-            ctaLabel: 'Ver resumen',
-            ctaIcon: Icons.celebration_rounded,
+          return _SparkBar(
+            label: 'Attra Spark completado',
+            ctaLabel: 'Resumen',
             onCta: () => parent._openGame(context, any.id),
+            onClose: parent.onDismiss,
           );
         }
-        return const _Card(
-          title: 'Attra Spark ya usado',
-          subtitle: 'Este rompehielos solo se puede jugar una vez por match.',
-          ctaLabel: 'Completado',
-          ctaIcon: Icons.lock_outline_rounded,
+        // Ya usado (terminal no completado): sugerencia mínima, cerrable.
+        return _SparkBar(
+          label: 'Attra Spark ya usado',
+          onClose: parent.onDismiss,
         );
       },
     );
   }
 }
 
-class _Card extends StatelessWidget {
-  const _Card({
-    required this.title,
-    required this.subtitle,
-    required this.ctaLabel,
-    required this.ctaIcon,
+/// Barra fina (una línea): bolt + texto + CTA opcional + cerrar opcional.
+class _SparkBar extends StatelessWidget {
+  const _SparkBar({
+    required this.label,
+    this.ctaLabel,
     this.onCta,
+    this.onClose,
   });
 
-  final String title;
-  final String subtitle;
-  final String ctaLabel;
-  final IconData ctaIcon;
+  final String label;
+  final String? ctaLabel;
   final VoidCallback? onCta;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      height: 42,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: <Color>[const Color(0x33E5384E), context.colors.surface],
-        ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
+        color: context.colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.35)),
       ),
       child: Row(
         children: <Widget>[
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.attraRed.withValues(alpha: 0.18),
-            ),
-            child: const Icon(Icons.bolt_rounded, color: AppColors.attraRed),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(title,
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
+          const Icon(Icons.bolt_rounded, size: 18, color: AppColors.attraRed),
           const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: onCta,
-            icon: Icon(ctaIcon, size: 18),
-            label: Text(ctaLabel),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.attraRed,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: context.colors.textSecondary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
+          if (ctaLabel != null && onCta != null)
+            TextButton(
+              onPressed: onCta,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.attraRed,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(ctaLabel!,
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          if (onClose != null)
+            IconButton(
+              icon: Icon(Icons.close_rounded,
+                  size: 18, color: context.colors.textMuted),
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Ocultar',
+              onPressed: onClose,
+            ),
         ],
       ),
     );
