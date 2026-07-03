@@ -7,8 +7,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
+import '../../../../core/config/app_store_validation_config.dart';
 import '../../../widgets/attra_image.dart';
 import '../../chat_game/domain/chat_game.dart';
+import '../../connection_lab/presentation/ai_compatibility_screen.dart';
+import '../../connection_lab/presentation/anti_ghosting_coach_screen.dart';
+import '../../connection_lab/presentation/chat_ai_challenge_card.dart';
+import '../../connection_lab/presentation/date_planner_screen.dart';
+import '../../connection_lab/presentation/demo_challenge_screen.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_summary.dart';
@@ -894,6 +900,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           if (mounted) Navigator.of(context).pop();
         }
         break;
+      case 'coach':
+        _openCoach();
+        break;
+      case 'compatibility':
+        _openCompatibility();
+        break;
+      case 'planner':
+        _openDatePlanner();
+        break;
       case 'close':
         await _closeGracefully();
         break;
@@ -1028,6 +1043,54 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   /// Attra Clear §3: abre el sheet de cierre con elegancia y, si el usuario
   /// confirma, envía el mensaje de despedida y cierra el chat (Cloud Function).
+  // --- App Store validation: AI-guided helpers exposed from the chat ---
+
+  void _openAiDemoChallenge() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const DemoChallengeScreen(),
+    ));
+  }
+
+  /// Drops an AI-suggested opener into the input for the user to review/edit —
+  /// never auto-sends.
+  void _suggestOpener() {
+    final String first = widget.other.displayName.trim().split(' ').first;
+    final String who = first.isEmpty ? '' : ' $first';
+    _input.text =
+        'Hey$who — quick one: what’s a small, ordinary thing that reliably '
+        'makes your day better? 🙂';
+    _input.selection =
+        TextSelection.collapsed(offset: _input.text.length);
+    _inputFocus.requestFocus();
+  }
+
+  void _openCoach() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) =>
+          AntiGhostingCoachScreen(otherName: widget.other.displayName),
+    ));
+  }
+
+  void _openCompatibility() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) =>
+          AiCompatibilityScreen(otherName: widget.other.displayName),
+    ));
+  }
+
+  void _openDatePlanner() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => DatePlannerScreen(
+        otherName: widget.other.displayName,
+        onSendProposal: (String message) {
+          widget.chatService
+              .sendMessage(chatId: widget.chatId, text: message)
+              .catchError((_) => '');
+        },
+      ),
+    ));
+  }
+
   Future<void> _closeGracefully() async {
     final ClosureChoice? choice = await CloseConversationSheet.show(
       context,
@@ -1144,6 +1207,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
               const PopupMenuItem<String>(
                   value: 'unread', child: Text('Marcar como no leído')),
+              if (kAppStoreValidationExperience) ...<PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                    value: 'coach', child: Text('Anti-Ghosting Coach')),
+                const PopupMenuItem<String>(
+                    value: 'compatibility', child: Text('AI Compatibility')),
+                const PopupMenuItem<String>(
+                    value: 'planner', child: Text('AI Date Planner')),
+                const PopupMenuDivider(),
+              ],
               if (widget.closeGracefullyEnabled)
                 const PopupMenuItem<String>(
                     value: 'close', child: Text('Cerrar conversación')),
@@ -1164,6 +1236,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           final bool canSend = chat?.status.canSendMessages ?? true;
           return Column(
             children: <Widget>[
+              // App Store validation: AI Challenge card at the very top of every
+              // conversation. The normal chat stays fully available below.
+              if (kAppStoreValidationExperience && canSend)
+                ChatAiChallengeCard(
+                  onStartChallenge: _openAiDemoChallenge,
+                  onSuggestOpener: _suggestOpener,
+                  onPlayGame: () => _openIcebreaker(canSend),
+                ),
               // Match Journey (Fase 8): card de recorrido guiado. Opt-in, cerrable.
               if (widget.journeyEnabled &&
                   canSend &&

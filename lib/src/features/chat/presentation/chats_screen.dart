@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/config/app_store_validation_config.dart';
+import '../../connection_lab/presentation/demo_challenge_screen.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import '../../profile/domain/profile_state.dart';
@@ -44,7 +46,13 @@ class ChatsScreen extends StatelessWidget {
     this.closeGracefullyEnabled = false,
     this.nudgesEnabled = false,
     this.dateFollowupEnabled = false,
+    this.onDiscover,
+    this.onOpenPlay,
   });
+
+  /// App Store validation: lets the empty state route to Discover / Play.
+  final VoidCallback? onDiscover;
+  final VoidCallback? onOpenPlay;
 
   /// Attra Clear §1: si está activo, las conversaciones donde te toca responder
   /// se agrupan arriba en una sección "Tu turno". Default false = comportamiento
@@ -161,7 +169,7 @@ class ChatsScreen extends StatelessWidget {
             .where((Chat c) => c.status != ChatStatus.deleted)
             .toList(growable: false);
         if (all.isEmpty) {
-          return const _ChatsEmpty();
+          return _ChatsEmpty(onDiscover: onDiscover, onOpenPlay: onOpenPlay);
         }
         final List<Chat> nuevos =
             all.where((Chat c) => !_isConversation(c)).toList();
@@ -469,11 +477,59 @@ class _ConversationRow extends StatelessWidget {
 }
 
 class _ChatsEmpty extends StatelessWidget {
-  const _ChatsEmpty();
+  const _ChatsEmpty({this.onDiscover, this.onOpenPlay});
+
+  final VoidCallback? onDiscover;
+  final VoidCallback? onOpenPlay;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // App Store validation: never a dead screen — offer guided paths.
+    if (kAppStoreValidationExperience) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
+        children: <Widget>[
+          Icon(Icons.auto_awesome, size: 48, color: theme.colorScheme.primary),
+          const SizedBox(height: 14),
+          Text('No conversations yet — start with a challenge',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(
+            'Attra is about better conversations. Try the AI-guided flow now, '
+            'explore games, or find someone to connect with.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: theme.colorScheme.outline),
+          ),
+          const SizedBox(height: 22),
+          _EmptyAction(
+            icon: Icons.psychology_alt_rounded,
+            label: 'Try a Demo Challenge',
+            primary: true,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                  builder: (_) => const DemoChallengeScreen()),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (onOpenPlay != null)
+            _EmptyAction(
+              icon: Icons.sports_esports_rounded,
+              label: 'Explore Conversation Games',
+              onTap: onOpenPlay!,
+            ),
+          const SizedBox(height: 10),
+          if (onDiscover != null)
+            _EmptyAction(
+              icon: Icons.explore_rounded,
+              label: 'Discover People',
+              onTap: onDiscover!,
+            ),
+        ],
+      );
+    }
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -492,6 +548,36 @@ class _ChatsEmpty extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _EmptyAction extends StatelessWidget {
+  const _EmptyAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SizedBox(
+      height: 52,
+      child: primary
+          ? FilledButton.icon(
+              onPressed: onTap,
+              icon: Icon(icon),
+              label: Text(label))
+          : OutlinedButton.icon(
+              onPressed: onTap,
+              icon: Icon(icon, color: theme.colorScheme.primary),
+              label: Text(label)),
     );
   }
 }

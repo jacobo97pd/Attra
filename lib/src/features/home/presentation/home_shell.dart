@@ -7,10 +7,13 @@ import '../../../security/screen_guard.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 
+import '../../../../core/config/app_store_validation_config.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
 import '../../anti_ghosting/data/pending_conversations_controller.dart';
 import '../../anti_ghosting/domain/anti_ghosting_config.dart';
+import '../../connection_lab/presentation/connection_lab_screen.dart';
+import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chats_screen.dart';
@@ -300,6 +303,20 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final String uid = widget.user?.uid ?? '';
+
+    // App Store validation experience: primary tabs become
+    // Connect · Play · Discover · Messages · Profile (Connect is the first
+    // screen). Discover/Messages/Profile reuse the existing feed/chats/profile.
+    const bool validation = kAppStoreValidationExperience;
+    const int discoverIndex = validation ? 2 : 0;
+    const int playIndex = 1;
+    const int chatsIndex = validation ? 3 : 2;
+    void goTo(int index) => setState(() {
+          if (index == discoverIndex && _tab != discoverIndex) {
+            _feedReloadToken++;
+          }
+          _tab = index;
+        });
     final int attrasBalance = _entitlementController?.attrasBalance ?? 0;
 
     final bool isPro = _entitlementController?.isProActive ?? false;
@@ -377,7 +394,7 @@ class _HomeShellState extends State<HomeShell> {
         pendingController: _pendingController,
         isBusy: widget.user?.busyModeActive ?? false,
         isPro: _entitlementController?.isProActive ?? false,
-        onOpenChats: () => setState(() => _tab = 2),
+        onOpenChats: () => goTo(chatsIndex),
       ),
     );
 
@@ -484,6 +501,8 @@ class _HomeShellState extends State<HomeShell> {
                   _antiGhosting.enabled && _antiGhosting.nudgesEnabled,
               dateFollowupEnabled:
                   _antiGhosting.enabled && _antiGhosting.dateFollowupEnabled,
+              onDiscover: () => goTo(discoverIndex),
+              onOpenPlay: () => goTo(playIndex),
             ),
     );
 
@@ -517,45 +536,93 @@ class _HomeShellState extends State<HomeShell> {
       onSetSlowDating: widget.onSetSlowDating,
     );
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: <Widget>[
-          feedTab,
-          likesTab,
-          chatsTab,
-          profileTab,
+    // Connect tab: Attra Connection Lab (AI-guided connection landing).
+    final Widget connectTab = Scaffold(
+      appBar: AppBar(
+        title: const _AttraTitleLogo(),
+        actions: <Widget>[
+          if (widget.notificationService != null && uid.isNotEmpty)
+            NotificationBell(
+              service: widget.notificationService!,
+              uid: uid,
+              onTap: _openNotifications,
+            ),
+          if (!isPro)
+            TextButton.icon(
+              onPressed: _openPaywall,
+              icon: const Icon(Icons.workspace_premium,
+                  color: Color(0xFFB8860B)),
+              label: const Text('Plus / Pro',
+                  style: TextStyle(
+                      color: Color(0xFFB8860B), fontWeight: FontWeight.w700)),
+            ),
         ],
       ),
+      body: ConnectionLabScreen(
+        displayName: widget.user?.displayName,
+        myInterests: widget.user?.interests ?? const <String>[],
+        myIntent: widget.user?.relationshipIntent ?? '',
+        onDiscover: () => goTo(discoverIndex),
+        onOpenPlay: () => goTo(playIndex),
+      ),
+    );
+
+    // Play tab: conversation games hub (already a full Scaffold).
+    final Widget playTab =
+        ConversationGamesScreen(onDiscover: () => goTo(discoverIndex));
+
+    final List<Widget> tabs = validation
+        ? <Widget>[connectTab, playTab, feedTab, chatsTab, profileTab]
+        : <Widget>[feedTab, likesTab, chatsTab, profileTab];
+
+    final List<NavigationDestination> destinations = validation
+        ? const <NavigationDestination>[
+            NavigationDestination(
+                icon: Icon(Icons.auto_awesome_outlined),
+                selectedIcon: Icon(Icons.auto_awesome),
+                label: 'Connect'),
+            NavigationDestination(
+                icon: Icon(Icons.sports_esports_outlined),
+                selectedIcon: Icon(Icons.sports_esports),
+                label: 'Play'),
+            NavigationDestination(
+                icon: Icon(Icons.explore_outlined),
+                selectedIcon: Icon(Icons.explore),
+                label: 'Discover'),
+            NavigationDestination(
+                icon: Icon(Icons.forum_outlined),
+                selectedIcon: Icon(Icons.forum),
+                label: 'Messages'),
+            NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Profile'),
+          ]
+        : <NavigationDestination>[
+            NavigationDestination(
+                icon: const Icon(Icons.explore_outlined),
+                selectedIcon: const Icon(Icons.explore),
+                label: l10n.navFeed),
+            NavigationDestination(
+                icon: const Icon(Icons.favorite_border),
+                selectedIcon: const Icon(Icons.favorite),
+                label: l10n.navLikes),
+            NavigationDestination(
+                icon: const Icon(Icons.forum_outlined),
+                selectedIcon: const Icon(Icons.forum),
+                label: l10n.navChats),
+            NavigationDestination(
+                icon: const Icon(Icons.person_outline),
+                selectedIcon: const Icon(Icons.person),
+                label: l10n.navProfile),
+          ];
+
+    return Scaffold(
+      body: IndexedStack(index: _tab, children: tabs),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: (int index) => setState(() {
-          // Al (re)entrar en Feed, fuerza recarga para re-excluir matched/likeados.
-          if (index == 0 && _tab != 0) _feedReloadToken++;
-          _tab = index;
-        }),
-        destinations: <NavigationDestination>[
-          NavigationDestination(
-            icon: const Icon(Icons.explore_outlined),
-            selectedIcon: const Icon(Icons.explore),
-            label: l10n.navFeed,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.favorite_border),
-            selectedIcon: const Icon(Icons.favorite),
-            label: l10n.navLikes,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.forum_outlined),
-            selectedIcon: const Icon(Icons.forum),
-            label: l10n.navChats,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.person_outline),
-            selectedIcon: const Icon(Icons.person),
-            label: l10n.navProfile,
-          ),
-        ],
+        onDestinationSelected: goTo,
+        destinations: destinations,
       ),
     );
   }
@@ -632,18 +699,20 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
-  /// Pestaña destino para una ruta lógica de notificación.
+  /// Pestaña destino para una ruta lógica de notificación. Los índices cambian
+  /// según el modo de navegación (validación: Connect·Play·Discover·Messages·Profile).
   int? _tabForRoute(String route) {
+    const bool v = kAppStoreValidationExperience;
     switch (route.split(':').first) {
       case 'feed':
-        return 0;
+        return v ? 2 : 0;
       case 'likes':
-        return 1;
+        return v ? 2 : 1; // sin pestaña Likes en validación → Discover
       case 'chats':
       case 'chat':
-        return 2;
+        return v ? 3 : 2;
       case 'profile':
-        return 3;
+        return v ? 4 : 3;
     }
     return null;
   }
