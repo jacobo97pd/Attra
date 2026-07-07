@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "825052601260-60v2mfattmd15uiean634d8fvp7n55gk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jpedrero.attra",
+            "certificate_hash": "b4ecebca25e5b10c7100baa9285361ce2fa80bec"
+          }
+        },
+        {
+          "client_id": "825052601260-8vr5a4ca2fnr8759i18d175klga911h1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jpedrero.attra",
+            "certificate_hash": "70109e86747d67f8ee65067654ff4a6b90065690"
+          }
+        },
+        {
           "client_id": "825052601260-9lb6br4g49t21ac6559pmuj221mmqsjg.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -37,6 +53,13 @@
             {
               "client_id": "825052601260-n1t6hb899mipavg8m56mt7dv8l1emdhu.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "825052601260-sng6ujjcg3ep59jr44teioj5jmmefqbs.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.jpedrero.attra"
+              }
             }
           ]
         }
