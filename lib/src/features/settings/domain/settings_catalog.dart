@@ -80,6 +80,9 @@ class SettingsCatalog {
         ],
         auditLevel: AuditLevel.low,
       ),
+      // Idioma: la app sigue el idioma del SISTEMA (no hay override de locale),
+      // así que este selector no aplicaba ningún cambio. Se oculta hasta que la
+      // i18n soporte cambio de idioma en la app (evita un control "muerto").
       SettingDefinition(
         key: 'account.language',
         sectionKey: secAccount,
@@ -87,6 +90,7 @@ class SettingsCatalog {
         label: 'Idioma de la app',
         description: 'Idioma de la interfaz.',
         defaultValue: 'es',
+        userVisible: false,
         options: <SettingOption>[
           SettingOption(value: 'es', label: 'Espanol'),
           SettingOption(value: 'en', label: 'English'),

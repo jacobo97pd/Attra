@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_spacing.dart';
@@ -54,6 +55,13 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
+        // Iconos de la barra de estado según el tema: en claro (Piedra) iconos
+        // oscuros; en oscuro, claros. Si no, en claro quedan invisibles.
+        systemOverlayStyle: brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+                .copyWith(statusBarColor: Colors.transparent)
+            : SystemUiOverlayStyle.dark
+                .copyWith(statusBarColor: Colors.transparent),
         foregroundColor: c.textPrimary,
         titleTextStyle: TextStyle(
           color: c.textPrimary,

@@ -74,7 +74,13 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
             }
           }
 
-          return ListView(children: children);
+          return ListView(
+            // Deja hueco para la barra de navegación del sistema: la última
+            // acción (p. ej. Eliminar cuenta) no queda tapada ni recortada.
+            padding: EdgeInsets.only(
+                bottom: 16 + MediaQuery.of(context).viewPadding.bottom),
+            children: children,
+          );
         },
       ),
     );

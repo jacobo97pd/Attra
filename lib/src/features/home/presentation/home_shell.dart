@@ -774,6 +774,9 @@ class _AttraTitleLogo extends StatelessWidget {
         height: 28,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
+        // Wordmark blanco → tíntalo con el color de texto del tema (legible en
+        // claro y oscuro).
+        color: Theme.of(context).colorScheme.onSurface,
       ),
     );
   }

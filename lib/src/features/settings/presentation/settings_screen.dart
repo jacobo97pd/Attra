@@ -70,7 +70,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             widget.busyModeFeatureEnabled && widget.onSetBusyMode != null;
         final int leading = showBusy ? 3 : 2;
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          // Padding inferior = barra de navegación del sistema, para que la
+          // última fila (Eliminar cuenta) no quede tapada ni recortada.
+          padding: EdgeInsets.only(
+              top: 8, bottom: 8 + MediaQuery.of(context).viewPadding.bottom),
           itemCount: sections.length + leading,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (BuildContext context, int index) {

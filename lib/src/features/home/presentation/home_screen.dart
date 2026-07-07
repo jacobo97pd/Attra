@@ -958,11 +958,33 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) _reload(); // refresca el espejo legacy y el score
   }
 
+  Future<void> _confirmLogout() async {
+    final bool ok = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: const Text('Cerrar sesión'),
+            content: const Text('¿Seguro que quieres cerrar sesión?'),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Cerrar sesión'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (ok) widget.onLogout();
+  }
+
   Widget _buildLogoutButton(ThemeData theme) {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton(
-        onPressed: _busy ? null : widget.onLogout,
+        onPressed: _busy ? null : _confirmLogout,
         child: const Text('Cerrar sesión'),
       ),
     );
@@ -1012,6 +1034,9 @@ class _AttraTitleLogo extends StatelessWidget {
         height: 28,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
+        // El wordmark es blanco: tíntalo con el color de texto del tema para que
+        // sea legible también en el tema claro (Piedra).
+        color: Theme.of(context).colorScheme.onSurface,
       ),
     );
   }

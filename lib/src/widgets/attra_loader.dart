@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
-import '../theme/attra_colors.dart';
 
 /// Loader de marca: el logo ATTRA respirando con escala y halo suave.
 /// Sustituye a los spinners genericos en procesos con espera real.
@@ -94,8 +93,10 @@ class _AttraLogoLoaderState extends State<AttraLogoLoader>
           Text(
             widget.label!,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: context.colors.textSecondary,
+            style: const TextStyle(
+              // El overlay siempre va sobre un fondo oscuro difuminado: texto
+              // blanco de alto contraste (antes gris/tenue y difícil de leer).
+              color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),

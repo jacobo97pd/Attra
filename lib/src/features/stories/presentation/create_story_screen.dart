@@ -610,7 +610,8 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
     final bool hasMedia = _media != null && _mediaType != null;
     return Scaffold(
       appBar: AppBar(title: const Text('Nueva story')),
-      body: Padding(
+      body: SafeArea(
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -726,6 +727,7 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
             ],
           ],
         ),
+      ),
       ),
     );
   }

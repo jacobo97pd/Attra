@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'l10n/app_localizations.dart';
@@ -223,23 +224,34 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
           // Gate de bloqueo: sobre TODA la app (incluido login). Cuando el PIN
           // está activo y la app bloqueada, tapa el contenido con LockScreen.
           builder: (BuildContext context, Widget? child) {
-            return AnimatedBuilder(
-              animation: AppLockController.instance,
-              builder: (BuildContext context, _) {
-                final AppLockController lock = AppLockController.instance;
-                // Hasta saber si hay bloqueo, tapa el contenido (evita que se
-                // vea algo antes de pedir el PIN al arrancar).
-                final bool cover = !lock.isLoaded || lock.isLocked;
-                return Stack(
-                  children: <Widget>[
-                    if (child != null) child,
-                    if (cover && lock.isLoaded)
-                      LockScreen(controller: lock)
-                    else if (cover)
-                      const ColoredBox(color: Color(0xFF0E0E10)),
-                  ],
-                );
-              },
+            // Estilo de la barra de estado por defecto (pantallas SIN AppBar,
+            // p. ej. el feed): iconos oscuros en tema claro, claros en oscuro.
+            final bool isLight =
+                Theme.of(context).brightness == Brightness.light;
+            final SystemUiOverlayStyle overlay = (isLight
+                    ? SystemUiOverlayStyle.dark
+                    : SystemUiOverlayStyle.light)
+                .copyWith(statusBarColor: Colors.transparent);
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: overlay,
+              child: AnimatedBuilder(
+                animation: AppLockController.instance,
+                builder: (BuildContext context, _) {
+                  final AppLockController lock = AppLockController.instance;
+                  // Hasta saber si hay bloqueo, tapa el contenido (evita que se
+                  // vea algo antes de pedir el PIN al arrancar).
+                  final bool cover = !lock.isLoaded || lock.isLocked;
+                  return Stack(
+                    children: <Widget>[
+                      if (child != null) child,
+                      if (cover && lock.isLoaded)
+                        LockScreen(controller: lock)
+                      else if (cover)
+                        const ColoredBox(color: Color(0xFF0E0E10)),
+                    ],
+                  );
+                },
+              ),
             );
           },
           home: SessionGate(controller: _sessionController),
