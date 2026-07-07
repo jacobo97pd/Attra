@@ -16,6 +16,7 @@ import '../../connection_lab/presentation/connection_lab_screen.dart';
 import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
+import '../../date_plans/data/date_plan_service.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
@@ -77,6 +78,7 @@ class HomeShell extends StatefulWidget {
     required this.featureFlagService,
     required this.matchService,
     required this.chatService,
+    this.datePlanService,
     this.boostService,
     this.sparkService,
     this.feedMetricsService,
@@ -149,6 +151,7 @@ class HomeShell extends StatefulWidget {
   final FeatureFlagService featureFlagService;
   final MatchService matchService;
   final ChatService chatService;
+  final DatePlanService? datePlanService;
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;
@@ -461,6 +464,9 @@ class _HomeShellState extends State<HomeShell> {
           : ChatsScreen(
               currentUid: uid,
               chatService: widget.chatService,
+              datePlanService: widget.datePlanService,
+              datePlansEnabled:
+                  _entitlementController?.flags.datePlansActive ?? false,
               matchService: widget.matchService,
               summaries: widget.profileSummaryRepository,
               storyService: widget.storyService,

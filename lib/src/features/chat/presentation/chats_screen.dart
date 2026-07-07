@@ -14,6 +14,7 @@ import '../../stories/domain/story.dart';
 import '../../stories/presentation/story_viewer_screen.dart';
 import '../../anti_ghosting/domain/conversation_turn.dart';
 import '../../anti_ghosting/presentation/your_turn_badge.dart';
+import '../../date_plans/data/date_plan_service.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
@@ -26,6 +27,8 @@ class ChatsScreen extends StatelessWidget {
     super.key,
     required this.currentUid,
     required this.chatService,
+    this.datePlanService,
+    this.datePlansEnabled = false,
     required this.matchService,
     required this.summaries,
     this.storyService,
@@ -70,6 +73,11 @@ class ChatsScreen extends StatelessWidget {
 
   final String currentUid;
   final ChatService chatService;
+
+  /// Attra Plans: propuestas de cita. Opt-in por flag; requiere el servicio.
+  final DatePlanService? datePlanService;
+  final bool datePlansEnabled;
+
   final MatchService matchService;
   final ProfileSummaryRepository summaries;
   final StoryService? storyService;
@@ -121,6 +129,8 @@ class ChatsScreen extends StatelessWidget {
         currentUid: currentUid,
         other: other,
         chatService: chatService,
+        datePlanService: datePlanService,
+        datePlansEnabled: datePlansEnabled,
         matchService: matchService,
         loadProfile: loadProfile,
         sparkService: sparkService,

@@ -16,6 +16,8 @@ import 'src/features/auth/presentation/session_gate.dart';
 import 'src/features/ai_visual/data/ai_visual_service.dart';
 import 'src/features/chat/data/chat_repository.dart';
 import 'src/features/chat/data/chat_service.dart';
+import 'src/features/date_plans/data/date_plan_repository.dart';
+import 'src/features/date_plans/data/date_plan_service.dart';
 import 'src/features/feed/data/feed_metrics_service.dart';
 import 'src/features/notifications/data/notification_service.dart';
 import 'src/features/notifications/data/push_service.dart';
@@ -136,6 +138,10 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
         repository: ChatRepository(firestore: firestore),
         functions: functions,
         storage: FirebaseStorage.instance,
+      ),
+      datePlanService: DatePlanService(
+        repository: DatePlanRepository(firestore: firestore),
+        functions: functions,
       ),
       profileSummaryRepository: ProfileSummaryRepository(firestore: firestore),
       rankingSignalsRepository: RankingSignalsRepository(firestore: firestore),

@@ -10,6 +10,7 @@ import '../../onboarding/data/onboarding_repository.dart';
 import '../../onboarding/domain/onboarding_draft.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../chat/data/chat_service.dart';
+import '../../date_plans/data/date_plan_service.dart';
 import '../../integrations/domain/integration_connector.dart';
 import '../../match/data/match_service.dart';
 import '../../stories/data/story_service.dart';
@@ -50,8 +51,10 @@ class SessionController extends ChangeNotifier {
     FeedMetricsService? feedMetricsService,
     NotificationService? notificationService,
     IntegrationConnector? integrationConnector,
+    DatePlanService? datePlanService,
   })  : _authService = authService,
         _sparkService = sparkService,
+        _datePlanService = datePlanService,
         _boostService = boostService,
         _feedMetricsService = feedMetricsService,
         _notificationService = notificationService,
@@ -87,6 +90,7 @@ class SessionController extends ChangeNotifier {
   final StoryService _storyService;
   final AiVisualService _aiVisualService;
   final SparkService? _sparkService;
+  final DatePlanService? _datePlanService;
   final BoostService? _boostService;
   final FeedMetricsService? _feedMetricsService;
   final NotificationService? _notificationService;
@@ -96,6 +100,9 @@ class SessionController extends ChangeNotifier {
 
   /// Servicio de Attra Spark (juego de 5 min). Null si no se inyecta.
   SparkService? get sparkService => _sparkService;
+
+  /// Servicio de Attra Plans (propuestas de cita). Null si no se inyecta.
+  DatePlanService? get datePlanService => _datePlanService;
 
   /// Servicio de Boosts consumibles. Null si no se inyecta.
   BoostService? get boostService => _boostService;

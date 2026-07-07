@@ -67,6 +67,10 @@ export {
   getBoostSummary,
   recordBoostImpression,
 } from "./boosts";
+export {
+  createDatePlanProposal,
+  generateDatePlanSuggestions,
+} from "./datePlans";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";
 export {

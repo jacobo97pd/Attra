@@ -22,8 +22,8 @@ class AppTheme {
       AttraColors c, Brightness brightness, TextTheme base) {
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
-      primary: AppColors.attraRed,
-      onPrimary: Colors.white,
+      primary: c.accent,
+      onPrimary: c.onAccent,
       secondary: AppColors.coral,
       onSecondary:
           brightness == Brightness.dark ? AppColors.black : Colors.white,
@@ -45,7 +45,7 @@ class AppTheme {
       scaffoldBackgroundColor: c.bg,
       canvasColor: c.bg,
       textTheme: text,
-      primaryColor: AppColors.attraRed,
+      primaryColor: c.accent,
       dividerColor: c.surfaceLine,
       splashFactory: InkRipple.splashFactory,
       extensions: <ThemeExtension<dynamic>>[c],
@@ -74,8 +74,8 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.attraRed,
-          foregroundColor: Colors.white,
+          backgroundColor: c.accent,
+          foregroundColor: c.onAccent,
           minimumSize: const Size(64, 52),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           shape: RoundedRectangleBorder(
@@ -108,7 +108,7 @@ class AppTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: AppColors.attraRed,
+          foregroundColor: c.accent,
           textStyle:
               const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.2),
         ),
@@ -123,13 +123,13 @@ class AppTheme {
         labelStyle: TextStyle(color: c.textSecondary),
         border: _inputBorder(c.surfaceLine),
         enabledBorder: _inputBorder(c.surfaceLine),
-        focusedBorder: _inputBorder(AppColors.attraRed, width: 1.6),
+        focusedBorder: _inputBorder(c.accent, width: 1.6),
         errorBorder: _inputBorder(AppColors.danger),
         focusedErrorBorder: _inputBorder(AppColors.danger, width: 1.6),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: c.surfaceHigh,
-        selectedColor: AppColors.attraRed,
+        selectedColor: c.accent,
         side: BorderSide(color: c.surfaceLine),
         labelStyle: TextStyle(color: c.textPrimary, fontSize: 13),
         secondaryLabelStyle: TextStyle(color: c.textPrimary),
@@ -141,7 +141,7 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: AppColors.attraRed.withValues(alpha: 0.16),
+        indicatorColor: c.accent.withValues(alpha: 0.16),
         height: 66,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (Set<WidgetState> states) => TextStyle(
@@ -155,7 +155,7 @@ class AppTheme {
         iconTheme: WidgetStateProperty.resolveWith(
           (Set<WidgetState> states) => IconThemeData(
             color: states.contains(WidgetState.selected)
-                ? AppColors.attraRed
+                ? c.accent
                 : c.textMuted,
           ),
         ),
@@ -191,16 +191,14 @@ class AppTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) =>
-            s.contains(WidgetState.selected)
-                ? AppColors.attraRed
-                : c.textSecondary),
+            s.contains(WidgetState.selected) ? c.accent : c.textSecondary),
         trackColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) =>
             s.contains(WidgetState.selected)
-                ? AppColors.attraRed.withValues(alpha: 0.35)
+                ? c.accent.withValues(alpha: 0.35)
                 : c.surfaceHigh),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: AppColors.attraRed,
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: c.accent,
       ),
       dividerTheme: DividerThemeData(
         color: c.surfaceLine,

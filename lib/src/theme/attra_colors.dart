@@ -17,6 +17,9 @@ class AttraColors extends ThemeExtension<AttraColors> {
     required this.textPrimary,
     required this.textSecondary,
     required this.textMuted,
+    required this.accent,
+    required this.accentDeep,
+    required this.accentSoft,
   });
 
   /// Fondo principal (scaffold).
@@ -40,7 +43,23 @@ class AttraColors extends ThemeExtension<AttraColors> {
   /// Texto atenuado (hints, captions).
   final Color textMuted;
 
-  /// Paleta OSCURA: idéntica a la actual (no cambia nada en modo oscuro).
+  /// Acento del tema. En OSCURO es el coral de marca; en CLARO ("Piedra") es un
+  /// pizarra sobrio. Se consume vía `AppTheme._build` (colorScheme.primary,
+  /// botones, chips, nav, inputs…), de modo que todo el chrome Material se tiñe
+  /// según el tema sin tocar cada widget.
+  final Color accent;
+
+  /// Variante profunda del acento (estados pulsados, gradiente).
+  final Color accentDeep;
+
+  /// Variante suave del acento (fondos/tintes, ~10-20% opacidad ya resuelta).
+  final Color accentSoft;
+
+  /// Color de contraste para colocar SOBRE [accent] (texto/icono de botones).
+  Color get onAccent =>
+      accent.computeLuminance() > 0.55 ? const Color(0xFF2C3139) : Colors.white;
+
+  /// Paleta OSCURA: idéntica a la actual (coral de marca sobre grafito).
   static const AttraColors dark = AttraColors(
     bg: Color(0xFF0E0E10),
     surface: Color(0xFF1A1A1D),
@@ -49,18 +68,24 @@ class AttraColors extends ThemeExtension<AttraColors> {
     textPrimary: Color(0xFFFFFEFD),
     textSecondary: Color(0xFFA7A7AD),
     textMuted: Color(0xFF6E707A),
+    accent: Color(0xFFFF4F68), // coral de marca
+    accentDeep: Color(0xFFD71945),
+    accentSoft: Color(0x33FF4F68),
   );
 
-  /// Paleta CLARA: misma intención premium, invertida y suave (no blanco puro
-  /// agresivo). Mantiene contraste accesible.
+  /// Paleta CLARA = "Piedra": blanco frío + tonos piedra suaves, con acento
+  /// PIZARRA sobrio (no coral), sereno y minimalista.
   static const AttraColors light = AttraColors(
-    bg: Color(0xFFF6F6F8), // gris muy claro (scaffold)
+    bg: Color(0xFFF3F5F7), // blanco frío piedra (scaffold)
     surface: Color(0xFFFFFFFF), // tarjetas blancas
-    surfaceHigh: Color(0xFFEDEDF1), // inputs/chips
-    surfaceLine: Color(0xFFE0E0E6), // bordes
-    textPrimary: Color(0xFF15151A), // casi negro cálido
-    textSecondary: Color(0xFF565660), // gris medio
-    textMuted: Color(0xFF9A9AA3), // gris suave
+    surfaceHigh: Color(0xFFE7EAEF), // inputs/chips
+    surfaceLine: Color(0xFFDADEE5), // bordes
+    textPrimary: Color(0xFF2C3139), // pizarra oscuro
+    textSecondary: Color(0xFF737A85), // gris azulado medio
+    textMuted: Color(0xFFA6ADB8), // gris piedra suave
+    accent: Color(0xFF8E99A8), // pizarra sobrio (acento Piedra)
+    accentDeep: Color(0xFF6D798B), // pizarra profundo (pulsado)
+    accentSoft: Color(0xFFE6EAF0), // pizarra muy suave (tintes)
   );
 
   @override
@@ -72,6 +97,9 @@ class AttraColors extends ThemeExtension<AttraColors> {
     Color? textPrimary,
     Color? textSecondary,
     Color? textMuted,
+    Color? accent,
+    Color? accentDeep,
+    Color? accentSoft,
   }) {
     return AttraColors(
       bg: bg ?? this.bg,
@@ -81,6 +109,9 @@ class AttraColors extends ThemeExtension<AttraColors> {
       textPrimary: textPrimary ?? this.textPrimary,
       textSecondary: textSecondary ?? this.textSecondary,
       textMuted: textMuted ?? this.textMuted,
+      accent: accent ?? this.accent,
+      accentDeep: accentDeep ?? this.accentDeep,
+      accentSoft: accentSoft ?? this.accentSoft,
     );
   }
 
@@ -95,6 +126,9 @@ class AttraColors extends ThemeExtension<AttraColors> {
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       textMuted: Color.lerp(textMuted, other.textMuted, t)!,
+      accent: Color.lerp(accent, other.accent, t)!,
+      accentDeep: Color.lerp(accentDeep, other.accentDeep, t)!,
+      accentSoft: Color.lerp(accentSoft, other.accentSoft, t)!,
     );
   }
 }

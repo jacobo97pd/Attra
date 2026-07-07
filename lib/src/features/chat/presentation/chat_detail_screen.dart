@@ -15,6 +15,10 @@ import '../../connection_lab/presentation/anti_ghosting_coach_screen.dart';
 import '../../connection_lab/presentation/chat_ai_challenge_card.dart';
 import '../../connection_lab/presentation/date_planner_screen.dart';
 import '../../connection_lab/presentation/demo_challenge_screen.dart';
+import '../../date_plans/data/date_plan_service.dart';
+import '../../date_plans/presentation/date_plan_proposal_sheet.dart';
+import '../../date_plans/presentation/date_plans_strip.dart';
+import '../../date_plans/presentation/plan_preferences_sheet.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_summary.dart';
@@ -71,6 +75,8 @@ class ChatDetailScreen extends StatefulWidget {
     this.closeGracefullyEnabled = false,
     this.nudgesEnabled = false,
     this.dateFollowupEnabled = false,
+    this.datePlansEnabled = false,
+    this.datePlanService,
   });
 
   final String chatId;
@@ -113,6 +119,11 @@ class ChatDetailScreen extends StatefulWidget {
 
   /// Attra Clear §6: muestra el follow-up "¿Cómo fue la cita?" tras una cita.
   final bool dateFollowupEnabled;
+
+  /// Attra Plans: propuestas de cita con opciones + votación. Opt-in por flag;
+  /// requiere `datePlanService`. Si off/null, el chat va igual que siempre.
+  final bool datePlansEnabled;
+  final DatePlanService? datePlanService;
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -819,12 +830,87 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  /// Flujo de "proponer plan": Date Builder si está habilitado, si no la
-  /// propuesta de cita directa.
+  bool get _datePlansActive =>
+      widget.datePlansEnabled && widget.datePlanService != null;
+
+  /// Flujo de "proponer plan": Attra Plans (multi-opción) si está activo; si no,
+  /// Date Builder si está habilitado, o la propuesta de cita directa.
   Future<void> _proposePlanFlow(bool canSend) {
+    if (_datePlansActive) return _openDatePlanProposal(canSend);
     return widget.dateBuilderEnabled
         ? _openDateBuilder(canSend)
         : _proposeDate(canSend);
+  }
+
+  /// Attra Plans: la acción de "proponer plan" abre preferencias rápidas y
+  /// genera 3 opciones con reglas + Places (Fase 2); o pasa a modo manual.
+  Future<void> _openDatePlanProposal(bool canSend) async {
+    final DatePlanService? service = widget.datePlanService;
+    if (!canSend || service == null) {
+      _snack('Este chat ya no está disponible.');
+      return;
+    }
+    final PlanPreferencesResult? result =
+        await PlanPreferencesSheet.show(context);
+    if (result == null || !mounted) return;
+    if (result.manual) {
+      await _createManualDatePlan(service);
+      return;
+    }
+    await _generateDatePlan(service, result.preferences);
+  }
+
+  /// Genera la propuesta con IA/reglas + Places a partir de las preferencias.
+  Future<void> _generateDatePlan(
+      DatePlanService service, PlanPreferences prefs) async {
+    if (!mounted) return;
+    _snack('Buscando planes reales…');
+    try {
+      final String planId = await service.generatePlans(
+        chatId: widget.chatId,
+        zone: prefs.zone,
+        dateRange: prefs.dateRange,
+        timeWindow: prefs.timeWindow,
+        budget: prefs.budget,
+        planType: prefs.planType,
+      );
+      if (planId.isEmpty) {
+        if (mounted) _snack('No se pudo generar la propuesta.');
+        return;
+      }
+      widget.metrics?.log(FeedMetricsService.dateProposed,
+          uid: _uid, targetUid: widget.other.uid);
+      _logMessageMetrics();
+      if (mounted) _snack('Propuesta lista ✨');
+    } on DatePlanServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo generar la propuesta.');
+    }
+  }
+
+  /// Fase 1: compone 1-3 opciones manuales y crea la propuesta.
+  Future<void> _createManualDatePlan(DatePlanService service) async {
+    final DatePlanProposalInput? input =
+        await DatePlanProposalSheet.show(context);
+    if (input == null || !mounted) return;
+    try {
+      await service.createManualProposal(
+        chatId: widget.chatId,
+        options: input.options,
+        city: input.city,
+        zone: input.zone,
+        privacyMode: input.privacyMode,
+      );
+      widget.metrics?.log(FeedMetricsService.dateProposed,
+          uid: _uid, targetUid: widget.other.uid);
+      _logMessageMetrics();
+      if (mounted) _snack('Propuesta enviada ✨');
+    } on DatePlanServiceException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('No se pudo enviar la propuesta.');
+    }
   }
 
   /// Abre el Date Builder (si está habilitado) para componer un plan y luego
@@ -1292,6 +1378,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               _buildNudge(chat, canSend),
               Expanded(
                   child: _messageList(persistedStatus: chat?.journeyStatus)),
+              // Attra Plans: propuesta activa del match sobre el composer.
+              if (_datePlansActive && canSend && chat != null)
+                DatePlansStrip(
+                  matchId: chat.matchId,
+                  currentUid: widget.currentUid,
+                  service: widget.datePlanService!,
+                ),
               if (_uploadingMedia) const LinearProgressIndicator(minHeight: 2),
               if (!canSend)
                 _ClosedBanner(chat: chat, currentUid: widget.currentUid)

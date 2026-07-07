@@ -78,6 +78,7 @@ class SessionGate extends StatelessWidget {
               featureFlagService: controller.featureFlagService,
               matchService: controller.matchService,
               chatService: controller.chatService,
+              datePlanService: controller.datePlanService,
               boostService: controller.boostService,
               sparkService: controller.sparkService,
               feedMetricsService: controller.feedMetricsService,

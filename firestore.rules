@@ -323,6 +323,16 @@ service cloud.firestore {
         allow update: if isParticipant(matchUsers());
         allow delete: if false;
       }
+
+      // Attra Plans: propuestas de cita (opciones reales + votación). El cliente
+      // SOLO lee si es participante del match; crear/votar/confirmar pasa por
+      // Cloud Functions (Admin SDK). Nunca guarda ubicación exacta del usuario.
+      match /datePlans/{planId} {
+        allow read: if isParticipant(
+          get(/databases/$(database)/documents/matches/$(matchId)).data.get('users', [])
+        );
+        allow write: if false;
+      }
     }
 
     // Chats: solo los participantes. Los mensajes heredan: se valida contra el

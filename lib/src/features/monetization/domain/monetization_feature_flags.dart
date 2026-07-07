@@ -22,6 +22,12 @@ class MonetizationFeatureFlags {
     this.chatGameEnabled = false,
     this.dateBuilderEnabled = false,
     this.matchReactivationEnabled = false,
+    this.datePlansEnabled = false,
+    this.datePlansAiEnabled = false,
+    this.datePlansPlacesEnabled = false,
+    this.datePlansAutoNudgeEnabled = false,
+    this.datePlansKillSwitch = false,
+    this.datePlansFreeLimit = 1,
     this.adsEnabled = false,
     this.weeklyFreeAttras = 0,
     this.plusMonthlyAttras = 3,
@@ -55,6 +61,12 @@ class MonetizationFeatureFlags {
         chatGameEnabled = false,
         dateBuilderEnabled = false,
         matchReactivationEnabled = false,
+        datePlansEnabled = false,
+        datePlansAiEnabled = false,
+        datePlansPlacesEnabled = false,
+        datePlansAutoNudgeEnabled = false,
+        datePlansKillSwitch = true,
+        datePlansFreeLimit = 0,
         adsEnabled = false,
         weeklyFreeAttras = 0,
         plusMonthlyAttras = 0,
@@ -89,6 +101,18 @@ class MonetizationFeatureFlags {
   final bool twoTruthsEnabled;
   final bool dateBuilderEnabled;
   final bool matchReactivationEnabled;
+
+  /// Attra Plans: propuestas de cita con opciones reales (Places) + votación.
+  /// Todos OPT-IN (default false). `datePlansKillSwitch` apaga TODA la feature
+  /// en caliente aunque `datePlansEnabled` esté true.
+  final bool datePlansEnabled;
+  final bool datePlansAiEnabled;
+  final bool datePlansPlacesEnabled;
+  final bool datePlansAutoNudgeEnabled;
+  final bool datePlansKillSwitch;
+
+  /// Propuestas IA gratis por match para usuarios Free (Plus/Pro amplían).
+  final int datePlansFreeLimit;
 
   /// Anuncios (AdMob native cards en el feed). OPT-IN, default false. Aunque
   /// esté true, NO se muestran a Plus/Pro (se decide en la UI con el tier).
@@ -140,6 +164,18 @@ class MonetizationFeatureFlags {
           'date_builder_enabled', readBool('dateBuilderEnabled', false)),
       matchReactivationEnabled: readBool('match_reactivation_enabled',
           readBool('matchReactivationEnabled', false)),
+      datePlansEnabled: readBool(
+          'date_plans_enabled', readBool('datePlansEnabled', false)),
+      datePlansAiEnabled: readBool(
+          'date_plans_ai_enabled', readBool('datePlansAiEnabled', false)),
+      datePlansPlacesEnabled: readBool('date_plans_places_enabled',
+          readBool('datePlansPlacesEnabled', false)),
+      datePlansAutoNudgeEnabled: readBool('date_plans_auto_nudge_enabled',
+          readBool('datePlansAutoNudgeEnabled', false)),
+      datePlansKillSwitch: readBool('date_plans_kill_switch',
+          readBool('datePlansKillSwitch', false)),
+      datePlansFreeLimit:
+          readInt('date_plans_free_limit', readInt('datePlansFreeLimit', 1)),
       adsEnabled: readBool('ads_enabled', readBool('adsEnabled', false)),
       weeklyFreeAttras: readInt('weeklyFreeAttras', 0),
       plusMonthlyAttras: readInt('plusMonthlyAttras', 3),
@@ -148,6 +184,10 @@ class MonetizationFeatureFlags {
       rawConfig: map,
     );
   }
+
+  /// Attra Plans operativo: activado y sin kill switch. La UI y las funciones
+  /// deben comprobar esto antes de mostrar/generar planes.
+  bool get datePlansActive => datePlansEnabled && !datePlansKillSwitch;
 
   bool isTierEnabled(SubscriptionTier tier) {
     if (!monetizationEnabled && tier.isPaid) {
