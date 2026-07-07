@@ -18,21 +18,41 @@ void main() {
   });
 
   group('ConnectionSamples.analyzeAnswer', () {
-    test('empty answer gives a helpful low-but-valid insight', () {
+    test('empty answer scores low and nudges to actually answer', () {
       final ChallengeInsight i = ConnectionSamples.analyzeAnswer('');
-      expect(i.energyScore, inInclusiveRange(40, 96));
+      expect(i.energyScore, lessThan(40));
+      expect(i.energyLabel, 'Needs a bit more');
       expect(i.followUp, isNotEmpty);
       expect(i.suggestedNextMessage, isNotEmpty);
       expect(i.suggestedDateIdea, isNotEmpty);
     });
 
-    test('warm, detailed answer scores higher than empty', () {
+    test('filler answers like "Nada." do NOT get warm feedback', () {
+      for (final String filler in <String>['Nada.', 'no sé', 'meh', 'ns', 'x']) {
+        final ChallengeInsight i = ConnectionSamples.analyzeAnswer(filler);
+        expect(i.energyScore, lessThan(40),
+            reason: 'filler "$filler" should score low');
+        expect(i.energyLabel, 'Needs a bit more');
+      }
+    });
+
+    test('a short throwaway answer scores below a detailed one', () {
+      final int shortAns =
+          ConnectionSamples.analyzeAnswer('viajar').energyScore;
+      final int detailed = ConnectionSamples.analyzeAnswer(
+              'I love long coffee walks and good music, and I travel whenever I '
+              'can. What about you?')
+          .energyScore;
+      expect(detailed, greaterThan(shortAns));
+    });
+
+    test('warm, detailed answer scores clearly higher than empty', () {
       final int empty = ConnectionSamples.analyzeAnswer('').energyScore;
       final int warm = ConnectionSamples.analyzeAnswer(
               'I love long coffee walks and good music, and I travel whenever I '
-              'can — what about you?')
+              'can. What about you?')
           .energyScore;
-      expect(warm, greaterThan(empty));
+      expect(warm, greaterThan(empty + 20));
     });
   });
 
@@ -74,6 +94,14 @@ void main() {
       expect(r.balanceScore, greaterThanOrEqualTo(75));
       expect(r.balance.toLowerCase(), contains('balanced'));
       expect(r.momentumScore, greaterThan(70));
+    });
+
+    test('too few messages reads as "still early", not a fake score', () {
+      final GhostingCoachReport r = ConnectionSamples.coachReport(
+          myMessages: 1, theirMessages: 0, hoursSinceLast: 1);
+      expect(r.balance.toLowerCase(), contains('early'));
+      expect(r.balanceScore, 50);
+      expect(r.momentumScore, 50);
     });
 
     test('long silence lowers momentum and suggests a restart', () {

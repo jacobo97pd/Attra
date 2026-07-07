@@ -24,6 +24,21 @@ class VisualMatch {
   final double score;
 }
 
+/// Resultado de la búsqueda por PROMPT: encaje combinado [0..1] (foto + datos).
+class PromptMatch {
+  const PromptMatch({
+    required this.uid,
+    required this.score,
+    this.visualScore = 0,
+    this.dataScore = 0,
+  });
+
+  final String uid;
+  final double score;
+  final double visualScore;
+  final double dataScore;
+}
+
 /// Fachada de la IA visual de Attra Pro (backend-autoritativo). Sube la foto de
 /// referencia a Storage (privada) y delega el análisis completo al backend. El
 /// embedding facial (dato biométrico) NUNCA vive ni se calcula en el cliente.
@@ -145,6 +160,55 @@ class AiVisualService {
       if (score != null) result.add(VisualMatch(uid: uid, score: score));
     }
     result.sort((VisualMatch a, VisualMatch b) => b.score.compareTo(a.score));
+    return result;
+  }
+
+  // ── Búsqueda por PROMPT (complementaria a la de foto) ────────────────────
+  // Caché en memoria por prompt: recargar el feed con el mismo texto no re-pide
+  // al backend salvo por uids nuevos. Se invalida al cambiar el prompt.
+  String _promptKey = '';
+  final Map<String, double> _promptScoreCache = <String, double>{};
+  final Set<String> _promptQueried = <String>{};
+
+  /// Ranking de candidatos que encajan con una DESCRIPCIÓN en lenguaje natural
+  /// (físico por foto + datos declarados). Complementa `getVisualMatches` (no la
+  /// sustituye). Vacío si el motor no está disponible → el feed no filtra.
+  Future<List<PromptMatch>> getPromptMatches(
+      String prompt, List<String> candidateUids) async {
+    final String key = prompt.trim();
+    if (key.isEmpty || candidateUids.isEmpty) return const <PromptMatch>[];
+    // Prompt distinto → invalida la caché.
+    if (key != _promptKey) {
+      _promptKey = key;
+      _promptScoreCache.clear();
+      _promptQueried.clear();
+    }
+    final List<String> pending = candidateUids
+        .where((String uid) => !_promptQueried.contains(uid))
+        .toList(growable: false);
+    if (pending.isNotEmpty) {
+      final Map<String, dynamic> data =
+          await _call('getPromptMatches', <String, dynamic>{
+        'prompt': key,
+        'candidateUids': pending,
+      });
+      final List<dynamic> ranking =
+          (data['ranking'] as List<dynamic>?) ?? <dynamic>[];
+      for (final dynamic item in ranking) {
+        if (item is Map) {
+          final String uid = (item['uid'] ?? '').toString();
+          if (uid.isEmpty) continue;
+          _promptScoreCache[uid] = (item['score'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+      _promptQueried.addAll(pending);
+    }
+    final List<PromptMatch> result = <PromptMatch>[];
+    for (final String uid in candidateUids) {
+      final double? score = _promptScoreCache[uid];
+      if (score != null) result.add(PromptMatch(uid: uid, score: score));
+    }
+    result.sort((PromptMatch a, PromptMatch b) => b.score.compareTo(a.score));
     return result;
   }
 

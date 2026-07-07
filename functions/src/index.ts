@@ -44,6 +44,7 @@ export {
   analyzeReferencePhoto,
   getProfileInsights,
   getVisualMatches,
+  getPromptMatches,
   clearAiData,
 } from "./ai";
 export {
@@ -70,6 +71,7 @@ export {
 export {
   createDatePlanProposal,
   generateDatePlanSuggestions,
+  voteDatePlan,
 } from "./datePlans";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";

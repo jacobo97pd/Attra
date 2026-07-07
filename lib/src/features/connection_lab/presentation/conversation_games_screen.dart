@@ -43,7 +43,7 @@ class ConversationGamesScreen extends StatelessWidget {
     _Game(
       icon: Icons.forum_rounded,
       title: 'Double Answer',
-      body: 'You both answer the same question, then compare — instant banter.',
+      body: 'You both answer the same question, then compare. Instant banter.',
       accent: AppColors.nightBlue,
     ),
   ];
@@ -65,7 +65,7 @@ class ConversationGamesScreen extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'Attra is built around playing and talking, not just swiping. Try a '
-            'guided challenge now — no match needed.',
+            'guided challenge now, no match needed.',
             style: TextStyle(color: context.colors.textSecondary),
           ),
           const SizedBox(height: 16),

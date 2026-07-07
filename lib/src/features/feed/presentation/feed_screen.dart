@@ -288,6 +288,32 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  /// Umbral mínimo de encaje para la búsqueda por prompt (combinado foto+datos).
+  static const double _kPromptThreshold = 0.5;
+
+  /// FILTRA el feed dejando SOLO los que encajan con la descripción (prompt),
+  /// ordenados por encaje. Si el motor no está disponible, devuelve vacío (mejor
+  /// que mostrar falsos positivos).
+  Future<List<SeedProfile>> _sortByPrompt(List<SeedProfile> profiles) async {
+    try {
+      final List<PromptMatch> ranking = await widget.aiVisualService!
+          .getPromptMatches(_filters.promptQuery.trim(),
+              profiles.map((SeedProfile p) => p.id).toList());
+      if (ranking.isEmpty) return const <SeedProfile>[];
+      final Map<String, SeedProfile> byId = <String, SeedProfile>{
+        for (final SeedProfile p in profiles) p.id: p,
+      };
+      return <SeedProfile>[
+        for (final PromptMatch m in ranking)
+          if (m.score >= _kPromptThreshold && byId.containsKey(m.uid))
+            byId[m.uid]!,
+      ];
+    } catch (e) {
+      if (kDebugMode) debugPrint('[IA prompt] error: $e');
+      return const <SeedProfile>[];
+    }
+  }
+
   /// Centra el feed en el destino de viaje: deja solo los perfiles del país
   /// elegido y pone delante los de la ciudad. Sin país no filtra (devuelve tal
   /// cual). Comparaciones case-insensitive.
@@ -420,10 +446,17 @@ class _FeedScreenState extends State<FeedScreen> {
       final bool visualSearch = _filters.sortByVisualReference &&
           widget.canUseVisualMatch &&
           widget.aiVisualService != null;
+      // Búsqueda por PROMPT (Pro): descripción en lenguaje natural. Como la
+      // visual, es GLOBAL (no restringe por ubicación ni Slow Dating).
+      final bool promptSearch = _filters.promptQuery.trim().isNotEmpty &&
+          widget.canUseVisualMatch &&
+          widget.aiVisualService != null;
+      // Cualquier búsqueda IA (foto o prompt) desactiva distancia/curación.
+      final bool aiSearch = visualSearch || promptSearch;
       // Modo viajes: cuando viajas, el feed se CENTRA en el destino (se ignora
       // la distancia real y se usa el PAÍS de destino para la relevancia).
       final bool traveling =
-          !visualSearch && (widget.user?.isTraveling ?? false);
+          !aiSearch && (widget.user?.isTraveling ?? false);
       List<SeedProfile> filtered = FeedFilter.apply(
         profiles: all,
         myUid: myUid,
@@ -431,15 +464,15 @@ class _FeedScreenState extends State<FeedScreen> {
         myInterestedIn: widget.user?.interestedIn ?? const <String>[],
         excludedUids: excluded,
         filters: _filters,
-        // En viaje/búsqueda visual no hay "mi" lat/lng (no filtra por distancia).
-        myLat: (traveling || visualSearch) ? null : _effectiveLat,
-        myLng: (traveling || visualSearch) ? null : _effectiveLng,
-        myCountry: visualSearch
+        // En viaje/búsqueda IA no hay "mi" lat/lng (no filtra por distancia).
+        myLat: (traveling || aiSearch) ? null : _effectiveLat,
+        myLng: (traveling || aiSearch) ? null : _effectiveLng,
+        myCountry: aiSearch
             ? ''
             : (traveling
                 ? (widget.user?.travelCountry ?? '')
                 : (widget.user?.countryName ?? '')),
-        defaultMaxKm: visualSearch ? null : widget.user?.maxDistanceKm,
+        defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
       );
       if (traveling) {
         filtered = _applyTravel(filtered);
@@ -490,7 +523,7 @@ class _FeedScreenState extends State<FeedScreen> {
             );
       // Slow Dating (opt-in): cura el feed (menos perfiles, más afines e
       // intencionales). No se aplica en búsqueda visual (que es global).
-      if (!visualSearch && (widget.user?.slowDatingEnabled ?? false)) {
+      if (!aiSearch && (widget.user?.slowDatingEnabled ?? false)) {
         filtered = SlowDatingRanker.curate(
           profiles: filtered,
           me: widget.user,
@@ -499,6 +532,9 @@ class _FeedScreenState extends State<FeedScreen> {
       // IA visual (Pro): ordena por parecido a la foto de referencia.
       if (visualSearch) {
         filtered = await _sortByVisualReference(filtered);
+      } else if (promptSearch) {
+        // IA por prompt (Pro): deja solo los que encajan con la descripción.
+        filtered = await _sortByPrompt(filtered);
       }
       // Plus/Pro: quién te ha dado like -> badge + prioridad al frente del feed.
       Set<String> likedMe = const <String>{};

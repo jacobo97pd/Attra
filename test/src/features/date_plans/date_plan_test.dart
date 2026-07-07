@@ -60,6 +60,26 @@ void main() {
       expect(p.isActionable, isTrue); // pending, sin expiración
     });
 
+    test('confirmada expone la opción elegida y no es accionable', () {
+      final DatePlanProposal p =
+          DatePlanProposal.fromMap('x', <String, dynamic>{
+        'users': <String>['a', 'b'],
+        'status': 'confirmed',
+        'selectedOptionId': 'opt_2',
+        'votesByUser': <String, dynamic>{'a': 'opt_2', 'b': 'opt_2'},
+        'options': <dynamic>[
+          <String, dynamic>{'id': 'opt_1', 'title': 'Café'},
+          <String, dynamic>{'id': 'opt_2', 'title': 'Paseo', 'placeName': 'Retiro'},
+        ],
+      });
+      expect(p.status.isConfirmed, isTrue);
+      expect(p.status.isOpen, isFalse);
+      expect(p.isActionable, isFalse);
+      expect(p.selectedOption?.title, 'Paseo');
+      expect(p.hasVoted('a'), isTrue);
+      expect(p.hasVoted('b'), isTrue);
+    });
+
     test('propuesta caducada no es accionable', () {
       final DatePlanProposal p =
           DatePlanProposal.fromMap('x', <String, dynamic>{

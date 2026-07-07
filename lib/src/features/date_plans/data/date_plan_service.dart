@@ -75,6 +75,35 @@ class DatePlanService {
     return (data['planId'] as String?) ?? '';
   }
 
+  /// Vota una opción como favorita (Fase 4). Cuando ambos eligen la misma, la
+  /// propuesta queda confirmada. Devuelve el estado resultante.
+  Future<String> voteOption({
+    required String chatId,
+    required String planId,
+    required String optionId,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('voteDatePlan', <String, dynamic>{
+      'chatId': chatId,
+      'planId': planId,
+      'voteType': 'like',
+      'optionId': optionId,
+    });
+    return (data['status'] as String?) ?? '';
+  }
+
+  /// Rechaza la propuesta entera ("no me interesa"). La cierra.
+  Future<void> rejectProposal({
+    required String chatId,
+    required String planId,
+  }) async {
+    await _call('voteDatePlan', <String, dynamic>{
+      'chatId': chatId,
+      'planId': planId,
+      'voteType': 'reject',
+    });
+  }
+
   // --- Lecturas ---
 
   Stream<List<DatePlanProposal>> observePlans(String matchId) =>

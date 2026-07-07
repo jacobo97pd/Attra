@@ -53,6 +53,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
   String? _religion;
   bool _verifiedOnly = false;
   bool _sortByRef = false;
+  final TextEditingController _promptController = TextEditingController();
   late RangeValues _height;
   late Set<String> _db; // deal-breakers
 
@@ -114,6 +115,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
     _height = RangeValues(f.minHeight.toDouble(), f.maxHeight.toDouble());
     _db = <String>{...f.dealbreakers};
     _sortByRef = f.sortByVisualReference;
+    _promptController.text = f.promptQuery;
     if (widget.isPlus) {
       _goal = f.relationshipGoal;
       _smoking = f.smoking;
@@ -123,6 +125,12 @@ class _FiltersScreenState extends State<FiltersScreen> {
       _religion = f.religion;
       _verifiedOnly = f.verifiedOnly;
     }
+  }
+
+  @override
+  void dispose() {
+    _promptController.dispose();
+    super.dispose();
   }
 
   void _apply() {
@@ -146,6 +154,8 @@ class _FiltersScreenState extends State<FiltersScreen> {
       maxHeight: widget.isPlus ? _height.end.round() : FeedFilters.heightCeil,
       dealbreakers: db,
       sortByVisualReference: widget.isPlus && _sortByRef,
+      promptQuery:
+          widget.canVisualMatch ? _promptController.text.trim() : '',
     ));
   }
 
@@ -160,6 +170,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
             _smoking = _drinking = _education = _ethnicity = _religion = null;
         _verifiedOnly = false;
         _sortByRef = false;
+        _promptController.clear();
         _height = const RangeValues(
             FeedFilters.heightFloor + 0.0, FeedFilters.heightCeil + 0.0);
         _db = <String>{};
@@ -299,6 +310,35 @@ class _FiltersScreenState extends State<FiltersScreen> {
                 value: _sortByRef,
                 onChanged: (bool v) => setState(() => _sortByRef = v),
               ),
+            if (widget.canVisualMatch) ...<Widget>[
+              const SizedBox(height: 8),
+              Row(
+                children: <Widget>[
+                  Icon(Icons.search,
+                      size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Buscar por descripción',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _promptController,
+                maxLines: 2,
+                minLines: 1,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText:
+                      'Ej: chico alto, ojos azules, moreno, aventurero y que le guste viajar',
+                  border: OutlineInputBorder(),
+                  helperText:
+                      'IA de Pro: analiza fotos + datos y muestra solo los que encajan',
+                  helperMaxLines: 2,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Text('Altura: ${_height.start.round()} – ${_height.end.round()} cm',
                 style: theme.textTheme.bodyMedium),

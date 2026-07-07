@@ -105,7 +105,7 @@ class AiCompatibilityScreen extends StatelessWidget {
               )),
           const SizedBox(height: 8),
           Text(
-            'Compatibility is a starting point, not a verdict — the best signal '
+            'Compatibility is a starting point, not a verdict. The best signal '
             'is how a real conversation feels.',
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: context.colors.textMuted),

@@ -23,6 +23,7 @@ class FeedFilters {
     this.maxHeight = heightCeil,
     this.dealbreakers = const <String>{},
     this.sortByVisualReference = false,
+    this.promptQuery = '',
   });
 
   // --- Básicos ---
@@ -48,6 +49,11 @@ class FeedFilters {
 
   /// Ordenar el feed por parecido estético a la foto de referencia (Pro).
   final bool sortByVisualReference;
+
+  /// Búsqueda por PROMPT (Pro): descripción en lenguaje natural del "tipo". Si
+  /// no está vacía, el feed muestra solo los que encajan (físico + datos). Es
+  /// independiente de [sortByVisualReference].
+  final String promptQuery;
 
   static const int ageFloor = 18;
   static const int ageCeil = 80;
@@ -113,6 +119,7 @@ class FeedFilters {
     int? maxHeight,
     Set<String>? dealbreakers,
     bool? sortByVisualReference,
+    String? promptQuery,
   }) {
     return FeedFilters(
       minAge: minAge ?? this.minAge,
@@ -135,6 +142,7 @@ class FeedFilters {
       dealbreakers: dealbreakers ?? this.dealbreakers,
       sortByVisualReference:
           sortByVisualReference ?? this.sortByVisualReference,
+      promptQuery: promptQuery ?? this.promptQuery,
     );
   }
 }

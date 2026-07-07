@@ -502,7 +502,7 @@ class _ChatsEmpty extends StatelessWidget {
         children: <Widget>[
           Icon(Icons.auto_awesome, size: 48, color: theme.colorScheme.primary),
           const SizedBox(height: 14),
-          Text('No conversations yet — start with a challenge',
+          Text('No conversations yet. Start with a challenge',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleLarge
                   ?.copyWith(fontWeight: FontWeight.w800)),

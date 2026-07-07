@@ -384,23 +384,23 @@ const ALL_CATEGORY_KEYS: PlanCategory[] = [
 
 function buildWhyItFits(common: PlanCategory[], cat: PlanCategory): string {
   if (common.includes(cat)) {
-    return `Encaja con lo que habéis compartido: ${CATEGORY_NOUN[cat]}.`;
+    return `Os pega porque a los dos os gusta ${CATEGORY_NOUN[cat]}.`;
   }
   if (common.length > 0) {
-    return `Un plan variado que complementa vuestros gustos.`;
+    return `Un plan distinto para variar un poco.`;
   }
-  return "Una primera cita sencilla, pública y sin presión.";
+  return "Un plan sencillo y tranquilo para veros por primera vez.";
 }
 
 function buildGeneratedReason(interests: string[], otherName: string): string {
-  const who = otherName ? `${otherName} y tú` : "Vosotros dos";
+  const who = otherName ? `A ${otherName} y a ti` : "A los dos";
   if (interests.length >= 2) {
-    return `${who} habéis conectado con ${interests[0]} y ${interests[1]}. Aquí van ideas reales para veros.`;
+    return `${who} os gusta ${interests[0]} y ${interests[1]}, así que os dejo un par de ideas para veros.`;
   }
   if (interests.length === 1) {
-    return `${who} compartís ${interests[0]}. Estas ideas pueden encajar para una primera cita.`;
+    return `${who} os gusta ${interests[0]}. Igual alguna de estas ideas os viene bien para quedar.`;
   }
-  return `Ideas para una primera cita tranquila y en público.`;
+  return `Un par de ideas para veros por primera vez, con calma.`;
 }
 
 /// createDatePlanProposal (Fase 1): crea una propuesta MANUAL en el match del
@@ -531,3 +531,130 @@ export const createDatePlanProposal = onCall(
     return { planId: planRef.id };
   }
 );
+
+/// Deriva el estado de una propuesta a partir de los votos. Con la enum
+/// existente: pending (0/1-mismatch), accepted_by_user_a/b (solo uno votó),
+/// confirmed (ambos coinciden en opción). Un rechazo la cierra.
+function derivePlanStatus(
+  users: string[],
+  votes: Record<string, string>,
+  rejectedBy: string[]
+): { status: string; selectedOptionId: string } {
+  if (rejectedBy.length > 0) return { status: "rejected", selectedOptionId: "" };
+  const a = users[0];
+  const b = users[1];
+  const va = votes[a];
+  const vb = votes[b];
+  if (va && vb) {
+    if (va === vb) return { status: "confirmed", selectedOptionId: va };
+    return { status: "pending", selectedOptionId: "" }; // votaron distinto → seguir abierto
+  }
+  if (va) return { status: "accepted_by_user_a", selectedOptionId: "" };
+  if (vb) return { status: "accepted_by_user_b", selectedOptionId: "" };
+  return { status: "pending", selectedOptionId: "" };
+}
+
+/// voteDatePlan (Fase 4): cada usuario vota su opción favorita o rechaza la
+/// propuesta. Cuando AMBOS eligen la MISMA opción, queda `confirmed`. Autoritativo
+/// y transaccional. voteType: 'like' (con optionId) | 'reject'.
+export const voteDatePlan = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  const chatId = requireStringArg(request.data?.chatId, "chatId");
+  const planId = requireStringArg(request.data?.planId, "planId");
+  const voteType = requireStringArg(request.data?.voteType, "voteType");
+  if (voteType !== "like" && voteType !== "reject") {
+    throw new HttpsError("invalid-argument", "voteType no válido.");
+  }
+  const optionId =
+    typeof request.data?.optionId === "string" ? request.data.optionId : "";
+  if (voteType === "like" && !optionId) {
+    throw new HttpsError("invalid-argument", "Falta la opción elegida.");
+  }
+  await requireDatePlansEnabled();
+
+  const chatRef = col.chats.doc(chatId);
+  const chatSnap = await chatRef.get();
+  if (!chatSnap.exists) throw new HttpsError("not-found", "El chat no existe.");
+  const chat = chatSnap.data() ?? {};
+  const chatUsers: string[] = (chat.users ?? []) as string[];
+  if (!chatUsers.includes(uid)) {
+    throw new HttpsError("permission-denied", "No participas en este chat.");
+  }
+  if ((chat.status ?? "active") !== "active") {
+    throw new HttpsError("failed-precondition", "Este chat ya no está disponible.");
+  }
+  const matchId = (chat.matchId ?? chatId).toString();
+  const planRef = col.matches.doc(matchId).collection("datePlans").doc(planId);
+
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(planRef);
+    if (!snap.exists) throw new HttpsError("not-found", "La propuesta no existe.");
+    const plan = snap.data() ?? {};
+    const users: string[] = Array.isArray(plan.users) ? plan.users : [];
+    if (!users.includes(uid)) {
+      throw new HttpsError("permission-denied", "No participas en esta propuesta.");
+    }
+    const expiresAtMs = (plan.expiresAt?.toMillis?.() ?? 0) as number;
+    if (expiresAtMs && expiresAtMs < Date.now()) {
+      throw new HttpsError("failed-precondition", "Esta propuesta ha caducado.");
+    }
+    if (plan.status === "confirmed" || plan.status === "rejected") {
+      throw new HttpsError("failed-precondition", "Esta propuesta ya está resuelta.");
+    }
+
+    const votes: Record<string, string> =
+      plan.votesByUser && typeof plan.votesByUser === "object"
+        ? { ...plan.votesByUser }
+        : {};
+    const rejectedBy: string[] = Array.isArray(plan.rejectedBy)
+      ? [...plan.rejectedBy]
+      : [];
+    const acceptedBy: string[] = Array.isArray(plan.acceptedBy)
+      ? [...plan.acceptedBy]
+      : [];
+
+    const now = FieldValue.serverTimestamp();
+    if (voteType === "reject") {
+      if (!rejectedBy.includes(uid)) rejectedBy.push(uid);
+      tx.update(planRef, {
+        rejectedBy,
+        status: "rejected",
+        updatedAt: now,
+      });
+      return { status: "rejected", selectedOptionId: "" };
+    }
+
+    // like: la opción debe existir.
+    const options: DocumentData[] = Array.isArray(plan.options) ? plan.options : [];
+    if (!options.some((o) => o?.id === optionId)) {
+      throw new HttpsError("invalid-argument", "Esa opción no existe.");
+    }
+    votes[uid] = optionId;
+    if (!acceptedBy.includes(uid)) acceptedBy.push(uid);
+    const derived = derivePlanStatus(users, votes, rejectedBy);
+    tx.update(planRef, {
+      votesByUser: votes,
+      acceptedBy,
+      status: derived.status,
+      selectedOptionId: derived.selectedOptionId,
+      updatedAt: now,
+    });
+    return derived;
+  });
+
+  // Si queda confirmada, empuja el journey del match hacia "date_accepted".
+  if (result.status === "confirmed") {
+    await col.matches
+      .doc(matchId)
+      .set(
+        {
+          journeyStatus: nextJourneyStatus(chat.journeyStatus, "date_accepted"),
+          journeyUpdatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      )
+      .catch(() => undefined);
+  }
+
+  return result;
+});

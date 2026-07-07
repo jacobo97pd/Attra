@@ -78,7 +78,7 @@ class ConnectionSamples {
       title: 'Two truths, one hope',
       prompt:
           'Share two things you love and one thing you hope to do this year. '
-          'Keep it playful — no pressure to impress.',
+          'Keep it playful. No pressure to impress.',
     ),
     ChallengePrompt(
       title: 'Perfect lazy Sunday',
@@ -104,11 +104,30 @@ class ConnectionSamples {
   static ChallengePrompt challengeAt(int seed) =>
       challenges[seed.abs() % challenges.length];
 
-  /// Analyses a free-text answer and returns a polished, deterministic insight.
+  /// Answers that carry no real content (blank, "nada", "no sé", "meh"…). These
+  /// should NOT get warm feedback: the demo has to feel honest.
+  static const Set<String> _emptyAnswers = <String>{
+    '', 'nada', 'nose', 'nolose', 'nolo se', 'ns', 'na', 'meh', 'niidea',
+    'paso', 'nada de nada', 'idk', 'dunno', 'nothing', 'none', 'x', 'xd',
+    'no se', 'no lo se', 'ni idea',
+  };
+
+  /// Analyses a free-text answer and returns a deterministic insight. Low-effort
+  /// or empty answers get a low score and an honest nudge to actually answer.
   static ChallengeInsight analyzeAnswer(String rawAnswer) {
     final String answer = rawAnswer.trim();
     final int words = answer.isEmpty ? 0 : answer.split(RegExp(r'\s+')).length;
+    final int chars = answer.length;
     final String lower = answer.toLowerCase();
+    // Normaliza para detectar respuestas de relleno: solo letras, sin signos.
+    final String normalized =
+        lower.replaceAll(RegExp(r'[^a-záéíóúñ\s]'), '').trim();
+
+    // Vacía o de relleno: muy corta, o coincide con una respuesta sin contenido.
+    final bool isEmpty = words == 0 ||
+        normalized.length <= 2 ||
+        _emptyAnswers.contains(normalized);
+    final bool tooShort = !isEmpty && (words < 4 && chars < 25);
 
     final bool hasQuestion = answer.contains('?');
     final bool warm = _containsAny(lower, <String>[
@@ -127,39 +146,52 @@ class ConnectionSamples {
       'cat',
     ]);
 
-    // Energy score: rewards a bit of detail + warmth, gently.
-    int score = 55 + (words.clamp(0, 30) * 1);
-    if (warm) score += 8;
-    if (hasQuestion) score += 6;
-    score = score.clamp(40, 96);
+    // Puntuación: parte baja y sube con detalle real (palabras/longitud), calidez
+    // y curiosidad. Una respuesta vacía/relleno se queda claramente abajo.
+    int score;
+    if (isEmpty) {
+      score = 18;
+    } else {
+      score = 34 + (words.clamp(0, 25) * 2);
+      if (warm) score += 8;
+      if (hasQuestion) score += 6;
+      if (chars >= 80) score += 6; // recompensa el detalle de verdad
+      if (tooShort) score -= 8;
+      score = score.clamp(20, 96);
+    }
 
     final String energyLabel = score >= 80
         ? 'Great energy'
-        : score >= 65
+        : score >= 62
             ? 'Warm and open'
-            : 'Good start';
+            : score >= 45
+                ? 'Good start'
+                : 'Needs a bit more';
 
-    final String followUp = words == 0
-        ? 'Add a detail or two — even one specific example gives the other '
-            'person something to grab onto.'
-        : hasQuestion
-            ? 'Nice — you left a door open with a question. Keep that curiosity '
-                'going and share the "why" behind your answer.'
-            : warm
-                ? 'Lovely and warm. Try turning it back to them: ask what their '
-                    'version of this looks like.'
-                : 'Solid. Add a small personal detail so it feels like you, not '
-                    'a script.';
+    final String followUp = isEmpty
+        ? 'That one’s basically blank. Share two things you love and one you '
+            'want to do this year. Even a single line works.'
+        : tooShort
+            ? 'A little short to go on. Add a detail or an example so it '
+                'actually sounds like you.'
+            : hasQuestion
+                ? 'Nice, you left a door open with that question. Keep the '
+                    'curiosity going and say why you answered that way.'
+                : warm
+                    ? 'Lovely and warm. Turn it back to them and ask what their '
+                        'version of this looks like.'
+                    : 'Good base. Add a small personal detail so it feels like '
+                        'you and not a script.';
 
     final String suggestedNextMessage = warm
         ? '"That’s so my vibe too. What’s the one thing that never fails to '
             'make your week better?"'
-        : '"Okay, now I’m curious — what would your answer to that same '
+        : '"Okay, now I’m curious. What would your answer to that same '
             'question be?"';
 
     final String suggestedDateIdea = warm
-        ? 'A relaxed coffee walk — easy to talk, easy to leave, zero pressure.'
-        : 'A short casual meet-up (30–45 min) so it stays light and low-stakes.';
+        ? 'A relaxed coffee walk. Easy to talk, easy to leave, no pressure.'
+        : 'A short, casual meet-up (about 30 to 45 min) so it stays light.';
 
     return ChallengeInsight(
       energyScore: score,
@@ -189,7 +221,7 @@ class ConnectionSamples {
     } else {
       reasons.add('Complementary interests that spark curiosity');
     }
-    reasons.add('Similar communication style — both open and expressive');
+    reasons.add('You both communicate in a similar way, open and expressive');
     if (myIntent.isNotEmpty &&
         theirIntent.isNotEmpty &&
         myIntent.toLowerCase() == theirIntent.toLowerCase()) {
@@ -197,7 +229,7 @@ class ConnectionSamples {
     } else {
       reasons.add('Compatible date preferences (relaxed, low-pressure plans)');
     }
-    reasons.add('Similar humor level — playful, easy to banter');
+    reasons.add('A similar sense of humor, playful and easy to banter with');
     reasons.add('Good response balance in early conversations');
 
     // Deterministic score: base + overlap bonus.
@@ -231,8 +263,8 @@ class ConnectionSamples {
   /// A short, warm message to propose a date.
   static String dateProposalMessage(String name) {
     final String who = name.trim().isEmpty ? '' : ' $name';
-    return 'Hey$who — I’ve enjoyed this. Fancy a relaxed coffee walk sometime '
-        'this week? No pressure, just an easy hello in person 🙂';
+    return 'Hey$who, I’ve really enjoyed this. Fancy a relaxed coffee walk '
+        'sometime this week? No pressure, just an easy hello in person 🙂';
   }
 
   /// Rule-based anti-ghosting coach read-out from simple conversation signals.
@@ -245,6 +277,17 @@ class ConnectionSamples {
     double hoursSinceLast = 6,
     bool iSentLast = false,
   }) {
+    // Aún no hay conversación suficiente para leer nada honestamente.
+    if (myMessages + theirMessages < 3) {
+      return const GhostingCoachReport(
+        balance: 'Still early. Exchange a few more messages to get a read.',
+        momentum: 'Not enough back-and-forth yet to judge momentum.',
+        interestSignal: 'Give it a little more conversation before reading into it.',
+        suggestedAction: 'Ask an easy, open question to get things going.',
+        balanceScore: 50,
+        momentumScore: 50,
+      );
+    }
     final int total = (myMessages + theirMessages).clamp(1, 1000);
     final double share = myMessages / total;
     final int balanceScore = (100 - ((share - 0.5).abs() * 200)).round().clamp(
@@ -254,8 +297,8 @@ class ConnectionSamples {
     final String balance = balanceScore >= 75
         ? 'Your conversation is balanced.'
         : share > 0.5
-            ? 'You’re carrying the conversation a bit — give them space to lead.'
-            : 'They’re leading more — jump in with something of your own.';
+            ? 'You’re carrying the conversation a bit, give them some room to lead.'
+            : 'They’re leading more, so jump in with something of your own.';
 
     final int momentumScore = hoursSinceLast <= 3
         ? 92
@@ -265,17 +308,17 @@ class ConnectionSamples {
                 ? 48
                 : 24;
     final String momentum = momentumScore >= 70
-        ? 'Reply momentum is strong — keep it flowing.'
+        ? 'Replies are flowing nicely, keep it going.'
         : momentumScore >= 40
             ? 'Momentum is cooling. A light nudge keeps it alive.'
             : 'This has gone quiet. A short, playful restart can revive it.';
 
     final String interestSignal = balanceScore >= 60 && momentumScore >= 50
         ? 'Interest looks mutual and healthy.'
-        : 'Mixed signals — one open question will tell you a lot.';
+        : 'The signals are mixed. One open question will tell you a lot.';
 
     final String suggestedAction = iSentLast && hoursSinceLast > 24
-        ? 'You sent the last message a while ago — no more chasing. If they '
+        ? 'You sent the last message a while ago, so no more chasing. If they '
             'reply, great; if not, close it kindly and move on.'
         : hoursSinceLast > 36
             ? 'Send a short playful prompt to restart the conversation.'

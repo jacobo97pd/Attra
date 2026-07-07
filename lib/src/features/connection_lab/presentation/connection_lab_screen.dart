@@ -98,7 +98,7 @@ class ConnectionLabScreen extends StatelessWidget {
             LabBigCard(
               icon: Icons.insights_rounded,
               title: 'AI Compatibility',
-              subtitle: 'See why you might click — with reasons, not just a %.',
+              subtitle: 'See why you might click, with reasons and not just a %.',
               accent: AppColors.gold,
               onTap: () => _push(
                 context,

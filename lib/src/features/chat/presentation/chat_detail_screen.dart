@@ -152,6 +152,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   int _realMessageCount = 0;
   bool _conversationLogged = false;
 
+  /// Últimos mensajes vistos por el stream (para analizar la conversación real
+  /// desde el coach anti-ghosting, sin volver a leer de red).
+  List<ChatMessage> _lastMessages = const <ChatMessage>[];
+
   /// Journey derivado del chat (Fase 8) + si el usuario ocultó la card.
   MatchJourney? _journey;
   bool _journeyDismissed = false;
@@ -1143,7 +1147,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final String first = widget.other.displayName.trim().split(' ').first;
     final String who = first.isEmpty ? '' : ' $first';
     _input.text =
-        'Hey$who — quick one: what’s a small, ordinary thing that reliably '
+        'Hey$who, quick one. What’s a small, ordinary thing that reliably '
         'makes your day better? 🙂';
     _input.selection =
         TextSelection.collapsed(offset: _input.text.length);
@@ -1151,9 +1155,44 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   void _openCoach() {
+    // Analiza la conversación REAL: mensajes de cada uno, tiempo desde el último
+    // y quién lo envió. Solo cuenta el intercambio humano (texto/media/propuesta/
+    // minijuegos), no el contexto de apertura ni el sistema.
+    final List<ChatMessage> convo = _lastMessages
+        .where((ChatMessage m) =>
+            m.type == MessageType.text ||
+            m.type.isMedia ||
+            m.type.isDateProposal ||
+            m.type.isDoubleAnswer ||
+            m.type.isTwoTruths)
+        .toList(growable: false);
+    int mine = 0;
+    int theirs = 0;
+    for (final ChatMessage m in convo) {
+      if (m.senderId == widget.currentUid) {
+        mine++;
+      } else if (m.senderId == widget.other.uid) {
+        theirs++;
+      }
+    }
+    double hoursSinceLast = 0;
+    bool iSentLast = false;
+    if (convo.isNotEmpty) {
+      final ChatMessage last = convo.last;
+      final DateTime? t = last.createdAt;
+      if (t != null) {
+        hoursSinceLast = DateTime.now().difference(t).inMinutes / 60.0;
+      }
+      iSentLast = last.senderId == widget.currentUid;
+    }
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) =>
-          AntiGhostingCoachScreen(otherName: widget.other.displayName),
+      builder: (_) => AntiGhostingCoachScreen(
+        otherName: widget.other.displayName,
+        myMessages: mine,
+        theirMessages: theirs,
+        hoursSinceLast: hoursSinceLast,
+        iSentLast: iSentLast,
+      ),
     ));
   }
 
@@ -1382,6 +1421,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               if (_datePlansActive && canSend && chat != null)
                 DatePlansStrip(
                   matchId: chat.matchId,
+                  chatId: widget.chatId,
                   currentUid: widget.currentUid,
                   service: widget.datePlanService!,
                 ),
@@ -1423,6 +1463,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           return const Center(child: CircularProgressIndicator());
         }
         final List<ChatMessage> messages = snapshot.data ?? <ChatMessage>[];
+        _lastMessages = messages;
 
         // Cuenta de mensajes "reales" (texto/media/propuesta), cacheada para
         // detectar el primer mensaje (conversationStarted). No requiere setState.

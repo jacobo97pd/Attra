@@ -4,6 +4,10 @@ import { getStorage } from "firebase-admin/storage";
 import { GoogleAuth } from "google-auth-library";
 import { REGION, STORAGE_BUCKET, db } from "./firebase";
 import { col, requireAuthUid, requireStringArg } from "./common";
+import {
+  dataScore as promptDataScore,
+  extractPromptSignals,
+} from "./promptMatch";
 
 /// Referencias visuales (embeddings) por usuario. BACKEND-ONLY: el embedding
 /// NUNCA se expone al cliente (es dato biométrico/categoría especial RGPD).
@@ -58,6 +62,42 @@ async function embedImage(bytes: Buffer): Promise<number[] | null> {
     return emb;
   } catch (e) {
     console.error(`[Vertex] embedImage error: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+/// Embedding de TEXTO en el MISMO espacio multimodal que las imágenes (permite
+/// comparar una descripción con las fotos ya embebidas). Coste ínfimo (~1 texto
+/// por búsqueda). Devuelve null si Vertex no está disponible.
+async function embedText(text: string): Promise<number[] | null> {
+  try {
+    const token = await auth.getAccessToken();
+    const url =
+      `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/` +
+      `${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/` +
+      `${VERTEX_MODEL}:predict`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instances: [{ text: text.slice(0, 1024) }],
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[Vertex] embedText HTTP ${res.status}: ${body.slice(0, 300)}`);
+      return null;
+    }
+    const json = (await res.json()) as {
+      predictions?: { textEmbedding?: number[] }[];
+    };
+    const emb = json.predictions?.[0]?.textEmbedding;
+    return Array.isArray(emb) ? emb : null;
+  } catch (e) {
+    console.error(`[Vertex] embedText error: ${(e as Error).message}`);
     return null;
   }
 }
@@ -219,6 +259,44 @@ async function embeddingForUserPhoto(uid: string): Promise<number[] | null> {
   return emb;
 }
 
+/// Datos DECLARADOS de un candidato para el matching por prompt (físico
+/// declarado + texto de intereses/bio/prompts). Busca en `discovery` y, si no,
+/// en `seed_profiles`. Todo lo ausente simplemente no puntúa.
+async function profileDataForPrompt(uid: string): Promise<{
+  eyeColor?: string;
+  bodyType?: string;
+  heightCm?: number;
+  text: string;
+}> {
+  let snap = await db.collection("discovery").doc(uid).get();
+  if (!snap.exists) snap = await db.collection("seed_profiles").doc(uid).get();
+  const data = snap.exists ? snap.data() ?? {} : {};
+  const profile =
+    data.profile && typeof data.profile === "object"
+      ? (data.profile as DocumentData)
+      : {};
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  const interests: string[] = Array.isArray(data.interests)
+    ? (data.interests as unknown[]).filter((x): x is string => typeof x === "string")
+    : Array.isArray(profile.interests)
+      ? (profile.interests as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+  const prompts: string[] = Array.isArray(data.profilePrompts)
+    ? (data.profilePrompts as DocumentData[]).map((p) => str(p?.answer) || str(p?.text))
+    : [];
+  const bio = str(data.bio) || str(profile.bio);
+  const eyeColor = str(data.eyeColor) || str(profile.eyeColor) || undefined;
+  const bodyType = str(data.bodyType) || str(profile.bodyType) || undefined;
+  const heightRaw = data.heightCm ?? profile.heightCm;
+  const heightCm = typeof heightRaw === "number" ? heightRaw : undefined;
+  return {
+    eyeColor,
+    bodyType,
+    heightCm,
+    text: [...interests, bio, ...prompts].filter((s) => s.length > 0).join(" "),
+  };
+}
+
 function cosine(a: number[], b: number[]): number {
   const n = Math.min(a.length, b.length);
   let dot = 0;
@@ -307,6 +385,74 @@ export const getVisualMatches = onCall(
     console.log(
       `[Vertex] getVisualMatches: ${ranking.length}/${candidateUids.length} ` +
         `con embedding. top=${ranking[0]?.score?.toFixed(3) ?? "-"}`
+    );
+    return { ranking };
+  }
+);
+
+/// getPromptMatches: busca candidatos que encajen con una DESCRIPCIÓN en
+/// lenguaje natural ("chico alto, ojos azules, moreno, aventurero…"). Combina
+/// dos señales de coste mínimo:
+///   1) VISUAL: embedding de texto del prompt vs embeddings de foto YA cacheados
+///      (mismo espacio multimodal). ~1 embedding de texto por búsqueda.
+///   2) DATOS: encaje con lo declarado (ojos/complexión/altura/intereses/bio).
+/// Es COMPLEMENTARIA a la búsqueda por foto de referencia (no la sustituye).
+/// Devuelve [{uid, score, visualScore, dataScore}] ordenado de más a menos.
+export const getPromptMatches = onCall(
+  { region: REGION, memory: "1GiB", timeoutSeconds: 60 },
+  async (request) => {
+    const uid = requireAuthUid(request.auth);
+    await requireProAiConsent(uid);
+
+    const prompt = requireStringArg(request.data?.prompt, "prompt").slice(0, 500);
+    const signals = extractPromptSignals(prompt);
+    const candidateUids: string[] = Array.isArray(request.data?.candidateUids)
+      ? Array.from(
+          new Set(
+            (request.data.candidateUids as unknown[]).filter(
+              (x): x is string => typeof x === "string" && x.length > 0
+            )
+          )
+        ).slice(0, VISUAL_MATCH_LIMIT)
+      : [];
+    const candidates = candidateUids.filter((cuid) => cuid !== uid);
+    if (candidates.length === 0) return { ranking: [] };
+
+    // Embedding del prompt (para la parte VISUAL). Si Vertex no responde, el
+    // ranking usa solo la parte de DATOS (no rompe).
+    const promptEmb = await embedText(prompt);
+
+    const scored = await mapWithConcurrency(
+      candidates,
+      VISUAL_EMBED_CONCURRENCY,
+      async (cuid) => {
+        const [photoEmb, pdata] = await Promise.all([
+          promptEmb ? embeddingForUserPhoto(cuid) : Promise.resolve(null),
+          profileDataForPrompt(cuid),
+        ]);
+        // Visual: coseno [-1..1] → [0..1].
+        const visualScore =
+          promptEmb && photoEmb
+            ? Math.max(0, Math.min(1, (cosine(promptEmb, photoEmb) + 1) / 2))
+            : null;
+        const dScore = promptDataScore(signals, pdata);
+
+        // Combina lo disponible. Si hay ambas, 60% foto / 40% datos. Si solo una,
+        // esa manda.
+        let score: number;
+        if (visualScore !== null && dScore > 0) score = 0.6 * visualScore + 0.4 * dScore;
+        else if (visualScore !== null) score = visualScore;
+        else score = dScore;
+
+        return { uid: cuid, score, visualScore: visualScore ?? 0, dataScore: dScore };
+      }
+    );
+    const ranking = scored
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+    console.log(
+      `[Prompt] getPromptMatches: ${ranking.length}/${candidates.length} ` +
+        `puntuados. top=${ranking[0]?.score?.toFixed(3) ?? "-"}`
     );
     return { ranking };
   }
