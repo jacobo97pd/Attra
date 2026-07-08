@@ -76,6 +76,7 @@ class FeedScreen extends StatefulWidget {
     this.isBusy = false,
     this.isPro = false,
     this.onOpenChats,
+    this.onOpenGroups,
   });
 
   /// Attra Clear §2: límite suave de conversaciones pendientes. Si null o
@@ -91,6 +92,10 @@ class FeedScreen extends StatefulWidget {
 
   /// Abre la pestaña de chats (CTA "Ver conversaciones").
   final VoidCallback? onOpenChats;
+
+  /// Modo Amigos: abre la pantalla de grupos. Si es null, no se muestra el
+  /// acceso a grupos en el feed.
+  final VoidCallback? onOpenGroups;
 
   final AppUser? user;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
@@ -1056,12 +1061,55 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  /// Muestra el acceso a grupos en el feed cuando el usuario está en un modo
+  /// social (amistad / ambas / planes en grupo). En modo grupos el feed de
+  /// personas queda vacío, así que este acceso es la vía a los grupos.
+  bool get _showGroupsBanner {
+    if (widget.onOpenGroups == null) return false;
+    final IntentMode mode = widget.user?.intentMode ?? IntentMode.dating;
+    return mode.isSocial || mode.isBoth;
+  }
+
+  Widget _groupsBanner() {
+    final ThemeData theme = Theme.of(context);
+    final bool groupsMode = widget.user?.intentMode.isGroups ?? false;
+    return Material(
+      color: theme.colorScheme.primary.withValues(alpha: 0.10),
+      child: InkWell(
+        onTap: widget.onOpenGroups,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.groups_rounded,
+                  size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  groupsMode
+                      ? 'Estás en modo Planes en grupo. Descubre grupos aquí'
+                      : 'Grupos y planes por intereses',
+                  style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: theme.colorScheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
         _feedHeader(),
         if (widget.user?.isTraveling ?? false) _travelBanner(),
+        if (_showGroupsBanner) _groupsBanner(),
         Expanded(child: _buildContent(context)),
       ],
     );

@@ -414,6 +414,11 @@ class _HomeShellState extends State<HomeShell> {
         isBusy: widget.user?.busyModeActive ?? false,
         isPro: _entitlementController?.isProActive ?? false,
         onOpenChats: () => goTo(chatsIndex),
+        // Modo Amigos: acceso a grupos desde el feed cuando estás en modo social.
+        onOpenGroups: (widget.friendGroupService == null ||
+                widget.socialDiscoveryService == null)
+            ? null
+            : _openGroups,
       ),
     );
 

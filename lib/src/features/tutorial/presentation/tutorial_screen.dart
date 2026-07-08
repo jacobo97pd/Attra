@@ -39,6 +39,14 @@ const List<_TutorialPage> _pages = <_TutorialPage>[
         'hacia arriba para ver todas las fotos y datos del perfil.',
   ),
   _TutorialPage(
+    icon: Icons.groups_rounded,
+    title: 'No solo citas: Modo Amigos',
+    body:
+        'En tu perfil, en "Que buscas", elige Citas, Amistad, Ambas o Planes en '
+        'grupo. Segun tu eleccion cambia a quien ves en el feed. Y en "Grupos y '
+        'planes" puedes unirte o crear grupos por ciudad e intereses.',
+  ),
+  _TutorialPage(
     icon: Icons.star_rounded,
     title: 'Destaca con un Attra',
     body: 'Envia un Attra para que esa persona sepa que te interesa de verdad: '
