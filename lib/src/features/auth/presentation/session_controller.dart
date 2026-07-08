@@ -14,6 +14,7 @@ import '../../date_plans/data/date_plan_service.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/data/friend_mode_service.dart';
 import '../../social/data/social_discovery_service.dart';
+import '../../social/domain/intent_mode.dart';
 import '../../integrations/domain/integration_connector.dart';
 import '../../match/data/match_service.dart';
 import '../../stories/data/story_service.dart';
@@ -707,6 +708,15 @@ class SessionController extends ChangeNotifier {
     final String? uid = _state.user?.uid;
     if (uid == null) return;
     await _userRepository.setProfileTrait(uid: uid, def: def, value: value);
+    await _refreshAuthenticatedUser(uid);
+  }
+
+  /// Modo Amigos: cambia la intención (dating|friends|both|groups) y RECARGA el
+  /// usuario para que el perfil y el feed reflejen el cambio al instante.
+  Future<void> setIntentMode(IntentMode mode) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.setIntentMode(uid: uid, intentModeWire: mode.wireName);
     await _refreshAuthenticatedUser(uid);
   }
 

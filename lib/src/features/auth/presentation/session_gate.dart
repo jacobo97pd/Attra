@@ -82,6 +82,7 @@ class SessionGate extends StatelessWidget {
               friendModeService: controller.friendModeService,
               friendGroupService: controller.friendGroupService,
               socialDiscoveryService: controller.socialDiscoveryService,
+              onSetIntentMode: controller.setIntentMode,
               boostService: controller.boostService,
               sparkService: controller.sparkService,
               feedMetricsService: controller.feedMetricsService,

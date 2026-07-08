@@ -88,6 +88,7 @@ class HomeShell extends StatefulWidget {
     this.friendModeService,
     this.friendGroupService,
     this.socialDiscoveryService,
+    this.onSetIntentMode,
     this.boostService,
     this.sparkService,
     this.feedMetricsService,
@@ -164,6 +165,9 @@ class HomeShell extends StatefulWidget {
   final FriendModeService? friendModeService;
   final FriendGroupService? friendGroupService;
   final SocialDiscoveryService? socialDiscoveryService;
+
+  /// Modo Amigos: cambia la intención y recarga el usuario (vía SessionController).
+  final Future<void> Function(IntentMode mode)? onSetIntentMode;
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;
@@ -552,8 +556,8 @@ class _HomeShellState extends State<HomeShell> {
       isProUser: isPro,
       onOpenAiVisual: _openAiVisual,
       onSetSlowDating: widget.onSetSlowDating,
-      // Modo Amigos: solo si hay servicios inyectados (si no, se ocultan).
-      onOpenFriendMode: widget.friendModeService == null ? null : _openFriendMode,
+      // Modo Amigos: solo si hay callback inyectado (si no, se oculta).
+      onOpenFriendMode: widget.onSetIntentMode == null ? null : _openFriendMode,
       onOpenGroups: (widget.friendGroupService == null ||
               widget.socialDiscoveryService == null)
           ? null
@@ -665,16 +669,17 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
-  /// Modo Amigos: abre el selector de intención y persiste el cambio.
+  /// Modo Amigos: abre el selector de intención y persiste el cambio a través
+  /// de SessionController (escribe con los campos requeridos por las reglas Y
+  /// recarga el usuario, para que el perfil y el feed reflejen el cambio ya).
   Future<void> _openFriendMode() async {
-    final FriendModeService? svc = widget.friendModeService;
-    final String uid = widget.user?.uid ?? '';
-    if (svc == null || uid.isEmpty) return;
+    final Future<void> Function(IntentMode)? setMode = widget.onSetIntentMode;
+    if (setMode == null) return;
     final IntentMode current = widget.user?.intentMode ?? IntentMode.dating;
     final IntentMode? chosen = await IntentModeSelector.show(context, current);
     if (chosen == null || chosen == current) return;
     try {
-      await svc.setIntentMode(uid, chosen);
+      await setMode(chosen);
       if (mounted) {
         setState(() => _feedReloadToken++); // refresca el feed con el nuevo modo
         ScaffoldMessenger.of(context)

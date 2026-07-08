@@ -451,6 +451,44 @@ class UserRepository {
     await refreshProfileCompletion(uid);
   }
 
+  /// Modo Amigos: guarda la intención en `users/{uid}.profile.intentMode`
+  /// (misma vía que los rasgos, con los campos requeridos por las reglas). El
+  /// re-sync a discovery lo hace la Cloud Function al escribir el user.
+  Future<void> setIntentMode({
+    required String uid,
+    required String intentModeWire,
+  }) async {
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'profile': <String, dynamic>{'intentMode': intentModeWire},
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
+  }
+
+  /// Modo Amigos: preferencias sociales (intereses/tamaño de grupo/disponible).
+  Future<void> setSocialPreferences({
+    required String uid,
+    List<String>? socialInterests,
+    int? preferredGroupSize,
+    bool? availableForPlans,
+  }) async {
+    final Map<String, dynamic> profile = <String, dynamic>{
+      if (socialInterests != null) 'socialInterests': socialInterests,
+      if (preferredGroupSize != null) 'preferredGroupSize': preferredGroupSize,
+      if (availableForPlans != null) 'availableForPlans': availableForPlans,
+    };
+    if (profile.isEmpty) return;
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'profile': profile,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
+  }
+
   /// Actualiza el consentimiento por campo en
   /// `users/{uid}.profileVisibility.fields.{traitKey}`. Re-sincroniza discovery
   /// (ocultar un campo lo retira de discovery).
