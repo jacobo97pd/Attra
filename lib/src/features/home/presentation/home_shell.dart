@@ -704,6 +704,7 @@ class _HomeShellState extends State<HomeShell> {
         uid: uid,
         groupService: gs,
         discoveryService: ds,
+        summaries: widget.profileSummaryRepository,
         city: widget.user?.city ?? '',
         myInterests: widget.user?.socialInterests ?? const <String>[],
       ),

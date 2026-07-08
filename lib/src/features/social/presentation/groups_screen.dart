@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../profile/data/profile_summary_repository.dart';
+import '../../profile/domain/profile_summary.dart';
 import '../data/friend_group_service.dart';
 import '../data/social_discovery_service.dart';
 import '../domain/friend_group.dart';
@@ -13,6 +15,7 @@ class GroupsScreen extends StatefulWidget {
     required this.uid,
     required this.groupService,
     required this.discoveryService,
+    required this.summaries,
     this.city = '',
     this.myInterests = const <String>[],
   });
@@ -20,6 +23,7 @@ class GroupsScreen extends StatefulWidget {
   final String uid;
   final FriendGroupService groupService;
   final SocialDiscoveryService discoveryService;
+  final ProfileSummaryRepository summaries;
   final String city;
   final List<String> myInterests;
 
@@ -79,6 +83,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
         group: g,
         uid: widget.uid,
         service: widget.groupService,
+        summaries: widget.summaries,
       ),
     );
     _refresh();
@@ -218,11 +223,13 @@ class _GroupDetailSheet extends StatefulWidget {
     required this.group,
     required this.uid,
     required this.service,
+    required this.summaries,
   });
 
   final FriendGroup group;
   final String uid;
   final FriendGroupService service;
+  final ProfileSummaryRepository summaries;
 
   @override
   State<_GroupDetailSheet> createState() => _GroupDetailSheetState();
@@ -299,19 +306,17 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                   ],
                 ),
               ],
-              // Admin: solicitudes pendientes.
+              // Admin: solicitudes pendientes (con nombre + foto).
               if (admin && g.pendingIds.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 14),
                 Text('Solicitudes', style: theme.textTheme.titleSmall),
                 for (final String reqUid in g.pendingIds)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Row(
+                  _PersonRow(
+                    uid: reqUid,
+                    summaries: widget.summaries,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        Expanded(
-                          child: Text(reqUid,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ),
                         TextButton(
                           onPressed: _busy
                               ? null
@@ -342,6 +347,25 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                     ),
                   ),
               ],
+              // Miembros (con nombre + foto).
+              const SizedBox(height: 14),
+              Text('Miembros (${g.memberCount})',
+                  style: theme.textTheme.titleSmall),
+              for (final String memberUid in g.memberIds)
+                _PersonRow(
+                  uid: memberUid,
+                  summaries: widget.summaries,
+                  trailing: memberUid == g.createdBy
+                      ? Text('Admin',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w700))
+                      : (memberUid == widget.uid
+                          ? Text('Tú',
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: theme.colorScheme.outline))
+                          : null),
+                ),
               const SizedBox(height: 16),
               // Acción principal según mi relación con el grupo.
               if (admin)
@@ -373,6 +397,61 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                   icon: const Icon(Icons.person_add_alt),
                   label: Text(g.isJoinable ? 'Solicitar unirse' : 'No disponible'),
                 ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Fila de persona (miembro o solicitante) con nombre + foto resueltos vía
+/// ProfileSummaryRepository (discovery → seed_profiles). Cae a "Alguien" si no
+/// se resuelve.
+class _PersonRow extends StatelessWidget {
+  const _PersonRow({
+    required this.uid,
+    required this.summaries,
+    this.trailing,
+  });
+
+  final String uid;
+  final ProfileSummaryRepository summaries;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return FutureBuilder<ProfileSummary>(
+      future: summaries.fetch(uid),
+      initialData: summaries.peek(uid),
+      builder: (BuildContext context, AsyncSnapshot<ProfileSummary> snap) {
+        final ProfileSummary? s = snap.data;
+        final String name = s?.displayName ?? 'Alguien';
+        final String photo = s?.photoUrl ?? '';
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: <Widget>[
+              CircleAvatar(
+                radius: 18,
+                backgroundColor:
+                    theme.colorScheme.primary.withValues(alpha: 0.15),
+                backgroundImage:
+                    photo.isNotEmpty ? NetworkImage(photo) : null,
+                child: photo.isEmpty
+                    ? Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(color: theme.colorScheme.primary),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+              if (trailing != null) trailing!,
             ],
           ),
         );
