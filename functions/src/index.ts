@@ -73,6 +73,13 @@ export {
   generateDatePlanSuggestions,
   voteDatePlan,
 } from "./datePlans";
+export {
+  createFriendGroup,
+  requestJoinGroup,
+  respondJoinRequest,
+  leaveFriendGroup,
+  closeFriendGroup,
+} from "./friendGroups";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";
 export {

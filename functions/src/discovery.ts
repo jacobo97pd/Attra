@@ -152,6 +152,14 @@ function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
     jobTitle: profile.jobTitle ?? "",
     company: profile.company ?? "",
     interests: Array.isArray(profile.interests) ? profile.interests : [],
+    // Modo Amigos: intención + intereses sociales (default dating si falta).
+    intentMode:
+      typeof profile.intentMode === "string" && profile.intentMode
+        ? profile.intentMode
+        : "dating",
+    socialInterests: Array.isArray(profile.socialInterests)
+      ? profile.socialInterests
+      : [],
     orientation: Array.isArray(profile.orientation) ? profile.orientation : [],
     profilePrompts: publicProfilePrompts(data),
     introAudio: publicIntroMedia(profile.introAudio),

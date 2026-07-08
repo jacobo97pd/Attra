@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../monetization/domain/subscription_tier.dart';
+import '../../social/domain/intent_mode.dart';
 
 class AppUser {
   const AppUser({
@@ -31,6 +32,11 @@ class AppUser {
     this.themeModeWire = 'dark',
     this.relationshipIntent = '',
     this.interests = const <String>[],
+    this.intentMode = IntentMode.dating,
+    this.socialInterests = const <String>[],
+    this.preferredGroupSize = 0,
+    this.availableForPlans = false,
+    this.city = '',
     this.boostBalance = 0,
     this.swipeBalance = 0,
     this.travelActive = false,
@@ -92,6 +98,22 @@ class AppUser {
 
   /// Intereses del perfil — para afinidad por temas en Slow Dating.
   final List<String> interests;
+
+  /// Modo Amigos: intención del usuario (dating | friends | both | groups).
+  /// Default `dating` → usuarios antiguos se comportan igual que siempre.
+  final IntentMode intentMode;
+
+  /// Intereses SOCIALES (para amistad/grupos). Puede solaparse con [interests].
+  final List<String> socialInterests;
+
+  /// Tamaño de grupo preferido (0 = sin preferencia).
+  final int preferredGroupSize;
+
+  /// ¿Disponible para planes/quedadas ahora?
+  final bool availableForPlans;
+
+  /// Ciudad del usuario (profile.currentCity/city). Para recomendar grupos.
+  final String city;
 
   /// Géneros en los que tiene interés (de preferences.interestedIn).
   /// Vacío = sin filtro (muestra todos).
@@ -200,6 +222,13 @@ class AppUser {
           (preferences['relationshipIntent'] as String?) ??
           '',
       interests: _asStringList(profile['interests']),
+      intentMode: IntentMode.fromValue(profile['intentMode']),
+      socialInterests: _asStringList(profile['socialInterests']),
+      preferredGroupSize: _asInt(profile['preferredGroupSize']),
+      availableForPlans: _asBool(profile['availableForPlans']),
+      city: (profile['currentCity'] as String?) ??
+          (profile['city'] as String?) ??
+          '',
       boostBalance: _asInt(wallet['boosts']),
       swipeBalance: _asInt(wallet['swipes']),
       travelActive: _asBool(travel['active']),

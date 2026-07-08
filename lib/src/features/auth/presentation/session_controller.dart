@@ -11,6 +11,9 @@ import '../../onboarding/domain/onboarding_draft.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../chat/data/chat_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
+import '../../social/data/friend_group_service.dart';
+import '../../social/data/friend_mode_service.dart';
+import '../../social/data/social_discovery_service.dart';
 import '../../integrations/domain/integration_connector.dart';
 import '../../match/data/match_service.dart';
 import '../../stories/data/story_service.dart';
@@ -52,9 +55,15 @@ class SessionController extends ChangeNotifier {
     NotificationService? notificationService,
     IntegrationConnector? integrationConnector,
     DatePlanService? datePlanService,
+    FriendModeService? friendModeService,
+    FriendGroupService? friendGroupService,
+    SocialDiscoveryService? socialDiscoveryService,
   })  : _authService = authService,
         _sparkService = sparkService,
         _datePlanService = datePlanService,
+        _friendModeService = friendModeService,
+        _friendGroupService = friendGroupService,
+        _socialDiscoveryService = socialDiscoveryService,
         _boostService = boostService,
         _feedMetricsService = feedMetricsService,
         _notificationService = notificationService,
@@ -91,6 +100,9 @@ class SessionController extends ChangeNotifier {
   final AiVisualService _aiVisualService;
   final SparkService? _sparkService;
   final DatePlanService? _datePlanService;
+  final FriendModeService? _friendModeService;
+  final FriendGroupService? _friendGroupService;
+  final SocialDiscoveryService? _socialDiscoveryService;
   final BoostService? _boostService;
   final FeedMetricsService? _feedMetricsService;
   final NotificationService? _notificationService;
@@ -103,6 +115,12 @@ class SessionController extends ChangeNotifier {
 
   /// Servicio de Attra Plans (propuestas de cita). Null si no se inyecta.
   DatePlanService? get datePlanService => _datePlanService;
+
+  /// Modo Amigos: intención + grupos + descubrimiento social. Null si no se
+  /// inyectan.
+  FriendModeService? get friendModeService => _friendModeService;
+  FriendGroupService? get friendGroupService => _friendGroupService;
+  SocialDiscoveryService? get socialDiscoveryService => _socialDiscoveryService;
 
   /// Servicio de Boosts consumibles. Null si no se inyecta.
   BoostService? get boostService => _boostService;

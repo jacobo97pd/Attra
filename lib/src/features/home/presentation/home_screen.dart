@@ -8,6 +8,8 @@ import '../../../widgets/attra_loader.dart';
 import '../../../widgets/attra_image.dart';
 import '../../anti_ghosting/presentation/reliability_badge.dart';
 import '../../auth/domain/app_user.dart';
+import '../../social/domain/intent_mode.dart';
+import '../../social/presentation/intent_badge.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_prompt.dart';
@@ -62,6 +64,8 @@ class HomeScreen extends StatefulWidget {
     this.onOpenSettings,
     this.onOpenUpgrade,
     this.onOpenAiVisual,
+    this.onOpenFriendMode,
+    this.onOpenGroups,
     this.onSetSlowDating,
     this.currentPlanLabel = 'Free',
     this.isProUser = false,
@@ -113,6 +117,11 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenUpgrade;
   final VoidCallback? onOpenAiVisual;
+
+  /// Modo Amigos: abre el selector de intención / la pantalla de grupos. Null =
+  /// oculto (servicios no inyectados).
+  final VoidCallback? onOpenFriendMode;
+  final VoidCallback? onOpenGroups;
 
   /// Activa/desactiva Slow Dating (toggle destacado en el perfil).
   final Future<void> Function(bool value)? onSetSlowDating;
@@ -429,6 +438,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildUpgradeCard(theme),
                     const SizedBox(height: 12),
                   ],
+                  if (widget.onOpenFriendMode != null) ...<Widget>[
+                    _buildFriendModeCard(theme),
+                    const SizedBox(height: 12),
+                  ],
+                  if (widget.onOpenGroups != null) ...<Widget>[
+                    _buildGroupsCard(theme),
+                    const SizedBox(height: 12),
+                  ],
                   if (widget.onOpenAiVisual != null) ...<Widget>[
                     _buildAiVisualCard(theme),
                     const SizedBox(height: 12),
@@ -597,6 +614,36 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Modo Amigos: muestra el modo actual y abre el selector.
+  Widget _buildFriendModeCard(ThemeData theme) {
+    final IntentMode mode = widget.user?.intentMode ?? IntentMode.dating;
+    final IntentModeVisual v = IntentModeVisual.of(mode);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(v.icon, color: theme.colorScheme.primary),
+        title: const Text('Qué buscas'),
+        subtitle: Text('Ahora: ${v.label}. Toca para cambiar.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpenFriendMode,
+      ),
+    );
+  }
+
+  /// Modo Amigos: acceso a grupos y planes.
+  Widget _buildGroupsCard(ThemeData theme) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(Icons.groups_rounded, color: theme.colorScheme.primary),
+        title: const Text('Grupos y planes'),
+        subtitle: const Text('Únete o crea grupos por ciudad e intereses.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpenGroups,
       ),
     );
   }

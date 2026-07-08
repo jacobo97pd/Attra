@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../widgets/attra_image.dart';
+import '../../social/presentation/intent_badge.dart';
 import '../domain/profile_state.dart';
 import 'intro_media_view.dart';
 
@@ -74,6 +75,12 @@ class ProfileViewScreen extends StatelessWidget {
           Text('${profile.displayName}$ageText',
               style: theme.textTheme.headlineSmall
                   ?.copyWith(fontWeight: FontWeight.bold)),
+          // Modo Amigos: badge de intención (oculto en dating, que es lo normal).
+          if (!profile.intentMode.isDating)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: IntentBadge(mode: profile.intentMode, hideDating: true),
+            ),
           if (place.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),

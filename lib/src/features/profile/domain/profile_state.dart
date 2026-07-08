@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../social/domain/intent_mode.dart';
 import 'intro_media.dart';
 
 class AdditionalPhoto {
@@ -70,6 +71,8 @@ class SeedProfile {
     required this.interestedIn,
     required this.orientation,
     this.relationshipGoal = '',
+    this.intentMode = IntentMode.dating,
+    this.socialInterests = const <String>[],
     this.smoking = '',
     this.drinking = '',
     this.educationLevel = '',
@@ -112,6 +115,12 @@ class SeedProfile {
 
   /// Qué busca (relationshipIntent). Vacío = sin dato.
   final String relationshipGoal;
+
+  /// Modo Amigos: intención del perfil. Default `dating` (compat).
+  final IntentMode intentMode;
+
+  /// Intereses sociales (amistad/grupos).
+  final List<String> socialInterests;
 
   /// Estilo de vida / estudios (para filtros avanzados). Vacío = sin dato.
   final String smoking;
@@ -272,6 +281,15 @@ class SeedProfile {
       relationshipGoal: pick('relationshipIntent').isNotEmpty
           ? pick('relationshipIntent')
           : pick('relationshipGoal'),
+      intentMode: IntentMode.fromValue(
+          data['intentMode'] ?? profile['intentMode']),
+      socialInterests: (data['socialInterests'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          (profile['socialInterests'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const <String>[],
       smoking: pickNested('smoking', lifestyle),
       drinking: pickNested('drinking', lifestyle),
       educationLevel: pick('educationLevel'),

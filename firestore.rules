@@ -395,5 +395,14 @@ service cloud.firestore {
         allow write: if false;
       }
     }
+
+    // Modo Amigos: grupos/planes sociales. Legibles por cualquier usuario
+    // autenticado (discovery de grupos por ciudad/intereses). Crear/unirse/
+    // aceptar/cerrar pasa SOLO por Cloud Functions (Admin SDK). No guarda
+    // ubicación exacta.
+    match /friendGroups/{groupId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

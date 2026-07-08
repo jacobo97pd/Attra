@@ -21,6 +21,7 @@ import '../../match/presentation/photo_response_sheet.dart';
 import '../../match/presentation/prompt_response_sheet.dart';
 import '../../profile/domain/profile_summary.dart';
 import '../../profile/domain/profile_state.dart';
+import '../../social/domain/intent_mode.dart';
 import '../../monetization/data/boost_service.dart';
 import '../../monetization/domain/boost.dart';
 import '../../stories/data/story_service.dart';
@@ -473,6 +474,8 @@ class _FeedScreenState extends State<FeedScreen> {
                 ? (widget.user?.travelCountry ?? '')
                 : (widget.user?.countryName ?? '')),
         defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
+        // Modo Amigos: filtra por compatibilidad de intención (default dating).
+        myIntent: widget.user?.intentMode ?? IntentMode.dating,
       );
       if (traveling) {
         filtered = _applyTravel(filtered);

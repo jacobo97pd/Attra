@@ -17,6 +17,12 @@ import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
+import '../../social/data/friend_group_service.dart';
+import '../../social/data/friend_mode_service.dart';
+import '../../social/data/social_discovery_service.dart';
+import '../../social/presentation/groups_screen.dart';
+import '../../social/presentation/intent_mode_selector.dart';
+import '../../social/domain/intent_mode.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
@@ -79,6 +85,9 @@ class HomeShell extends StatefulWidget {
     required this.matchService,
     required this.chatService,
     this.datePlanService,
+    this.friendModeService,
+    this.friendGroupService,
+    this.socialDiscoveryService,
     this.boostService,
     this.sparkService,
     this.feedMetricsService,
@@ -152,6 +161,9 @@ class HomeShell extends StatefulWidget {
   final MatchService matchService;
   final ChatService chatService;
   final DatePlanService? datePlanService;
+  final FriendModeService? friendModeService;
+  final FriendGroupService? friendGroupService;
+  final SocialDiscoveryService? socialDiscoveryService;
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;
@@ -540,6 +552,12 @@ class _HomeShellState extends State<HomeShell> {
       isProUser: isPro,
       onOpenAiVisual: _openAiVisual,
       onSetSlowDating: widget.onSetSlowDating,
+      // Modo Amigos: solo si hay servicios inyectados (si no, se ocultan).
+      onOpenFriendMode: widget.friendModeService == null ? null : _openFriendMode,
+      onOpenGroups: (widget.friendGroupService == null ||
+              widget.socialDiscoveryService == null)
+          ? null
+          : _openGroups,
     );
 
     // Connect tab: Attra Connection Lab (AI-guided connection landing).
@@ -643,6 +661,46 @@ class _HomeShellState extends State<HomeShell> {
         onUpgrade: _openPaywall,
         onGiveConsent: () => widget.onSetAiConsent(true),
         onRevokeConsent: () => widget.onSetAiConsent(false),
+      ),
+    ));
+  }
+
+  /// Modo Amigos: abre el selector de intención y persiste el cambio.
+  Future<void> _openFriendMode() async {
+    final FriendModeService? svc = widget.friendModeService;
+    final String uid = widget.user?.uid ?? '';
+    if (svc == null || uid.isEmpty) return;
+    final IntentMode current = widget.user?.intentMode ?? IntentMode.dating;
+    final IntentMode? chosen = await IntentModeSelector.show(context, current);
+    if (chosen == null || chosen == current) return;
+    try {
+      await svc.setIntentMode(uid, chosen);
+      if (mounted) {
+        setState(() => _feedReloadToken++); // refresca el feed con el nuevo modo
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Modo actualizado')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo cambiar el modo.')));
+      }
+    }
+  }
+
+  /// Modo Amigos: abre la pantalla de grupos y planes.
+  void _openGroups() {
+    final FriendGroupService? gs = widget.friendGroupService;
+    final SocialDiscoveryService? ds = widget.socialDiscoveryService;
+    final String uid = widget.user?.uid ?? '';
+    if (gs == null || ds == null || uid.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => GroupsScreen(
+        uid: uid,
+        groupService: gs,
+        discoveryService: ds,
+        city: widget.user?.city ?? '',
+        myInterests: widget.user?.socialInterests ?? const <String>[],
       ),
     ));
   }

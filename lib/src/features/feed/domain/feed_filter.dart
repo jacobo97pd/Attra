@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../profile/domain/profile_state.dart';
+import '../../social/domain/intent_mode.dart';
 import 'feed_filters.dart';
 
 /// Filtrado puro del feed (sin estado ni I/O) para que sea testeable.
@@ -29,10 +30,18 @@ class FeedFilter {
     double? myLng,
     String myCountry = '',
     int? defaultMaxKm,
+    IntentMode myIntent = IntentMode.dating,
   }) {
     return profiles.where((SeedProfile p) {
       if (p.id == myUid) return false;
       if (excludedUids.contains(p.id)) return false;
+
+      // --- MODO AMIGOS: compatibilidad de intención (siempre dura). Un perfil
+      //     solo aparece si comparte canal (dating/friends) con mi modo. Datos
+      //     antiguos = `dating` por defecto → sin cambios respecto a antes.
+      if (!IntentCompatibility.showsInFeed(myIntent, p.intentMode)) {
+        return false;
+      }
 
       // --- RELEVANCIA GEOGRÁFICA (siempre, salvo modo viajes que pasa
       //     myLat/myLng = null y myCountry = destino). ---
