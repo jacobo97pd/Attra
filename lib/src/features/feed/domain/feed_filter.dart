@@ -62,13 +62,21 @@ class FeedFilter {
         if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
       }
 
-      final bool iWantThem = myInterestedIn.isEmpty ||
-          p.gender.isEmpty ||
-          myInterestedIn.contains(p.gender);
-      final bool theyWantMe = p.interestedIn.isEmpty ||
-          myGender.isEmpty ||
-          p.interestedIn.contains(myGender);
-      if (!iWantThem || !theyWantMe) return false;
+      // Compatibilidad de género: SOLO aplica cuando el solape es de DATING
+      // (para citas importa la preferencia de género). En una conexión de
+      // AMISTAD el género es irrelevante, así que no se filtra por él.
+      final bool datingOverlap =
+          myIntent.channels.contains(SocialChannel.dating) &&
+              p.intentMode.channels.contains(SocialChannel.dating);
+      if (datingOverlap) {
+        final bool iWantThem = myInterestedIn.isEmpty ||
+            p.gender.isEmpty ||
+            myInterestedIn.contains(p.gender);
+        final bool theyWantMe = p.interestedIn.isEmpty ||
+            myGender.isEmpty ||
+            p.interestedIn.contains(myGender);
+        if (!iWantThem || !theyWantMe) return false;
+      }
 
       // --- Siempre duros ---
       if (filters.showGenders.isNotEmpty &&

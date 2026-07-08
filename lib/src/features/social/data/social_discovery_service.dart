@@ -3,6 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/friend_group.dart';
 import '../domain/social_affinity.dart';
 
+class _Scored {
+  const _Scored(this.group, this.affinity, this.rank);
+  final FriendGroup group;
+  final double affinity;
+  final double rank;
+}
+
 /// Grupo recomendado + su score de afinidad social (para mostrar "%" y ordenar).
 class RecommendedGroup {
   const RecommendedGroup({required this.group, required this.affinity});
@@ -34,25 +41,28 @@ class SocialDiscoveryService {
     List<String> myInterests = const <String>[],
     int limit = 30,
   }) async {
-    Query<Map<String, dynamic>> query =
-        _groups.where('status', isEqualTo: 'open');
-    if (city.trim().isNotEmpty) {
-      query = query.where('city', isEqualTo: city.trim());
-    }
+    // Trae grupos ABIERTOS y ordena por ciudad (match = boost) + afinidad de
+    // intereses. No filtra duro por ciudad para no vaciar el listado cuando aún
+    // hay pocos grupos por zona.
     final QuerySnapshot<Map<String, dynamic>> snap =
-        await query.limit(limit).get();
+        await _groups.where('status', isEqualTo: 'open').limit(limit).get();
+    final String myCity = city.trim().toLowerCase();
 
-    final List<RecommendedGroup> out = <RecommendedGroup>[];
+    final List<_Scored> scored = <_Scored>[];
     for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
       final FriendGroup g = FriendGroup.fromMap(d.id, d.data());
       if (g.isMember(uid) || g.isPending(uid) || g.isFull) continue;
-      out.add(RecommendedGroup(
-        group: g,
-        affinity: SocialAffinity.score(myInterests, g.interests),
-      ));
+      final double affinity = SocialAffinity.score(myInterests, g.interests);
+      final bool sameCity =
+          myCity.isNotEmpty && g.city.trim().toLowerCase() == myCity;
+      // Ranking: la ciudad pesa más que la afinidad de intereses.
+      final double rank = (sameCity ? 1.0 : 0.0) + affinity * 0.5;
+      scored.add(_Scored(g, affinity, rank));
     }
-    out.sort((RecommendedGroup a, RecommendedGroup b) =>
-        b.affinity.compareTo(a.affinity));
-    return out;
+    scored.sort((_Scored a, _Scored b) => b.rank.compareTo(a.rank));
+    return scored
+        .map((_Scored s) =>
+            RecommendedGroup(group: s.group, affinity: s.affinity))
+        .toList(growable: false);
   }
 }
