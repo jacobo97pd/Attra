@@ -146,6 +146,23 @@ GROUPS = [
 ]
 
 
+# Grupos ligados a Jacobo (usuario real de pruebas) para ver TODAS las vistas:
+#   - uno donde eres CREADOR con solicitudes pendientes (aceptar/rechazar)
+#   - uno donde ya eres MIEMBRO (salir del grupo)
+# Aparecen en "Tus grupos" (memberIds te incluye).
+JACOBO_UID = "m8bd5lZomofr8dhqjZd6hd00BXa2"
+JACOBO_GROUPS = [
+    ("mock_group_admin", "Quedadas Attra (eres admin)", "Madrid",
+     "Grupo de prueba donde tú eres el creador. Toca para aceptar o rechazar solicitudes.",
+     ["planes", "cafe", "cultura"],
+     [JACOBO_UID, "mock_fm_iker"], ["mock_fm_leo", "mock_fm_nora"], 8, "open", JACOBO_UID),
+    ("mock_group_member", "Runners de tarde (eres miembro)", "Madrid",
+     "Grupo de prueba donde ya eres miembro. Puedes salir cuando quieras.",
+     ["running", "deporte"],
+     ["mock_fm_unai", JACOBO_UID, "mock_fm_lucia"], [], 10, "open", "mock_fm_unai"),
+]
+
+
 def build_profile(name, age, gender, city, job, company, bio, social, mode, photo):
     return {
         "uid": f"mock_fm_{slug(name)}",
@@ -198,7 +215,27 @@ def main():
         patch("friendGroups", gid, doc)
         print(f"OK grupo {gid}: {name} ({city}, {len(member_ids)}/{mx})")
 
-    print(f"\n{len(FRIEND_PROFILES)} perfiles + {len(GROUPS)} grupos mock sembrados.")
+    # Grupos ligados a Jacobo (admin con pendientes / miembro).
+    for gid, name, city, desc, interests, members, pending, mx, status, creator in JACOBO_GROUPS:
+        doc = {
+            "name": name,
+            "description": desc,
+            "city": city,
+            "interests": interests,
+            "memberIds": members,
+            "pendingIds": pending,
+            "maxMembers": mx,
+            "createdBy": creator,
+            "status": status,
+            "createdAt": Ts(NOW),
+            "updatedAt": Ts(NOW),
+        }
+        patch("friendGroups", gid, doc)
+        role = "admin" if creator == JACOBO_UID else "miembro"
+        print(f"OK grupo {gid}: {name} [{role}, {len(pending)} pendientes]")
+
+    total_groups = len(GROUPS) + len(JACOBO_GROUPS)
+    print(f"\n{len(FRIEND_PROFILES)} perfiles + {total_groups} grupos mock sembrados.")
 
 
 if __name__ == "__main__":
