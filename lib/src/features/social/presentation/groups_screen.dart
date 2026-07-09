@@ -110,6 +110,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
               stream: widget.groupService.observeMyGroups(widget.uid),
               builder: (BuildContext context,
                   AsyncSnapshot<List<FriendGroup>> snap) {
+                if (snap.hasError) {
+                  return _ErrorNote('No se pudieron cargar tus grupos: '
+                      '${snap.error}');
+                }
                 final List<FriendGroup> mine = snap.data ?? const <FriendGroup>[];
                 if (mine.isEmpty) {
                   return Text('Aún no estás en ningún grupo.',
@@ -141,6 +145,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
+                if (snap.hasError) {
+                  return _ErrorNote(
+                      'No se pudieron cargar los grupos: ${snap.error}');
+                }
                 final List<RecommendedGroup> recs =
                     snap.data ?? const <RecommendedGroup>[];
                 if (recs.isEmpty) {
@@ -163,6 +171,37 @@ class _GroupsScreenState extends State<GroupsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Nota de error visible (en vez de vacío silencioso) para diagnosticar fallos
+/// de reglas/índices al cargar grupos.
+class _ErrorNote extends StatelessWidget {
+  const _ErrorNote(this.message);
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.error.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.error_outline, size: 18, color: theme.colorScheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error)),
+          ),
+        ],
       ),
     );
   }
