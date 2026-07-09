@@ -45,41 +45,54 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
         animation:
             Listenable.merge(<Listenable>[_c, AppLockController.instance]),
         builder: (BuildContext context, _) {
-          final List<Widget> children = <Widget>[];
-
-          if (section.description.isNotEmpty) {
-            children.add(
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                child: Text(
-                  section.description,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-              ),
-            );
-          }
-
-          for (final SettingDefinition def in section.definitions) {
-            if (!def.userVisible) continue;
-            children.add(_buildSettingTile(context, def));
-          }
-
-          if (section.actions.isNotEmpty) {
-            children.add(const SizedBox(height: 8));
-            children.add(const Divider());
-            for (final SettingsAction action in section.actions) {
-              children.add(_buildActionTile(context, action));
-            }
-          }
+          final ThemeData theme = Theme.of(context);
+          final List<Widget> settingTiles = <Widget>[
+            for (final SettingDefinition def in section.definitions)
+              if (def.userVisible) _buildSettingTile(context, def),
+          ];
+          final List<Widget> actionTiles = <Widget>[
+            for (final SettingsAction action in section.actions)
+              _buildActionTile(context, action),
+          ];
 
           return ListView(
-            // Deja hueco para la barra de navegación del sistema: la última
-            // acción (p. ej. Eliminar cuenta) no queda tapada ni recortada.
-            padding: EdgeInsets.only(
-                bottom: 16 + MediaQuery.of(context).viewPadding.bottom),
-            children: children,
+            padding: EdgeInsets.fromLTRB(
+                16, 16, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
+            children: <Widget>[
+              // Cabecera: icono de la sección + descripción.
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(settingsIcon(section.icon),
+                        color: theme.colorScheme.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      section.description.isNotEmpty
+                          ? section.description
+                          : section.title,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.outline),
+                    ),
+                  ),
+                ],
+              ),
+              if (settingTiles.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 18),
+                _SettingsCard(children: settingTiles),
+              ],
+              if (actionTiles.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 18),
+                _SettingsCard(children: actionTiles),
+              ],
+            ],
           );
         },
       ),
@@ -521,6 +534,38 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
       MaterialPageRoute<void>(
         builder: (_) => _ChangeHistoryScreen(controller: _c),
       ),
+    );
+  }
+}
+
+/// Tarjeta redondeada que agrupa filas de ajustes con separadores finos.
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<Widget> rows = <Widget>[];
+    for (int i = 0; i < children.length; i++) {
+      if (i > 0) {
+        rows.add(Divider(
+          height: 1,
+          thickness: 1,
+          color: theme.colorScheme.outline.withValues(alpha: 0.15),
+        ));
+      }
+      rows.add(children[i]);
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border:
+            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: rows),
     );
   }
 }

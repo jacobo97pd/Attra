@@ -10,7 +10,8 @@ import 'settings_controller.dart';
 import 'settings_icons.dart';
 import 'settings_section_screen.dart';
 
-/// Pantalla raiz de Ajustes: apariencia (tema) + las 8 secciones del catalogo.
+/// Pantalla raiz de Ajustes: apariencia (tema) + las 8 secciones del catalogo,
+/// en un diseño moderno de tarjetas agrupadas con iconos de color.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -41,6 +42,17 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  /// Paleta de acentos para los iconos de las secciones (rota por orden).
+  static const List<Color> _palette = <Color>[
+    AppColors.aiViolet,
+    AppColors.coral,
+    AppColors.gold,
+    AppColors.success,
+    AppColors.nightBlue,
+    AppColors.attraRed,
+    AppColors.wine,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -60,80 +72,209 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<SettingsSection> sections = SettingsCatalog.sections;
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (BuildContext context, _) {
-        // Cabeceras fijas: Apariencia (0), Tutorial (1) y, si procede, Modo
-        // ocupado (2). Las secciones del catálogo van detrás.
         final bool showBusy =
             widget.busyModeFeatureEnabled && widget.onSetBusyMode != null;
-        final int leading = showBusy ? 3 : 2;
-        return ListView.separated(
-          // Padding inferior = barra de navegación del sistema, para que la
-          // última fila (Eliminar cuenta) no quede tapada ni recortada.
-          padding: EdgeInsets.only(
-              top: 8, bottom: 8 + MediaQuery.of(context).viewPadding.bottom),
-          itemCount: sections.length + leading,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (BuildContext context, int index) {
-            if (index == 0) {
-              return _ThemeModeTile(onSetThemeMode: widget.onSetThemeMode);
-            }
-            if (index == 1) {
-              return ListTile(
-                leading: Icon(
-                  Icons.help_outline_rounded,
-                  color: Theme.of(context).colorScheme.primary,
+        final List<SettingsSection> sections = SettingsCatalog.sections;
+        final List<SettingsSection> normal = sections
+            .where((SettingsSection s) => s.key != SettingsCatalog.secLifecycle)
+            .toList(growable: false);
+        SettingsSection? lifecycle;
+        for (final SettingsSection s in sections) {
+          if (s.key == SettingsCatalog.secLifecycle) lifecycle = s;
+        }
+
+        return ListView(
+          padding: EdgeInsets.fromLTRB(
+              16, 12, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
+          children: <Widget>[
+            const _SectionLabel('Personalización'),
+            _ThemeCard(onSetThemeMode: widget.onSetThemeMode),
+            const SizedBox(height: 22),
+            const _SectionLabel('Ayuda y estado'),
+            _Group(
+              children: <Widget>[
+                _NavRow(
+                  icon: Icons.help_outline_rounded,
+                  color: AppColors.nightBlue,
+                  title: 'Cómo funciona Attra',
+                  subtitle: 'Vuelve a ver el tutorial de bienvenida',
+                  onTap: () => TutorialScreen.show(context),
                 ),
-                title: const Text(
-                  'Cómo funciona Attra',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: const Text('Vuelve a ver el tutorial de bienvenida'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => TutorialScreen.show(context),
-              );
-            }
-            if (showBusy && index == 2) {
-              return _BusyModeTile(
-                initialUntil: widget.initialBusyUntil,
-                onSetBusyMode: widget.onSetBusyMode!,
-              );
-            }
-            final SettingsSection section = sections[index - leading];
-            final bool destructive =
-                section.key == SettingsCatalog.secLifecycle;
-            return ListTile(
-              leading: Icon(
-                settingsIcon(section.icon),
-                color: destructive
-                    ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.primary,
+                if (showBusy)
+                  _BusyModeRow(
+                    initialUntil: widget.initialBusyUntil,
+                    onSetBusyMode: widget.onSetBusyMode!,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            const _SectionLabel('Ajustes'),
+            _Group(
+              children: <Widget>[
+                for (int i = 0; i < normal.length; i++)
+                  _NavRow(
+                    icon: settingsIcon(normal[i].icon),
+                    color: _palette[i % _palette.length],
+                    title: normal[i].title,
+                    subtitle: normal[i].description,
+                    onTap: () => _openSection(normal[i]),
+                  ),
+              ],
+            ),
+            if (lifecycle != null) ...<Widget>[
+              const SizedBox(height: 22),
+              const _SectionLabel('Cuenta y datos'),
+              _Group(
+                children: <Widget>[
+                  _NavRow(
+                    icon: settingsIcon(lifecycle.icon),
+                    color: Theme.of(context).colorScheme.error,
+                    title: lifecycle.title,
+                    subtitle: lifecycle.description,
+                    destructive: true,
+                    onTap: () => _openSection(lifecycle!),
+                  ),
+                ],
               ),
-              title: Text(
-                section.title,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color:
-                      destructive ? Theme.of(context).colorScheme.error : null,
-                ),
-              ),
-              subtitle: Text(section.description),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openSection(section),
-            );
-          },
+            ],
+          ],
         );
       },
     );
   }
 }
 
-/// Attra Clear §4: entrada de Modo ocupado. Autónomo (estado optimista local)
-/// para reflejar el cambio al instante sin depender de recargar la pantalla.
-class _BusyModeTile extends StatefulWidget {
-  const _BusyModeTile({required this.initialUntil, required this.onSetBusyMode});
+/// Etiqueta de grupo (pequeña, en mayúsculas suaves, sobre cada tarjeta).
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        text.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.outline,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta que agrupa filas con separadores finos entre ellas.
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<Widget> rows = <Widget>[];
+    for (int i = 0; i < children.length; i++) {
+      if (i > 0) {
+        rows.add(Divider(
+          height: 1,
+          thickness: 1,
+          indent: 62,
+          color: theme.colorScheme.outline.withValues(alpha: 0.15),
+        ));
+      }
+      rows.add(children[i]);
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: rows),
+    );
+  }
+}
+
+/// Fila de navegación: chip de icono con color + título + subtítulo + chevron.
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+    this.trailing,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, size: 20, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: destructive ? theme.colorScheme.error : null,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.outline),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            trailing ??
+                Icon(Icons.chevron_right,
+                    color: theme.colorScheme.outline.withValues(alpha: 0.7)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Attra Clear §4: fila de Modo ocupado (estado optimista local para reflejar
+/// el cambio al instante sin recargar la pantalla).
+class _BusyModeRow extends StatefulWidget {
+  const _BusyModeRow({required this.initialUntil, required this.onSetBusyMode});
 
   final DateTime? initialUntil;
   final Future<void> Function({
@@ -144,17 +285,16 @@ class _BusyModeTile extends StatefulWidget {
   }) onSetBusyMode;
 
   @override
-  State<_BusyModeTile> createState() => _BusyModeTileState();
+  State<_BusyModeRow> createState() => _BusyModeRowState();
 }
 
-class _BusyModeTileState extends State<_BusyModeTile> {
+class _BusyModeRowState extends State<_BusyModeRow> {
   DateTime? _until;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    // Expiración defensiva: si la fecha ya pasó, se considera inactivo.
     final DateTime? u = widget.initialUntil;
     _until = (u != null && u.isAfter(DateTime.now())) ? u : null;
   }
@@ -192,43 +332,24 @@ class _BusyModeTileState extends State<_BusyModeTile> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final Color accent = _active ? AppColors.attraRed : AppColors.gold;
     final String subtitle = _active
         ? 'Activo hasta ${_fmt(_until!)} · toca para desactivar'
         : 'Pausa tu actividad y avisa suavemente a tus matches';
-    return ListTile(
-      leading: Icon(Icons.bedtime_outlined,
-          color: _active ? AppColors.attraRed : theme.colorScheme.primary),
-      title: Row(
-        children: <Widget>[
-          const Text('Modo ocupado',
-              style: TextStyle(fontWeight: FontWeight.w600)),
-          if (_active) ...<Widget>[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.attraRed.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(99),
-              ),
-              child: const Text('Activo',
-                  style: TextStyle(
-                      color: AppColors.attraRed,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ],
-      ),
-      subtitle: Text(subtitle),
+    return _NavRow(
+      icon: Icons.bedtime_outlined,
+      color: accent,
+      title: 'Modo ocupado',
+      subtitle: subtitle,
+      onTap: _busy ? null : _toggle,
       trailing: _busy
           ? const SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2))
-          : Icon(_active ? Icons.toggle_on : Icons.chevron_right,
-              color: _active ? AppColors.attraRed : null, size: _active ? 30 : 24),
-      onTap: _busy ? null : _toggle,
+          : _active
+              ? const Icon(Icons.toggle_on, color: AppColors.attraRed, size: 30)
+              : null,
     );
   }
 
@@ -236,10 +357,10 @@ class _BusyModeTileState extends State<_BusyModeTile> {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
 }
 
-/// Sección "Apariencia": elige Sistema / Claro / Oscuro. Refleja el estado del
+/// Tarjeta "Apariencia": elige Sistema / Claro / Oscuro. Refleja el estado del
 /// ThemeController (cambia al instante) y persiste vía [onSetThemeMode].
-class _ThemeModeTile extends StatelessWidget {
-  const _ThemeModeTile({this.onSetThemeMode});
+class _ThemeCard extends StatelessWidget {
+  const _ThemeCard({this.onSetThemeMode});
 
   final Future<void> Function(ThemeMode mode)? onSetThemeMode;
 
@@ -249,22 +370,36 @@ class _ThemeModeTile extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: ThemeController.instance,
       builder: (BuildContext context, ThemeMode mode, _) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Icon(Icons.brightness_6_rounded,
-                      color: theme.colorScheme.primary),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Icon(Icons.brightness_6_rounded,
+                        size: 20, color: theme.colorScheme.primary),
+                  ),
                   const SizedBox(width: 12),
                   Text('Apariencia',
                       style: theme.textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.w700)),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 14),
               SegmentedButton<ThemeMode>(
                 segments: const <ButtonSegment<ThemeMode>>[
                   ButtonSegment<ThemeMode>(
