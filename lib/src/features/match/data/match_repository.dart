@@ -25,6 +25,19 @@ class MatchRepository {
   CollectionReference<Map<String, dynamic>> get _blocks =>
       _firestore.collection('blocks');
 
+  /// Uids que el usuario PASÓ (descartes/dislikes), para la "segunda vuelta":
+  /// re-verlos cuando se acaba el feed. Solo dislikes (no likes ni matches).
+  Future<Set<String>> fetchDislikedUids(String uid) async {
+    final QuerySnapshot<Map<String, dynamic>> snap =
+        await _dislikes.where('fromUid', isEqualTo: uid).get();
+    final Set<String> out = <String>{};
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
+      final String? to = d.data()['toUid'] as String?;
+      if (to != null && to.isNotEmpty) out.add(to);
+    }
+    return out;
+  }
+
   /// Uids con los que el usuario ya interactuo (like, pass, match) o bloqueo,
   /// para excluirlos del feed. Lecturas puntuales permitidas por las reglas
   /// (fromUid==me / blockerUid==me / participante). Los que ME bloquearon NO se

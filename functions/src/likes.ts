@@ -209,6 +209,10 @@ export const sendLike = onCall(
         },
         { merge: true }
       );
+      // Si venías de "pasar" (descarte) a esta persona, dar like BORRA ese
+      // descarte: no puedes gustarte y pasar a la vez. Habilita la "segunda
+      // vuelta" (re-ver los NO) sin dejar estado inconsistente.
+      tx.delete(col.dislikes.doc(directedId(fromUid, toUid)));
       tx.set(
         usageRef,
         { count: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() },

@@ -145,6 +145,10 @@ class MatchService {
   Future<Set<String>> fetchExcludedUids(String uid) =>
       _repository.fetchExcludedUids(uid);
 
+  /// Uids que el usuario pasó (para la "segunda vuelta").
+  Future<Set<String>> fetchDislikedUids(String uid) =>
+      _repository.fetchDislikedUids(uid);
+
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {
     try {

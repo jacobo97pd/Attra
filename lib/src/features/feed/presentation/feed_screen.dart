@@ -181,6 +181,12 @@ class _FeedScreenState extends State<FeedScreen> {
   int _index = 0;
   Set<String> _excluded = const <String>{};
   Set<String> _likedMeUids = const <String>{};
+
+  /// "Segunda vuelta": cuando se acaba el feed, re-ver los perfiles que pasaste
+  /// (dislikes). Se activa desde el estado vacío. `_dislikedUids` se refresca en
+  /// cada carga para saber si hay pases que reconsiderar.
+  bool _secondRound = false;
+  Set<String> _dislikedUids = const <String>{};
   Map<String, ActiveBoost> _activeBoostsByUid = const <String, ActiveBoost>{};
   bool _storiesEnabled = false;
   // Stories vivas agrupadas por dueño: para pintar el aro rojizo en la foto
@@ -425,6 +431,18 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  /// Entra en la "segunda vuelta": re-ver los perfiles que pasaste.
+  void _enterSecondRound() {
+    setState(() => _secondRound = true);
+    _load();
+  }
+
+  /// Sale de la segunda vuelta y vuelve al feed normal.
+  void _exitSecondRound() {
+    setState(() => _secondRound = false);
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -437,12 +455,24 @@ class _FeedScreenState extends State<FeedScreen> {
       // Excluidos (likeados/pasados/matcheados/bloqueados). Best-effort: si la
       // lectura falla, no vaciamos el feed.
       Set<String> excluded = const <String>{};
+      Set<String> disliked = const <String>{};
       if (myUid.isNotEmpty) {
         try {
           excluded = await widget.matchService.fetchExcludedUids(myUid);
         } catch (_) {
           excluded = const <String>{};
         }
+        try {
+          disliked = await widget.matchService.fetchDislikedUids(myUid);
+        } catch (_) {
+          disliked = const <String>{};
+        }
+      }
+      // Segunda vuelta: no excluir los pases (para re-verlos). Sigue excluyendo
+      // likes/matches/bloqueos (al dar like el backend borra el dislike, así que
+      // no reaparecen los ya likeados).
+      if (_secondRound) {
+        excluded = excluded.difference(disliked);
       }
       if (!mounted) {
         return;
@@ -484,6 +514,12 @@ class _FeedScreenState extends State<FeedScreen> {
       );
       if (traveling) {
         filtered = _applyTravel(filtered);
+      }
+      // Segunda vuelta: quédate SOLO con los perfiles que pasaste.
+      if (_secondRound) {
+        filtered = filtered
+            .where((SeedProfile p) => disliked.contains(p.id))
+            .toList(growable: false);
       }
       Map<String, ActiveBoost> activeBoosts = const <String, ActiveBoost>{};
       final BoostService? boostService = widget.boostService;
@@ -571,6 +607,7 @@ class _FeedScreenState extends State<FeedScreen> {
       setState(() {
         _excluded = excluded;
         _likedMeUids = likedMe;
+        _dislikedUids = disliked;
         _activeBoostsByUid = activeBoosts;
         _profiles = filtered;
         _index = 0;
@@ -1132,6 +1169,30 @@ class _FeedScreenState extends State<FeedScreen> {
     // se reinicia el indice (los perfiles vistos no deben reaparecer); solo
     // "Recargar" vuelve a consultar y re-excluye lo ya likeado/pasado/matcheado.
     if (_profiles.isEmpty || _index >= _profiles.length) {
+      // Fin de la segunda vuelta: se acabaron los perfiles que pasaste.
+      if (_secondRound) {
+        return AttraEmptyState(
+          icon: Icons.refresh_rounded,
+          title: 'Fin de la segunda vuelta',
+          message:
+              'Ya has revisado a quienes pasaste. Vuelve al feed normal para descubrir gente nueva.',
+          actionLabel: 'Volver al feed',
+          onAction: _exitSecondRound,
+        );
+      }
+      // Feed vacío con pases guardados: ofrece la segunda vuelta.
+      if (_dislikedUids.isNotEmpty) {
+        return _FeedEndState(
+          icon: Icons.replay_rounded,
+          title: 'Se acabó el feed por ahora',
+          message:
+              '¿Quieres dar una segunda vuelta? Puedes volver a ver a las ${_dislikedUids.length} personas que pasaste, por si les das otra oportunidad.',
+          primaryLabel: 'Dar una segunda vuelta',
+          onPrimary: _enterSecondRound,
+          secondaryLabel: 'Recargar',
+          onSecondary: _load,
+        );
+      }
       return AttraEmptyState(
         icon: Icons.search_off,
         title: 'No hay más personas por el momento',
@@ -2140,6 +2201,71 @@ class _CircleAction extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Estado de fin de feed con acción principal (p. ej. "Segunda vuelta") y una
+/// secundaria (p. ej. "Recargar"). Similar a AttraEmptyState pero con 2 botones.
+class _FeedEndState extends StatelessWidget {
+  const _FeedEndState({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.primaryLabel,
+    required this.onPrimary,
+    required this.secondaryLabel,
+    required this.onSecondary,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String primaryLabel;
+  final VoidCallback onPrimary;
+  final String secondaryLabel;
+  final VoidCallback onSecondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: <Color>[
+                  AppColors.attraRed.withValues(alpha: 0.22),
+                  Colors.transparent,
+                ]),
+              ),
+              child: const Icon(Icons.replay_rounded,
+                  size: 44, color: AppColors.attraRed),
+            ),
+            const SizedBox(height: 18),
+            Text(title,
+                style: theme.textTheme.titleLarge, textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 22),
+            FilledButton.icon(
+              onPressed: onPrimary,
+              icon: Icon(icon, size: 20),
+              label: Text(primaryLabel),
+            ),
+            const SizedBox(height: 4),
+            TextButton(onPressed: onSecondary, child: Text(secondaryLabel)),
+          ],
         ),
       ),
     );
