@@ -47,6 +47,7 @@ class HomeScreen extends StatefulWidget {
     required this.onLoadProfileState,
     required this.onUploadAdditionalPhoto,
     required this.onDeleteAdditionalPhoto,
+    this.onReorderPhotos,
     required this.onAddPrompt,
     required this.onClaimReward,
     required this.onLoadSeedProfiles,
@@ -83,6 +84,11 @@ class HomeScreen extends StatefulWidget {
     required String source,
   }) onUploadAdditionalPhoto;
   final Future<void> Function(String storagePath) onDeleteAdditionalPhoto;
+
+  /// Reordena las fotos adicionales (arrastrar para colocar). Null = sin
+  /// reordenar.
+  final Future<void> Function(List<String> orderedStoragePaths)?
+      onReorderPhotos;
   final Future<void> Function(String prompt) onAddPrompt;
   final Future<void> Function(String rewardId) onClaimReward;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
@@ -145,6 +151,17 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _reload();
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Si cambió la completitud del usuario (p. ej. al persistir la ubicación
+    // desde el feed) o el nº de fotos, recarga la tarjeta para reflejar el %.
+    if (oldWidget.user?.profileCompletionPercent !=
+        widget.user?.profileCompletionPercent) {
+      _reload();
+    }
   }
 
   @override
@@ -269,30 +286,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       await widget.onDeleteAdditionalPhoto(storagePath);
-      await _reload();
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = '$error';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _claimReward(String rewardId) async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await widget.onClaimReward(rewardId);
       await _reload();
     } catch (error) {
       if (!mounted) {
@@ -459,8 +452,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 12),
                   ],
                   _buildChecklistCard(theme, profile),
-                  const SizedBox(height: 12),
-                  _buildRewardsCard(theme, profile),
                   const SizedBox(height: 12),
                   _buildAdditionalPhotosCard(theme, profile),
                   const SizedBox(height: 12),
@@ -819,45 +810,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildRewardsCard(ThemeData theme, ProfileCompletionState profile) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Recompensas de completitud',
-                style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (profile.availableRewards.isEmpty)
-              Text(
-                'Aun no hay recompensas disponibles. Sube tu porcentaje para desbloquear hitos.',
-                style: theme.textTheme.bodyMedium,
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: profile.availableRewards.map((String rewardId) {
-                  return FilledButton(
-                    onPressed: _busy ? null : () => _claimReward(rewardId),
-                    child: Text('Reclamar $rewardId'),
-                  );
-                }).toList(growable: false),
-              ),
-            if (profile.claimedRewards.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                'Reclamadas: ${profile.claimedRewards.join(', ')}',
-                style: theme.textTheme.bodySmall,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildAdditionalPhotosCard(
     ThemeData theme,
     ProfileCompletionState profile,
@@ -905,44 +857,27 @@ class _HomeScreenState extends State<HomeScreen> {
             if (profile.additionalPhotos.isEmpty)
               Text('Aun no has subido fotos adicionales.',
                   style: theme.textTheme.bodyMedium)
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: profile.additionalPhotos.map((AdditionalPhoto photo) {
-                  return Stack(
-                    children: <Widget>[
-                      AttraImage(
-                        url: photo.url,
-                        width: 96,
-                        height: 96,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: InkWell(
-                          onTap: _busy
-                              ? null
-                              : () => _deletePhoto(photo.storagePath),
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black54,
-                            ),
-                            padding: const EdgeInsets.all(4),
-                            child: const Icon(
-                              Icons.close,
-                              size: 14,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }).toList(growable: false),
+            else ...<Widget>[
+              if (widget.onReorderPhotos != null &&
+                  profile.additionalPhotos.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Mantén pulsada una foto y arrástrala para cambiar el orden.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.outline),
+                  ),
+                ),
+              _ReorderablePhotos(
+                key: ValueKey<String>(profile.additionalPhotos
+                    .map((AdditionalPhoto p) => p.storagePath)
+                    .join(',')),
+                photos: profile.additionalPhotos,
+                busy: _busy,
+                onDelete: _deletePhoto,
+                onReorder: widget.onReorderPhotos,
               ),
+            ],
           ],
         ),
       ),
@@ -1084,6 +1019,114 @@ class _AttraTitleLogo extends StatelessWidget {
         // El wordmark es blanco: tíntalo con el color de texto del tema para que
         // sea legible también en el tema claro (Piedra).
         color: Theme.of(context).colorScheme.onSurface,
+      ),
+    );
+  }
+}
+
+/// Fotos adicionales reordenables por ARRASTRE (mantener pulsado y mover). Lista
+/// horizontal con eliminar por foto. Persiste el nuevo orden vía [onReorder].
+class _ReorderablePhotos extends StatefulWidget {
+  const _ReorderablePhotos({
+    super.key,
+    required this.photos,
+    required this.busy,
+    required this.onDelete,
+    required this.onReorder,
+  });
+
+  final List<AdditionalPhoto> photos;
+  final bool busy;
+  final void Function(String storagePath) onDelete;
+  final Future<void> Function(List<String> orderedStoragePaths)? onReorder;
+
+  @override
+  State<_ReorderablePhotos> createState() => _ReorderablePhotosState();
+}
+
+class _ReorderablePhotosState extends State<_ReorderablePhotos> {
+  late final List<AdditionalPhoto> _items = <AdditionalPhoto>[...widget.photos];
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (widget.onReorder == null) return;
+    setState(() {
+      // ReorderableListView entrega newIndex desplazado al mover hacia abajo.
+      if (newIndex > oldIndex) newIndex -= 1;
+      final AdditionalPhoto moved = _items.removeAt(oldIndex);
+      _items.insert(newIndex, moved);
+    });
+    widget.onReorder!(
+      _items.map((AdditionalPhoto p) => p.storagePath).toList(growable: false),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 112,
+      child: ReorderableListView.builder(
+        scrollDirection: Axis.horizontal,
+        buildDefaultDragHandles: widget.onReorder != null && !widget.busy,
+        itemCount: _items.length,
+        onReorder: _onReorder,
+        proxyDecorator:
+            (Widget child, int index, Animation<double> animation) => Material(
+          color: Colors.transparent,
+          elevation: 8,
+          borderRadius: BorderRadius.circular(12),
+          child: child,
+        ),
+        itemBuilder: (BuildContext context, int index) {
+          final AdditionalPhoto photo = _items[index];
+          return Padding(
+            key: ValueKey<String>(photo.storagePath),
+            padding: const EdgeInsets.only(right: 8),
+            child: Stack(
+              children: <Widget>[
+                AttraImage(
+                  url: photo.url,
+                  width: 96,
+                  height: 96,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                // Nº de posición (1 = principal de las adicionales).
+                Positioned(
+                  left: 4,
+                  bottom: 4,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('${index + 1}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                Positioned(
+                  right: 2,
+                  top: 2,
+                  child: InkWell(
+                    onTap: widget.busy ? null : () => widget.onDelete(photo.storagePath),
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black54,
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      child: const Icon(Icons.close,
+                          size: 14, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

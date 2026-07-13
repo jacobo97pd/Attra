@@ -451,6 +451,30 @@ class UserRepository {
     await refreshProfileCompletion(uid);
   }
 
+  /// Persiste la ubicación del dispositivo en `users/{uid}.location` (lat/lng +
+  /// estado del permiso). Así la completitud del perfil reconoce que hay
+  /// ubicación y el feed calcula distancia. Re-sincroniza la completitud.
+  Future<void> setDeviceLocation({
+    required String uid,
+    required double latitude,
+    required double longitude,
+    required String permissionStatus,
+  }) async {
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'location': <String, dynamic>{
+              'latitude': latitude,
+              'longitude': longitude,
+              'permissionStatus': permissionStatus,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
+    await refreshProfileCompletion(uid);
+  }
+
   /// Modo Amigos: guarda la intención en `users/{uid}.profile.intentMode`
   /// (misma vía que los rasgos, con los campos requeridos por las reglas). El
   /// re-sync a discovery lo hace la Cloud Function al escribir el user.

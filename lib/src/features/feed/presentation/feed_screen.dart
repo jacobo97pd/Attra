@@ -77,6 +77,7 @@ class FeedScreen extends StatefulWidget {
     this.isPro = false,
     this.onOpenChats,
     this.onOpenGroups,
+    this.onDeviceLocation,
   });
 
   /// Attra Clear §2: límite suave de conversaciones pendientes. Si null o
@@ -96,6 +97,14 @@ class FeedScreen extends StatefulWidget {
   /// Modo Amigos: abre la pantalla de grupos. Si es null, no se muestra el
   /// acceso a grupos en el feed.
   final VoidCallback? onOpenGroups;
+
+  /// Persiste la ubicación del dispositivo cuando el feed la obtiene (para que
+  /// la completitud del perfil llegue al 100%). Best-effort.
+  final Future<void> Function({
+    required double latitude,
+    required double longitude,
+    required String permissionStatus,
+  })? onDeviceLocation;
 
   final AppUser? user;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
@@ -243,6 +252,14 @@ class _FeedScreenState extends State<FeedScreen> {
         _deviceLat = pos!.latitude;
         _deviceLng = pos.longitude;
       });
+      // Persiste la ubicación en el perfil (completitud 100% + distancia). No
+      // bloquea el feed si falla.
+      unawaited(widget.onDeviceLocation?.call(
+            latitude: pos.latitude,
+            longitude: pos.longitude,
+            permissionStatus: perm.name,
+          ) ??
+          Future<void>.value());
       _load();
     } catch (_) {/* sin ubicación: el feed cae al filtro por país */}
   }

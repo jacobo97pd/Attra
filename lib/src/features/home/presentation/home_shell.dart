@@ -65,6 +65,7 @@ class HomeShell extends StatefulWidget {
     required this.onLoadProfileState,
     required this.onUploadAdditionalPhoto,
     required this.onDeleteAdditionalPhoto,
+    this.onReorderPhotos,
     required this.onAddPrompt,
     required this.onClaimReward,
     required this.onLoadSeedProfiles,
@@ -89,6 +90,7 @@ class HomeShell extends StatefulWidget {
     this.friendGroupService,
     this.socialDiscoveryService,
     this.onSetIntentMode,
+    this.onSaveDeviceLocation,
     this.boostService,
     this.sparkService,
     this.feedMetricsService,
@@ -125,6 +127,11 @@ class HomeShell extends StatefulWidget {
     required String source,
   }) onUploadAdditionalPhoto;
   final Future<void> Function(String storagePath) onDeleteAdditionalPhoto;
+
+  /// Reordena las fotos adicionales (arrastrar para colocar). Null = deshabilita
+  /// el reordenar.
+  final Future<void> Function(List<String> orderedStoragePaths)?
+      onReorderPhotos;
   final Future<void> Function(String prompt) onAddPrompt;
   final Future<void> Function(String rewardId) onClaimReward;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
@@ -168,6 +175,14 @@ class HomeShell extends StatefulWidget {
 
   /// Modo Amigos: cambia la intención y recarga el usuario (vía SessionController).
   final Future<void> Function(IntentMode mode)? onSetIntentMode;
+
+  /// Persiste la ubicación del dispositivo (lat/lng + permiso) cuando el feed la
+  /// obtiene, para que la completitud del perfil llegue al 100%.
+  final Future<void> Function({
+    required double latitude,
+    required double longitude,
+    required String permissionStatus,
+  })? onSaveDeviceLocation;
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;
@@ -419,6 +434,8 @@ class _HomeShellState extends State<HomeShell> {
                 widget.socialDiscoveryService == null)
             ? null
             : _openGroups,
+        // Persiste la ubicación del dispositivo (completitud del perfil + feed).
+        onDeviceLocation: widget.onSaveDeviceLocation,
       ),
     );
 
@@ -540,6 +557,7 @@ class _HomeShellState extends State<HomeShell> {
       onLoadProfileState: widget.onLoadProfileState,
       onUploadAdditionalPhoto: widget.onUploadAdditionalPhoto,
       onDeleteAdditionalPhoto: widget.onDeleteAdditionalPhoto,
+      onReorderPhotos: widget.onReorderPhotos,
       onAddPrompt: widget.onAddPrompt,
       onClaimReward: widget.onClaimReward,
       onLoadSeedProfiles: widget.onLoadSeedProfiles,

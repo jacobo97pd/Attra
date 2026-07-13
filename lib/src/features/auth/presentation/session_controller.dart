@@ -610,6 +610,18 @@ class SessionController extends ChangeNotifier {
     await _refreshAuthenticatedUser(uid);
   }
 
+  /// Reordena las fotos adicionales según [orderedStoragePaths] (arrastrar para
+  /// colocar en la posición deseada). Persiste el nuevo orden.
+  Future<void> reorderAdditionalPhotos(List<String> orderedStoragePaths) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.reorderAdditionalPhotos(
+      uid: uid,
+      orderedStoragePaths: orderedStoragePaths,
+    );
+    await _refreshAuthenticatedUser(uid);
+  }
+
   // ── Media de presentación (audio/vídeo) ──────────────────────────────────
 
   /// Carga la media de presentación actual del usuario (audio + vídeo).
@@ -708,6 +720,24 @@ class SessionController extends ChangeNotifier {
     final String? uid = _state.user?.uid;
     if (uid == null) return;
     await _userRepository.setProfileTrait(uid: uid, def: def, value: value);
+    await _refreshAuthenticatedUser(uid);
+  }
+
+  /// Guarda la ubicación del dispositivo (lat/lng + permiso) y recarga el
+  /// usuario para que la completitud del perfil y el feed reaccionen.
+  Future<void> saveDeviceLocation({
+    required double latitude,
+    required double longitude,
+    required String permissionStatus,
+  }) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.setDeviceLocation(
+      uid: uid,
+      latitude: latitude,
+      longitude: longitude,
+      permissionStatus: permissionStatus,
+    );
     await _refreshAuthenticatedUser(uid);
   }
 
