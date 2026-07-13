@@ -19,6 +19,7 @@ import 'src/features/chat/data/chat_repository.dart';
 import 'src/features/chat/data/chat_service.dart';
 import 'src/features/date_plans/data/date_plan_repository.dart';
 import 'src/features/date_plans/data/date_plan_service.dart';
+import 'src/features/safedate/data/safedate_service.dart';
 import 'src/features/social/data/friend_group_service.dart';
 import 'src/features/social/data/friend_mode_service.dart';
 import 'src/features/social/data/social_discovery_service.dart';
@@ -145,6 +146,10 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
       ),
       datePlanService: DatePlanService(
         repository: DatePlanRepository(firestore: firestore),
+        functions: functions,
+      ),
+      safeDateService: SafeDateService(
+        firestore: firestore,
         functions: functions,
       ),
       friendModeService: FriendModeService(firestore: firestore),

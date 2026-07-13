@@ -80,6 +80,12 @@ export {
   leaveFriendGroup,
   closeFriendGroup,
 } from "./friendGroups";
+export {
+  saveTrustedContact,
+  deleteTrustedContact,
+  createSafeDatePlan,
+  setSafeDatePlanStatus,
+} from "./safedate";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";
 export {

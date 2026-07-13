@@ -404,5 +404,63 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;
     }
+
+    // ── Attra SafeDate ──────────────────────────────────────────────────────
+    // Contactos de confianza: PRIVADOS del dueño. Solo el dueño LEE los suyos;
+    // nunca visibles para otros ni para el match. Escritura SOLO backend
+    // (validación/normalización). Están bajo users/{uid}, pero se declaran aquí
+    // por claridad (el bloque users/{uid} de arriba no cubre subcolecciones).
+    match /users/{uid}/trustedContacts/{contactId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // Planes de cita segura: SOLO el owner los lee. Escritura solo backend.
+    // Nunca accesibles por el otro usuario del match.
+    match /safeDatePlans/{planId} {
+      function planOwner() {
+        return get(/databases/$(database)/documents/safeDatePlans/$(planId))
+            .data.get('ownerUserId', '');
+      }
+      allow read: if isSignedIn() && planOwner() == request.auth.uid;
+      allow write: if false;
+
+      // Check-ins y alertas del plan: solo el owner del plan padre.
+      match /checkIns/{checkInId} {
+        allow read: if isSignedIn() && planOwner() == request.auth.uid;
+        allow write: if false;
+      }
+      match /alerts/{alertId} {
+        allow read: if isSignedIn() && planOwner() == request.auth.uid;
+        allow write: if false;
+      }
+    }
+
+    // Ubicación temporal en vivo: la ESCRIBE solo el dueño (durante la cita, con
+    // consentimiento); la lectura autorizada y la caducidad las gestiona el
+    // backend/enlace temporal. No conserva historial de puntos.
+    match /safeDateLiveLocations/{planId} {
+      allow read: if false;   // lectura solo vía enlace temporal validado (backend)
+      allow write: if false;  // escritura solo backend (Admin SDK)
+    }
+
+    // Revisiones post-cita: COMPLETAMENTE privadas. Ni el propio autor las lee de
+    // vuelta desde el cliente (solo moderación interna). Escritura solo backend.
+    match /safeDateSafetyReviews/{reviewId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // Tokens de enlace de compartición: solo backend (generar/validar/revocar).
+    match /safeDateShareTokens/{tokenId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // Safe Places: catálogo público (lectura), gestión solo backend.
+    match /safePlaces/{placeId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
   }
 }

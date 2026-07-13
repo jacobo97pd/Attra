@@ -67,6 +67,7 @@ class HomeScreen extends StatefulWidget {
     this.onOpenAiVisual,
     this.onOpenFriendMode,
     this.onOpenGroups,
+    this.onOpenSafeDate,
     this.onSetSlowDating,
     this.currentPlanLabel = 'Free',
     this.isProUser = false,
@@ -128,6 +129,9 @@ class HomeScreen extends StatefulWidget {
   /// oculto (servicios no inyectados).
   final VoidCallback? onOpenFriendMode;
   final VoidCallback? onOpenGroups;
+
+  /// Attra SafeDate: abre el centro de seguridad. Null = oculto (flag OFF).
+  final VoidCallback? onOpenSafeDate;
 
   /// Activa/desactiva Slow Dating (toggle destacado en el perfil).
   final Future<void> Function(bool value)? onSetSlowDating;
@@ -439,6 +443,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildGroupsCard(theme),
                     const SizedBox(height: 12),
                   ],
+                  if (widget.onOpenSafeDate != null) ...<Widget>[
+                    _buildSafeDateCard(theme),
+                    const SizedBox(height: 12),
+                  ],
                   if (widget.onOpenAiVisual != null) ...<Widget>[
                     _buildAiVisualCard(theme),
                     const SizedBox(height: 12),
@@ -621,6 +629,21 @@ class _HomeScreenState extends State<HomeScreen> {
         subtitle: Text('Ahora: ${v.label}. Toca para cambiar.'),
         trailing: const Icon(Icons.chevron_right),
         onTap: widget.onOpenFriendMode,
+      ),
+    );
+  }
+
+  /// Attra SafeDate: acceso al centro de seguridad en citas.
+  Widget _buildSafeDateCard(ThemeData theme) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading:
+            Icon(Icons.shield_moon_outlined, color: theme.colorScheme.primary),
+        title: const Text('SafeDate'),
+        subtitle: const Text('Queda con más tranquilidad y avisa a quien confías.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpenSafeDate,
       ),
     );
   }

@@ -15,6 +15,7 @@ import '../../social/data/friend_group_service.dart';
 import '../../social/data/friend_mode_service.dart';
 import '../../social/data/social_discovery_service.dart';
 import '../../social/domain/intent_mode.dart';
+import '../../safedate/data/safedate_service.dart';
 import '../../integrations/domain/integration_connector.dart';
 import '../../match/data/match_service.dart';
 import '../../stories/data/story_service.dart';
@@ -59,9 +60,11 @@ class SessionController extends ChangeNotifier {
     FriendModeService? friendModeService,
     FriendGroupService? friendGroupService,
     SocialDiscoveryService? socialDiscoveryService,
+    SafeDateService? safeDateService,
   })  : _authService = authService,
         _sparkService = sparkService,
         _datePlanService = datePlanService,
+        _safeDateService = safeDateService,
         _friendModeService = friendModeService,
         _friendGroupService = friendGroupService,
         _socialDiscoveryService = socialDiscoveryService,
@@ -104,6 +107,7 @@ class SessionController extends ChangeNotifier {
   final FriendModeService? _friendModeService;
   final FriendGroupService? _friendGroupService;
   final SocialDiscoveryService? _socialDiscoveryService;
+  final SafeDateService? _safeDateService;
   final BoostService? _boostService;
   final FeedMetricsService? _feedMetricsService;
   final NotificationService? _notificationService;
@@ -122,6 +126,9 @@ class SessionController extends ChangeNotifier {
   FriendModeService? get friendModeService => _friendModeService;
   FriendGroupService? get friendGroupService => _friendGroupService;
   SocialDiscoveryService? get socialDiscoveryService => _socialDiscoveryService;
+
+  /// Attra SafeDate (seguridad en citas). Null si no se inyecta.
+  SafeDateService? get safeDateService => _safeDateService;
 
   /// Servicio de Boosts consumibles. Null si no se inyecta.
   BoostService? get boostService => _boostService;

@@ -17,6 +17,9 @@ import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
+import '../../safedate/data/safedate_service.dart';
+import '../../safedate/domain/safedate_flags.dart';
+import '../../safedate/presentation/safedate_home_screen.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/data/friend_mode_service.dart';
 import '../../social/data/social_discovery_service.dart';
@@ -89,6 +92,7 @@ class HomeShell extends StatefulWidget {
     this.friendModeService,
     this.friendGroupService,
     this.socialDiscoveryService,
+    this.safeDateService,
     this.onSetIntentMode,
     this.onSaveDeviceLocation,
     this.boostService,
@@ -172,6 +176,7 @@ class HomeShell extends StatefulWidget {
   final FriendModeService? friendModeService;
   final FriendGroupService? friendGroupService;
   final SocialDiscoveryService? socialDiscoveryService;
+  final SafeDateService? safeDateService;
 
   /// Modo Amigos: cambia la intención y recarga el usuario (vía SessionController).
   final Future<void> Function(IntentMode mode)? onSetIntentMode;
@@ -578,6 +583,12 @@ class _HomeShellState extends State<HomeShell> {
           (_entitlementController?.tier ?? SubscriptionTier.free).label,
       isProUser: isPro,
       onOpenAiVisual: _openAiVisual,
+      // SafeDate: entrada al centro solo si el master switch remoto está ON y
+      // hay servicio inyectado. OFF por defecto → invisible.
+      onOpenSafeDate:
+          (_safeDateFlags.enabled && widget.safeDateService != null)
+              ? _openSafeDate
+              : null,
       onSetSlowDating: widget.onSetSlowDating,
       // Modo Amigos: solo si hay callback inyectado (si no, se oculta).
       onOpenFriendMode: widget.onSetIntentMode == null ? null : _openFriendMode,
@@ -714,6 +725,24 @@ class _HomeShellState extends State<HomeShell> {
             const SnackBar(content: Text('No se pudo cambiar el modo.')));
       }
     }
+  }
+
+  /// Config remota de SafeDate (todo OFF por defecto; fallback seguro).
+  SafeDateFlags get _safeDateFlags => SafeDateFlags.fromMap(
+      _entitlementController?.flags.rawConfig ?? const <String, dynamic>{});
+
+  /// Abre el centro de Attra SafeDate (solo si el master switch está ON).
+  void _openSafeDate() {
+    final SafeDateService? svc = widget.safeDateService;
+    final String uid = widget.user?.uid ?? '';
+    if (svc == null || uid.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SafeDateHomeScreen(
+        uid: uid,
+        service: svc,
+        flags: _safeDateFlags,
+      ),
+    ));
   }
 
   /// Modo Amigos: abre la pantalla de grupos y planes.
