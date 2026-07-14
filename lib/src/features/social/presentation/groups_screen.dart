@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/app_colors.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import '../../profile/domain/profile_summary.dart';
 import '../data/friend_group_service.dart';
@@ -91,90 +92,579 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final bool canPop = Navigator.of(context).canPop();
     return Scaffold(
-      appBar: AppBar(title: const Text('Planes')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _create,
-        icon: const Icon(Icons.add),
-        label: const Text('Crear grupo'),
+      backgroundColor: AppColors.black,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _CreateGroupButton(onTap: _create),
+      body: Stack(
+        children: <Widget>[
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(-1.0, -1.0),
+                  radius: 1.2,
+                  colors: <Color>[Color(0x33FF4F68), Color(0x000E0E10)],
+                  stops: <double>[0.0, 0.55],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: () async => _refresh(),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 96),
+                children: <Widget>[
+                  _header(context, canPop),
+                  const SizedBox(height: 22),
+
+                  // ── Tus grupos ──
+                  const _SectionHeader(
+                      icon: Icons.groups_rounded, title: 'Tus grupos'),
+                  const SizedBox(height: 12),
+                  StreamBuilder<List<FriendGroup>>(
+                    stream: widget.groupService.observeMyGroups(widget.uid),
+                    builder: (BuildContext context,
+                        AsyncSnapshot<List<FriendGroup>> snap) {
+                      if (snap.hasError) {
+                        return _ErrorNote(
+                          'No se pudieron cargar tus grupos: ${snap.error}',
+                          onRetry: _refresh,
+                        );
+                      }
+                      final List<FriendGroup> mine =
+                          snap.data ?? const <FriendGroup>[];
+                      if (mine.isEmpty) {
+                        return const _EmptyLine(
+                            'Aún no estás en ningún grupo.');
+                      }
+                      return Column(
+                        children: <Widget>[
+                          for (final FriendGroup g in mine)
+                            _MyGroupTile(
+                              group: g,
+                              uid: widget.uid,
+                              onTap: () => _openGroup(g),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 26),
+
+                  // ── Recomendados para ti ──
+                  const _SectionHeader(
+                      icon: Icons.auto_awesome,
+                      title: 'Recomendados para ti',
+                      filledIcon: true),
+                  const SizedBox(height: 12),
+                  FutureBuilder<List<RecommendedGroup>>(
+                    future: _recommended,
+                    builder: (BuildContext context,
+                        AsyncSnapshot<List<RecommendedGroup>> snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(
+                              child: CircularProgressIndicator(
+                                  color: AppColors.attraRed)),
+                        );
+                      }
+                      if (snap.hasError) {
+                        return _ErrorNote(
+                          'No se pudieron cargar los grupos: ${snap.error}',
+                          onRetry: _refresh,
+                        );
+                      }
+                      final List<RecommendedGroup> recs =
+                          snap.data ?? const <RecommendedGroup>[];
+                      if (recs.isEmpty) {
+                        return const _EmptyLine(
+                            'No hay grupos abiertos por aquí todavía.');
+                      }
+                      return Column(
+                        children: <Widget>[
+                          for (final RecommendedGroup r in recs)
+                            _RecommendedTile(
+                              group: r.group,
+                              onTap: () => _openGroup(r.group),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async => _refresh(),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+    );
+  }
+
+  Widget _header(BuildContext context, bool canPop) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (canPop)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).maybePop(),
+                    child: const Icon(Icons.arrow_back,
+                        color: AppColors.textPrimary),
+                  ),
+                ),
+              const Text('Planes',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                  )),
+              const SizedBox(height: 4),
+              const Text('Explora grupos y planes para hacer cosas increíbles.',
+                  style: TextStyle(
+                      color: AppColors.textSecondary, fontSize: 15, height: 1.3)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        _RoundAddButton(onTap: _create),
+      ],
+    );
+  }
+}
+
+/// Icono rojo tintado en cuadrado redondeado (avatar de grupo/categoría).
+IconData groupCategoryIcon(FriendGroup g) {
+  final String s = '${g.name} ${g.interests.join(' ')}'.toLowerCase();
+  bool has(List<String> k) => k.any(s.contains);
+  if (has(<String>['sender', 'montaña', 'aire', 'natur', 'ruta'])) {
+    return Icons.hiking_rounded;
+  }
+  if (has(<String>['cine', 'peli', 'film'])) {
+    return Icons.movie_creation_outlined;
+  }
+  if (has(<String>['escalad', 'boulder'])) return Icons.terrain_rounded;
+  if (has(<String>['cena', 'tapas', 'gastro', 'comida', 'vino', 'restaur'])) {
+    return Icons.restaurant_rounded;
+  }
+  if (has(<String>['mús', 'music', 'concier', 'directo'])) {
+    return Icons.music_note_rounded;
+  }
+  if (has(<String>['café', 'cafe', 'brunch'])) return Icons.local_cafe_rounded;
+  if (has(<String>['foto'])) return Icons.photo_camera_outlined;
+  if (has(<String>['arte', 'museo', 'cultura', 'expo'])) {
+    return Icons.museum_outlined;
+  }
+  if (has(<String>['run', 'deporte', 'gym', 'fit', 'yoga'])) {
+    return Icons.directions_run_rounded;
+  }
+  return Icons.groups_rounded;
+}
+
+class _CategoryIconSquare extends StatelessWidget {
+  const _CategoryIconSquare({required this.icon});
+  final IconData icon;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: AppColors.attraRed.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Icon(icon, color: AppColors.attraRed, size: 24),
+    );
+  }
+}
+
+/// Botón redondo "+" con glow y destellos (esquina superior de la cabecera).
+class _RoundAddButton extends StatelessWidget {
+  const _RoundAddButton({required this.onTap});
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 78,
+      height: 78,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          const Positioned(
+              right: 2,
+              top: 0,
+              child: Icon(Icons.auto_awesome,
+                  size: 14, color: AppColors.attraRed)),
+          const Positioned(
+              left: 4,
+              bottom: 8,
+              child: Icon(Icons.auto_awesome,
+                  size: 10, color: AppColors.attraRed)),
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(colors: AppColors.action),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                    color: AppColors.attraRed.withValues(alpha: 0.45),
+                    blurRadius: 18,
+                    spreadRadius: 1),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                child: const Icon(Icons.add, color: Colors.white, size: 30),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Botón "Crear grupo" (píldora con gradiente y glow) flotante inferior.
+class _CreateGroupButton extends StatelessWidget {
+  const _CreateGroupButton({required this.onTap});
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+              color: AppColors.attraRed.withValues(alpha: 0.45),
+              blurRadius: 22,
+              spreadRadius: 1),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(30),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: AppColors.action),
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.add, color: Colors.white, size: 22),
+                SizedBox(width: 8),
+                Text('Crear grupo',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(
+      {required this.icon, required this.title, this.filledIcon = false});
+  final IconData icon;
+  final String title;
+  final bool filledIcon;
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Icon(icon, color: AppColors.attraRed, size: filledIcon ? 22 : 24),
+        const SizedBox(width: 10),
+        Text(title,
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w800)),
+        const Spacer(),
+        const Row(
           children: <Widget>[
-            Text('Tus grupos', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            StreamBuilder<List<FriendGroup>>(
-              stream: widget.groupService.observeMyGroups(widget.uid),
-              builder: (BuildContext context,
-                  AsyncSnapshot<List<FriendGroup>> snap) {
-                if (snap.hasError) {
-                  return _ErrorNote(
-                    'No se pudieron cargar tus grupos: ${snap.error}',
-                    onRetry: _refresh,
-                  );
-                }
-                final List<FriendGroup> mine = snap.data ?? const <FriendGroup>[];
-                if (mine.isEmpty) {
-                  return Text('Aún no estás en ningún grupo.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline));
-                }
-                return Column(
-                  children: <Widget>[
-                    for (final FriendGroup g in mine)
-                      _GroupTile(
-                        group: g,
-                        uid: widget.uid,
-                        onTap: () => _openGroup(g),
-                      ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-            Text('Recomendados para ti', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            FutureBuilder<List<RecommendedGroup>>(
-              future: _recommended,
-              builder: (BuildContext context,
-                  AsyncSnapshot<List<RecommendedGroup>> snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                if (snap.hasError) {
-                  return _ErrorNote(
-                    'No se pudieron cargar los grupos: ${snap.error}',
-                    onRetry: _refresh,
-                  );
-                }
-                final List<RecommendedGroup> recs =
-                    snap.data ?? const <RecommendedGroup>[];
-                if (recs.isEmpty) {
-                  return Text('No hay grupos abiertos por aquí todavía.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline));
-                }
-                return Column(
-                  children: <Widget>[
-                    for (final RecommendedGroup r in recs)
-                      _GroupTile(
-                        group: r.group,
-                        uid: widget.uid,
-                        affinityPercent: r.affinityPercent,
-                        onTap: () => _openGroup(r.group),
-                      ),
-                  ],
-                );
-              },
-            ),
+            Text('Ver todos',
+                style: TextStyle(
+                    color: AppColors.attraRed,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
+            Icon(Icons.chevron_right, size: 18, color: AppColors.attraRed),
           ],
         ),
+      ],
+    );
+  }
+}
+
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Text(text,
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 14)),
+      );
+}
+
+/// Tarjeta de "Tus grupos": icono, nombre + rol, ubicación/aforo/intereses,
+/// avatares y check. El grupo del que eres admin se resalta con borde rojo.
+class _MyGroupTile extends StatelessWidget {
+  const _MyGroupTile(
+      {required this.group, required this.uid, required this.onTap});
+  final FriendGroup group;
+  final String uid;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool admin = group.createdBy == uid;
+    final String? role =
+        admin ? 'Eres admin' : (group.isMember(uid) ? 'Eres miembro' : null);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: admin
+            ? AppColors.attraRed.withValues(alpha: 0.06)
+            : AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                  color: admin
+                      ? AppColors.attraRed.withValues(alpha: 0.8)
+                      : AppColors.surfaceLine),
+            ),
+            child: Row(
+              children: <Widget>[
+                const _CategoryIconSquare(icon: Icons.groups_rounded),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Flexible(
+                            child: Text(group.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 16.5,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                          if (role != null) ...<Widget>[
+                            const SizedBox(width: 8),
+                            _RolePill(role),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      _MetaLine(group: group),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _MiniAvatars(count: group.memberCount),
+                const SizedBox(width: 8),
+                Icon(Icons.check_circle_outline,
+                    color: AppColors.attraRed.withValues(alpha: 0.9)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecommendedTile extends StatelessWidget {
+  const _RecommendedTile({required this.group, required this.onTap});
+  final FriendGroup group;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.surfaceLine),
+            ),
+            child: Row(
+              children: <Widget>[
+                _CategoryIconSquare(icon: groupCategoryIcon(group)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(group.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 5),
+                      _MetaLine(group: group),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Línea "Madrid · 2/8 · intereses" con el punto separador en rojo.
+class _MetaLine extends StatelessWidget {
+  const _MetaLine({required this.group});
+  final FriendGroup group;
+  @override
+  Widget build(BuildContext context) {
+    const TextStyle base =
+        TextStyle(color: AppColors.textSecondary, fontSize: 13);
+    Widget dot() => const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 6),
+          child: Text('·',
+              style: TextStyle(
+                  color: AppColors.attraRed,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900)),
+        );
+    return Row(
+      children: <Widget>[
+        const Icon(Icons.place_outlined, size: 14, color: AppColors.textSecondary),
+        const SizedBox(width: 3),
+        Text(group.city.isEmpty ? '—' : group.city, style: base),
+        dot(),
+        const Icon(Icons.group_outlined, size: 14, color: AppColors.textSecondary),
+        const SizedBox(width: 3),
+        Text('${group.memberCount}/${group.maxMembers}', style: base),
+        if (group.interests.isNotEmpty) ...<Widget>[
+          dot(),
+          Flexible(
+            child: Text(group.interests.take(2).join(', '),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: base),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RolePill extends StatelessWidget {
+  const _RolePill(this.label);
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.attraRed.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(label,
+          style: const TextStyle(
+              color: AppColors.attraRed,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+/// Pila de avatares (placeholder con tinte; los grupos no guardan fotos).
+class _MiniAvatars extends StatelessWidget {
+  const _MiniAvatars({required this.count});
+  final int count;
+  @override
+  Widget build(BuildContext context) {
+    final int shown = count.clamp(0, 2);
+    final int extra = count - shown;
+    if (shown == 0) return const SizedBox.shrink();
+    return SizedBox(
+      height: 30,
+      width: shown * 19.0 + (extra > 0 ? 22 : 11),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          for (int i = 0; i < shown; i++)
+            Positioned(
+              left: i * 19.0,
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(colors: AppColors.action),
+                  border: Border.all(color: AppColors.surface, width: 2),
+                ),
+                child: const Icon(Icons.person, size: 16, color: Colors.white),
+              ),
+            ),
+          if (extra > 0)
+            Positioned(
+              left: shown * 19.0,
+              child: Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.attraRed,
+                  border: Border.all(color: AppColors.surface, width: 2),
+                ),
+                child: Text('+$extra',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -222,56 +712,6 @@ class _ErrorNote extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _GroupTile extends StatelessWidget {
-  const _GroupTile({
-    required this.group,
-    required this.uid,
-    required this.onTap,
-    this.affinityPercent,
-  });
-
-  final FriendGroup group;
-  final String uid;
-  final VoidCallback onTap;
-  final int? affinityPercent;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-          child: Icon(Icons.groups_rounded, color: theme.colorScheme.primary),
-        ),
-        title: Text(group.name,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-          <String>[
-            if (group.city.isNotEmpty) group.city,
-            '${group.memberCount}/${group.maxMembers}',
-            if (group.interests.isNotEmpty) group.interests.take(2).join(', '),
-          ].join('  ·  '),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: affinityPercent != null && affinityPercent! > 0
-            ? Text('$affinityPercent%',
-                style: TextStyle(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w700))
-            : (group.isMember(uid)
-                ? const Icon(Icons.check_circle_outline)
-                : group.isPending(uid)
-                    ? const Icon(Icons.hourglass_top_rounded)
-                    : const Icon(Icons.chevron_right)),
       ),
     );
   }
