@@ -111,8 +111,10 @@ class _GroupsScreenState extends State<GroupsScreen> {
               builder: (BuildContext context,
                   AsyncSnapshot<List<FriendGroup>> snap) {
                 if (snap.hasError) {
-                  return _ErrorNote('No se pudieron cargar tus grupos: '
-                      '${snap.error}');
+                  return _ErrorNote(
+                    'No se pudieron cargar tus grupos: ${snap.error}',
+                    onRetry: _refresh,
+                  );
                 }
                 final List<FriendGroup> mine = snap.data ?? const <FriendGroup>[];
                 if (mine.isEmpty) {
@@ -147,7 +149,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
                 }
                 if (snap.hasError) {
                   return _ErrorNote(
-                      'No se pudieron cargar los grupos: ${snap.error}');
+                    'No se pudieron cargar los grupos: ${snap.error}',
+                    onRetry: _refresh,
+                  );
                 }
                 final List<RecommendedGroup> recs =
                     snap.data ?? const <RecommendedGroup>[];
@@ -179,8 +183,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
 /// Nota de error visible (en vez de vacío silencioso) para diagnosticar fallos
 /// de reglas/índices al cargar grupos.
 class _ErrorNote extends StatelessWidget {
-  const _ErrorNote(this.message);
+  const _ErrorNote(this.message, {this.onRetry});
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -191,16 +196,31 @@ class _ErrorNote extends StatelessWidget {
         color: theme.colorScheme.error.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(Icons.error_outline, size: 18, color: theme.colorScheme.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(Icons.error_outline,
+                  size: 18, color: theme.colorScheme.error),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(message,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.error)),
+              ),
+            ],
           ),
+          if (onRetry != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reintentar'),
+              ),
+            ),
         ],
       ),
     );
