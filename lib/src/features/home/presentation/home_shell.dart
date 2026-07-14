@@ -628,14 +628,6 @@ class _HomeShellState extends State<HomeShell> {
             uid: uid,
             onTap: _openNotifications,
           ),
-        if (!isPro)
-          TextButton.icon(
-            onPressed: _openPaywall,
-            icon: const Icon(Icons.workspace_premium, color: Color(0xFFB8860B)),
-            label: const Text('Plus / Pro',
-                style: TextStyle(
-                    color: Color(0xFFB8860B), fontWeight: FontWeight.w700)),
-          ),
       ],
     );
 
