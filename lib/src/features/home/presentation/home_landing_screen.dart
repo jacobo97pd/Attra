@@ -59,15 +59,20 @@ class HomeLandingScreen extends StatelessWidget {
       backgroundColor: AppColors.black,
       body: Stack(
         children: <Widget>[
-          // Fondo: negro Attra + resplandor rojo suave arriba a la derecha.
+          // Fondo: negro Attra + resplandor rojo (más intenso) arriba-derecha,
+          // justo donde está la campana de notificaciones.
           const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: Alignment(1.1, -1.0),
-                  radius: 1.1,
-                  colors: <Color>[Color(0x33FF4F68), Color(0x000E0E10)],
-                  stops: <double>[0.0, 0.55],
+                  center: Alignment(1.0, -1.0),
+                  radius: 1.15,
+                  colors: <Color>[
+                    Color(0x80FF4F68),
+                    Color(0x33D71945),
+                    Color(0x000E0E10),
+                  ],
+                  stops: <double>[0.0, 0.28, 0.62],
                 ),
               ),
             ),
@@ -570,7 +575,7 @@ class _RecommendationsSection extends StatelessWidget {
             _SectionLabel('Planes para ti', onSeeAll: onSeeAll),
             const SizedBox(height: 12),
             SizedBox(
-              height: 232,
+              height: 246,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 clipBehavior: Clip.none,
@@ -704,20 +709,22 @@ class _PlanImageCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(group.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 15,
-                            height: 1.15,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      Text(group.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 15,
+                              height: 1.15,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
                     Row(
                       children: <Widget>[
                         const Icon(Icons.place_outlined,
@@ -745,8 +752,9 @@ class _PlanImageCard extends StatelessWidget {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600)),
                       ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
