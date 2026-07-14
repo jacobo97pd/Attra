@@ -35,6 +35,8 @@ import '../../anti_ghosting/domain/nudge_tier.dart';
 import '../../anti_ghosting/presentation/anti_ghosting_nudge_card.dart';
 import '../../anti_ghosting/presentation/close_conversation_sheet.dart';
 import '../../anti_ghosting/presentation/date_follow_up_sheet.dart';
+import '../../safedate/data/safedate_service.dart';
+import '../../safedate/presentation/create_plan_sheet.dart';
 import '../../safety/domain/report.dart';
 import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_entry_card.dart';
@@ -77,6 +79,8 @@ class ChatDetailScreen extends StatefulWidget {
     this.dateFollowupEnabled = false,
     this.datePlansEnabled = false,
     this.datePlanService,
+    this.safeDateService,
+    this.safeDatePlanEnabled = false,
   });
 
   final String chatId;
@@ -124,6 +128,11 @@ class ChatDetailScreen extends StatefulWidget {
   /// requiere `datePlanService`. Si off/null, el chat va igual que siempre.
   final bool datePlansEnabled;
   final DatePlanService? datePlanService;
+
+  /// Attra SafeDate: "Planear cita segura" en el menú del chat. Opt-in por flag
+  /// (`feature_safedate_date_plan_enabled`) + servicio. Si off/null, no aparece.
+  final SafeDateService? safeDateService;
+  final bool safeDatePlanEnabled;
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -1005,6 +1014,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       case 'report':
         await _report();
         break;
+      case 'safedate_plan':
+        await _openSafeDatePlan();
+        break;
+    }
+  }
+
+  /// Attra SafeDate: crea un plan de cita segura para este match. Plan PRIVADO
+  /// (el otro no lo ve). Al crearlo, el backend programa los check-ins si la
+  /// fase está activa.
+  Future<void> _openSafeDatePlan() async {
+    final SafeDateService? service = widget.safeDateService;
+    if (service == null) return;
+    final bool created = await CreatePlanSheet.show(
+      context,
+      uid: widget.currentUid,
+      chatId: widget.chatId,
+      service: service,
+      otherName: widget.other.displayName,
+    );
+    if (created && mounted) {
+      _snack('Plan de cita segura creado. Lo verás en SafeDate.');
     }
   }
 
@@ -1341,6 +1371,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     value: 'planner', child: Text('AI Date Planner')),
                 const PopupMenuDivider(),
               ],
+              if (widget.safeDatePlanEnabled && widget.safeDateService != null)
+                const PopupMenuItem<String>(
+                    value: 'safedate_plan',
+                    child: Text('Planear cita segura')),
               if (widget.closeGracefullyEnabled)
                 const PopupMenuItem<String>(
                     value: 'close', child: Text('Cerrar conversación')),

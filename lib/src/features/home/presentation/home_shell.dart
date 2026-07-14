@@ -510,6 +510,8 @@ class _HomeShellState extends State<HomeShell> {
               datePlanService: widget.datePlanService,
               datePlansEnabled:
                   _entitlementController?.flags.datePlansActive ?? false,
+              safeDateService: widget.safeDateService,
+              safeDatePlanEnabled: _safeDateFlags.datePlanActive,
               matchService: widget.matchService,
               summaries: widget.profileSummaryRepository,
               storyService: widget.storyService,

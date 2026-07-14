@@ -15,9 +15,13 @@
 - [ ] Editar y eliminar contacto.
 - [ ] Los contactos NO son visibles para el match (verificar reglas).
 
-## Plan de cita (backend — pendiente UI completa)
-- [ ] Crear plan desde un chat del que soy participante → OK.
-- [ ] Crear plan en un chat ajeno → denegado.
+## Plan de cita (Fase 2 UI — implementado)
+- [ ] Menú del chat muestra "Planear cita segura" solo con
+      `feature_safedate_date_plan_enabled` ON.
+- [ ] Crear plan desde un chat del que soy participante → OK; aparece en SafeDate.
+- [ ] Crear plan en un chat ajeno → denegado (backend).
+- [ ] Selección de contactos a avisar (chips) se guarda en el plan.
+- [ ] El match NO ve el plan ni los contactos.
 - [ ] Cancelar/completar plan propio → estado cambia; ubicación temporal se borra.
 
 ## Reglas Firestore (emulador — pendiente tests)
@@ -63,8 +67,8 @@
       (`safedate_checkin_{first,second}_reminder_minutes`,
       `safedate_checkin_missed_threshold_minutes`).
 
-Dependencia para probar E2E: crear plan desde el chat (UI de creación de plan
-pendiente; el callable `createSafeDatePlan` ya existe y valida pertenencia).
+E2E: crear plan desde el chat (menú → "Planear cita segura") con la fase de
+check-ins ON genera los 3 check-ins y dispara el flujo de recordatorios.
 
 ## Pendiente por fase (4-7)
 Cita activa + acciones discretas + 112 + ubicación temporal + alerta silenciosa;

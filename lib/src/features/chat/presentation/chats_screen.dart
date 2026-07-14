@@ -15,6 +15,7 @@ import '../../stories/presentation/story_viewer_screen.dart';
 import '../../anti_ghosting/domain/conversation_turn.dart';
 import '../../anti_ghosting/presentation/your_turn_badge.dart';
 import '../../date_plans/data/date_plan_service.dart';
+import '../../safedate/data/safedate_service.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
@@ -29,6 +30,8 @@ class ChatsScreen extends StatelessWidget {
     required this.chatService,
     this.datePlanService,
     this.datePlansEnabled = false,
+    this.safeDateService,
+    this.safeDatePlanEnabled = false,
     required this.matchService,
     required this.summaries,
     this.storyService,
@@ -77,6 +80,10 @@ class ChatsScreen extends StatelessWidget {
   /// Attra Plans: propuestas de cita. Opt-in por flag; requiere el servicio.
   final DatePlanService? datePlanService;
   final bool datePlansEnabled;
+
+  /// Attra SafeDate: "Planear cita segura" en el menú del chat. Opt-in por flag.
+  final SafeDateService? safeDateService;
+  final bool safeDatePlanEnabled;
 
   final MatchService matchService;
   final ProfileSummaryRepository summaries;
@@ -131,6 +138,8 @@ class ChatsScreen extends StatelessWidget {
         chatService: chatService,
         datePlanService: datePlanService,
         datePlansEnabled: datePlansEnabled,
+        safeDateService: safeDateService,
+        safeDatePlanEnabled: safeDatePlanEnabled,
         matchService: matchService,
         loadProfile: loadProfile,
         sparkService: sparkService,
