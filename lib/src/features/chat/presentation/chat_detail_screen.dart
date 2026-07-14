@@ -2634,8 +2634,8 @@ class _Composer extends StatelessWidget {
               const SizedBox(height: 8),
               tile(Icons.photo_outlined, 'Enviar foto', onPhoto),
               tile(Icons.visibility_off_outlined, 'Foto bomba', onBombPhoto),
-              tile(Icons.event, 'Proponer cita', onPropose),
-              if (showGames) tile(Icons.casino_outlined, 'Juegos', onGames),
+              if (showGames)
+                tile(Icons.casino_outlined, 'Juegos y rompehielos', onGames),
               const SizedBox(height: 8),
             ],
           ),
@@ -2653,7 +2653,13 @@ class _Composer extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: <Widget>[
-            // Todas las acciones colapsadas en un "+".
+            // Acción PRINCIPAL de Attra: proponer un plan (cita o quedada).
+            IconButton.filledTonal(
+              tooltip: 'Proponer plan',
+              onPressed: onPropose,
+              icon: const Icon(Icons.event_available_outlined),
+            ),
+            // Resto de acciones (foto, foto bomba, juegos/rompehielos) en "+".
             IconButton(
               tooltip: 'Más',
               onPressed: () => _openActions(context),
