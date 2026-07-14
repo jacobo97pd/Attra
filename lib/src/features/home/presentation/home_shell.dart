@@ -12,7 +12,6 @@ import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
 import '../../anti_ghosting/data/pending_conversations_controller.dart';
 import '../../anti_ghosting/domain/anti_ghosting_config.dart';
-import '../../connection_lab/presentation/connection_lab_screen.dart';
 import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
@@ -24,6 +23,7 @@ import '../../social/data/friend_group_service.dart';
 import '../../social/data/friend_mode_service.dart';
 import '../../social/data/social_discovery_service.dart';
 import '../../social/presentation/groups_screen.dart';
+import 'home_landing_screen.dart';
 import '../../social/presentation/intent_mode_selector.dart';
 import '../../social/domain/intent_mode.dart';
 import '../../chat/presentation/chats_screen.dart';
@@ -602,67 +602,83 @@ class _HomeShellState extends State<HomeShell> {
           : _openGroups,
     );
 
-    // Connect tab: Attra Connection Lab (AI-guided connection landing).
-    final Widget connectTab = Scaffold(
-      appBar: AppBar(
-        title: const _AttraTitleLogo(),
-        actions: <Widget>[
-          if (widget.notificationService != null && uid.isNotEmpty)
-            NotificationBell(
-              service: widget.notificationService!,
-              uid: uid,
-              onTap: _openNotifications,
-            ),
-          if (!isPro)
-            TextButton.icon(
-              onPressed: _openPaywall,
-              icon: const Icon(Icons.workspace_premium,
-                  color: Color(0xFFB8860B)),
-              label: const Text('Plus / Pro',
-                  style: TextStyle(
-                      color: Color(0xFFB8860B), fontWeight: FontWeight.w700)),
-            ),
-        ],
-      ),
-      body: ConnectionLabScreen(
-        displayName: widget.user?.displayName,
-        myInterests: widget.user?.interests ?? const <String>[],
-        myIntent: widget.user?.relationshipIntent ?? '',
-        onDiscover: () => goTo(discoverIndex),
-        onOpenPlay: () => goTo(playIndex),
-      ),
+    // Inicio tab (plan-first): la primera impresión son planes/grupos/gente,
+    // no un swipe. Personas/Chats/Perfil siguen accesibles en sus pestañas.
+    final bool safeDateOn = _safeDateFlags.enabled &&
+        widget.safeDateService != null &&
+        uid.isNotEmpty;
+    final Widget inicioTab = HomeLandingScreen(
+      uid: uid,
+      displayName: widget.user?.displayName,
+      city: widget.user?.city ?? '',
+      interests: widget.user?.socialInterests ??
+          widget.user?.interests ??
+          const <String>[],
+      onGoToPeople: () => goTo(discoverIndex),
+      onGoToPlans: () => goTo(playIndex),
+      onGoToChats: () => goTo(chatsIndex),
+      groupService: widget.friendGroupService,
+      discoveryService: widget.socialDiscoveryService,
+      onOpenSafeDate: safeDateOn ? _openSafeDate : null,
+      onOpenGroup: (_) => goTo(playIndex),
+      topBarActions: <Widget>[
+        if (widget.notificationService != null && uid.isNotEmpty)
+          NotificationBell(
+            service: widget.notificationService!,
+            uid: uid,
+            onTap: _openNotifications,
+          ),
+        if (!isPro)
+          TextButton.icon(
+            onPressed: _openPaywall,
+            icon: const Icon(Icons.workspace_premium, color: Color(0xFFB8860B)),
+            label: const Text('Plus / Pro',
+                style: TextStyle(
+                    color: Color(0xFFB8860B), fontWeight: FontWeight.w700)),
+          ),
+      ],
     );
 
-    // Play tab: conversation games hub (already a full Scaffold).
-    final Widget playTab =
-        ConversationGamesScreen(onDiscover: () => goTo(discoverIndex));
+    // Planes tab: explorar/crear/gestionar planes y grupos (Modo Amigos).
+    final Widget planesTab = (widget.friendGroupService != null &&
+            widget.socialDiscoveryService != null &&
+            uid.isNotEmpty)
+        ? GroupsScreen(
+            uid: uid,
+            groupService: widget.friendGroupService!,
+            discoveryService: widget.socialDiscoveryService!,
+            summaries: widget.profileSummaryRepository,
+            city: widget.user?.city ?? '',
+            myInterests: widget.user?.socialInterests ?? const <String>[],
+          )
+        : ConversationGamesScreen(onDiscover: () => goTo(discoverIndex));
 
     final List<Widget> tabs = validation
-        ? <Widget>[connectTab, playTab, feedTab, chatsTab, profileTab]
+        ? <Widget>[inicioTab, planesTab, feedTab, chatsTab, profileTab]
         : <Widget>[feedTab, likesTab, chatsTab, profileTab];
 
     final List<NavigationDestination> destinations = validation
         ? const <NavigationDestination>[
             NavigationDestination(
-                icon: Icon(Icons.auto_awesome_outlined),
-                selectedIcon: Icon(Icons.auto_awesome),
-                label: 'Connect'),
-            NavigationDestination(
-                icon: Icon(Icons.sports_esports_outlined),
-                selectedIcon: Icon(Icons.sports_esports),
-                label: 'Play'),
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Inicio'),
             NavigationDestination(
                 icon: Icon(Icons.explore_outlined),
                 selectedIcon: Icon(Icons.explore),
-                label: 'Discover'),
+                label: 'Planes'),
+            NavigationDestination(
+                icon: Icon(Icons.people_outline),
+                selectedIcon: Icon(Icons.people),
+                label: 'Personas'),
             NavigationDestination(
                 icon: Icon(Icons.forum_outlined),
                 selectedIcon: Icon(Icons.forum),
-                label: 'Messages'),
+                label: 'Chats'),
             NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
-                label: 'Profile'),
+                label: 'Perfil'),
           ]
         : <NavigationDestination>[
             NavigationDestination(
@@ -826,7 +842,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   /// Pestaña destino para una ruta lógica de notificación. Los índices cambian
-  /// según el modo de navegación (validación: Connect·Play·Discover·Messages·Profile).
+  /// según el modo de navegación (validación: Inicio·Planes·Personas·Chats·Perfil).
   int? _tabForRoute(String route) {
     const bool v = kAppStoreValidationExperience;
     switch (route.split(':').first) {
