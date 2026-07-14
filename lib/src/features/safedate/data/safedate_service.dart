@@ -142,6 +142,49 @@ class SafeDateService {
         'response': response,
       });
 
+  // ── Cita activa: ubicación temporal + alertas (Fase 4) ───────────────────
+
+  /// Observa un plan concreto (para reflejar estado activo/alertado en la UI).
+  Stream<SafeDatePlan?> observePlan(String planId) {
+    return _firestore
+        .collection('safeDatePlans')
+        .doc(planId)
+        .snapshots()
+        .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+            d.exists ? SafeDatePlan.fromMap(d.id, d.data()!) : null);
+  }
+
+  /// Activa la ubicación en directo. Requiere consentimiento explícito
+  /// ([consent] = true). El backend fija la caducidad; se borra al parar.
+  Future<void> startLiveLocation(String planId, {required bool consent}) =>
+      _call('startLiveLocation', <String, dynamic>{
+        'planId': planId,
+        'consent': consent,
+      });
+
+  Future<void> updateLiveLocation(
+    String planId, {
+    required double latitude,
+    required double longitude,
+  }) =>
+      _call('updateLiveLocation', <String, dynamic>{
+        'planId': planId,
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+
+  /// Detiene y BORRA la ubicación temporal (sin historial).
+  Future<void> stopLiveLocation(String planId) =>
+      _call('stopLiveLocation', <String, dynamic>{'planId': planId});
+
+  /// Registra una acción discreta. [type] ∈ {contact_me, call_me, need_exit,
+  /// silent_alert, emergency}. Nunca informa al match ni llama a nadie.
+  Future<void> sendAlert(String planId, String type) =>
+      _call('sendSafeDateAlert', <String, dynamic>{
+        'planId': planId,
+        'type': type,
+      });
+
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {
     try {

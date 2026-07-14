@@ -87,6 +87,11 @@ export {
   setSafeDatePlanStatus,
   respondCheckIn,
   safeDateCheckinSweep,
+  startLiveLocation,
+  updateLiveLocation,
+  stopLiveLocation,
+  sendSafeDateAlert,
+  safeDateLiveLocationSweep,
 } from "./safedate";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";

@@ -70,7 +70,22 @@
 E2E: crear plan desde el chat (menú → "Planear cita segura") con la fase de
 check-ins ON genera los 3 check-ins y dispara el flujo de recordatorios.
 
-## Pendiente por fase (4-7)
-Cita activa + acciones discretas + 112 + ubicación temporal + alerta silenciosa;
-revisión post-cita + reporte/bloqueo; IA preventiva; integración con citas
+## Cita activa + ubicación temporal + alertas (Fase 4 — implementado)
+- [ ] Botón "Estoy en la cita" abre la pantalla de cita en curso (con
+      `live_location` o `discreet_alert` activos).
+- [ ] Compartir ubicación pide CONSENTIMIENTO explícito antes de empezar.
+- [ ] Con el consentimiento → `startLiveLocation`; actualiza cada ~45s mientras
+      la pantalla está abierta; al pararla/salir/terminar → `stopLiveLocation`
+      borra la ubicación (sin historial).
+- [ ] `updateLiveLocation` con sesión caducada → rechazado (no reactiva).
+- [ ] Barrido `safeDateLiveLocationSweep` borra ubicaciones caducadas.
+- [ ] Acciones discretas: "Pedir que me llamen" / "Necesito salir" / "Alerta
+      silenciosa" registran alerta; NUNCA informan al match ni llaman solas.
+- [ ] Alerta silenciosa/emergencia → plan pasa a `alerted` sin nada llamativo.
+- [ ] 112 accesible; disclaimer "no sustituye a emergencias".
+- [ ] En web: la ubicación en directo se oculta (no soportada); resto va.
+- [ ] `safeDateLiveLocations` no legible/escribible por el cliente (backend-only).
+
+## Pendiente por fase (5-7)
+Revisión post-cita + reporte/bloqueo; IA preventiva; integración con citas
 propuestas + safe places. Entrega externa a contactos (SMS/email) por definir.

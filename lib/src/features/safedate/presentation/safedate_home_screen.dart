@@ -68,12 +68,14 @@ class SafeDateHomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Citas en curso/próximas + check-ins pendientes (Fase 3).
-          if (flags.checkinsActive) ...<Widget>[
+          // Citas en curso/próximas + check-ins pendientes (Fase 3/4).
+          if (flags.checkinsActive ||
+              flags.liveLocationActive ||
+              flags.discreetAlertActive) ...<Widget>[
             SafeDateCheckInsSection(
               uid: uid,
               service: service,
-              emergencyNumber: flags.emergencyNumber,
+              flags: flags,
             ),
             const SizedBox(height: 6),
           ],

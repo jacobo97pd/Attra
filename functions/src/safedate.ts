@@ -463,8 +463,10 @@ async function maybeRegisterMissedAlert(
   if (exists.exists) return; // idempotente
   await alertRef.set({
     planId,
+    safeDatePlanId: planId,
     ownerUserId: uid,
-    type: "missed_checkin",
+    userId: uid,
+    alertType: "missed_checkin",
     severity: "urgent",
     checkInId,
     // Constancia de a qué contactos concierne, sin exponer sus datos aquí.
@@ -475,3 +477,195 @@ async function maybeRegisterMissedAlert(
     createdAt: FieldValue.serverTimestamp(),
   });
 }
+
+// --- Fase 4: cita activa — ubicación temporal + alertas ---
+
+const ALERT_TYPES = [
+  "contact_me",
+  "call_me",
+  "need_exit",
+  "silent_alert",
+  "emergency",
+] as const;
+
+function alertSeverity(type: string): string {
+  if (type === "emergency" || type === "silent_alert") return "urgent";
+  if (type === "need_exit") return "warning";
+  return "info";
+}
+
+/// Carga un plan y verifica que es del usuario. Devuelve la ref y los datos.
+async function requireOwnedPlan(
+  planId: string,
+  uid: string
+): Promise<{ ref: FirebaseFirestore.DocumentReference; data: DocumentData }> {
+  const ref = db.collection("safeDatePlans").doc(planId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "El plan no existe.");
+  const data = snap.data() ?? {};
+  if (data.ownerUserId !== uid) {
+    throw new HttpsError("permission-denied", "No es tu plan.");
+  }
+  return { ref, data };
+}
+
+/// startLiveLocation: activa ubicación en directo para un plan, SOLO con
+/// consentimiento explícito y con caducidad. Privacidad: sin historial, se borra
+/// al parar/terminar o al caducar. Nunca se activa sin este consentimiento.
+export const startLiveLocation = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  const cfg = await requireSafeDateEnabled();
+  if (cfg.feature_safedate_live_location_enabled !== true) {
+    throw new HttpsError("failed-precondition", "No disponible.");
+  }
+  if (request.data?.consent !== true) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Se requiere tu consentimiento explícito para compartir ubicación."
+    );
+  }
+  const planId = requireStringArg(request.data?.planId, "planId");
+  const { ref, data } = await requireOwnedPlan(planId, uid);
+
+  const maxMin = cfgInt(cfg, "safedate_live_location_max_minutes", 240);
+  const now = Date.now();
+  // Caduca lo antes: regreso previsto + 60 min, o el máximo de config.
+  const returnAt =
+    (data.expectedReturnAt?.toMillis?.() as number | undefined) ??
+    now + maxMin * 60000;
+  const expiresAt = new Date(
+    Math.min(returnAt + 60 * 60000, now + maxMin * 60000)
+  );
+
+  await db
+    .collection("safeDateLiveLocations")
+    .doc(planId)
+    .set({
+      planId,
+      ownerUserId: uid,
+      consentAt: FieldValue.serverTimestamp(),
+      expiresAt,
+      latitude: null,
+      longitude: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  await ref.update({
+    liveLocationEnabled: true,
+    status: "active",
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true, expiresAt: expiresAt.toISOString() };
+});
+
+/// updateLiveLocation: actualiza las coordenadas mientras la sesión está activa.
+/// Rechaza si no hay sesión o ya caducó (no se reactiva sin consentimiento).
+export const updateLiveLocation = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  await requireSafeDateEnabled();
+  const planId = requireStringArg(request.data?.planId, "planId");
+  const lat = Number(request.data?.latitude);
+  const lng = Number(request.data?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new HttpsError("invalid-argument", "Coordenadas no válidas.");
+  }
+  const locRef = db.collection("safeDateLiveLocations").doc(planId);
+  const snap = await locRef.get();
+  if (!snap.exists || snap.data()?.ownerUserId !== uid) {
+    throw new HttpsError("failed-precondition", "No hay sesión de ubicación.");
+  }
+  const expiresAt = snap.data()?.expiresAt?.toMillis?.() as number | undefined;
+  if (expiresAt && Date.now() > expiresAt) {
+    await locRef.delete().catch(() => undefined);
+    throw new HttpsError("failed-precondition", "La sesión ha caducado.");
+  }
+  await locRef.update({
+    latitude: lat,
+    longitude: lng,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+});
+
+/// stopLiveLocation: detiene y BORRA la ubicación temporal (sin historial).
+export const stopLiveLocation = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  await requireSafeDateEnabled();
+  const planId = requireStringArg(request.data?.planId, "planId");
+  const { ref } = await requireOwnedPlan(planId, uid);
+  await db
+    .collection("safeDateLiveLocations")
+    .doc(planId)
+    .delete()
+    .catch(() => undefined);
+  await ref.update({
+    liveLocationEnabled: false,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+});
+
+/// sendSafeDateAlert: registra una acción discreta de la persona (pedir que la
+/// llamen, necesito salir, alerta silenciosa…). NUNCA informa al match. NUNCA
+/// llama a nadie automáticamente: deja constancia para que el propio usuario y
+/// (fase posterior) sus contactos la vean. La entrega externa no se afirma.
+export const sendSafeDateAlert = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  const cfg = await requireSafeDateEnabled();
+  if (cfg.feature_safedate_discreet_alert_enabled !== true) {
+    throw new HttpsError("failed-precondition", "No disponible.");
+  }
+  const planId = requireStringArg(request.data?.planId, "planId");
+  const type = requireStringArg(request.data?.type, "type");
+  if (!ALERT_TYPES.includes(type as (typeof ALERT_TYPES)[number])) {
+    throw new HttpsError("invalid-argument", "Tipo de alerta no válido.");
+  }
+  const { ref, data } = await requireOwnedPlan(planId, uid);
+  const contactIds: string[] = Array.isArray(data.trustedContactIds)
+    ? (data.trustedContactIds as unknown[]).filter(
+        (x): x is string => typeof x === "string"
+      )
+    : [];
+
+  const alertRef = ref.collection("alerts").doc();
+  await alertRef.set({
+    planId,
+    safeDatePlanId: planId,
+    ownerUserId: uid,
+    userId: uid,
+    alertType: type,
+    severity: alertSeverity(type),
+    trustedContactIds: contactIds,
+    outboundDelivered: false,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  // Una alerta silenciosa marca el plan como "alerted" (sin nada llamativo).
+  if (type === "silent_alert" || type === "emergency") {
+    await ref.update({
+      status: "alerted",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+  return { ok: true, alertId: alertRef.id };
+});
+
+/// Limpieza de ubicaciones temporales caducadas (privacidad: sin historial).
+/// Gated por master switch; si algo falla, no toca nada.
+export const safeDateLiveLocationSweep = onSchedule(
+  { schedule: "every 15 minutes", region: REGION },
+  async () => {
+    const cfgSnap = await db.collection("config").doc("featureFlags").get();
+    if (cfgSnap.data()?.feature_safedate_enabled !== true) return;
+    const expired = await db
+      .collection("safeDateLiveLocations")
+      .where("expiresAt", "<=", new Date())
+      .limit(300)
+      .get();
+    if (expired.empty) return;
+    const batch = db.batch();
+    for (const d of expired.docs) {
+      batch.delete(d.ref);
+    }
+    await batch.commit();
+    console.log(`[safeDateLiveLocationSweep] deleted=${expired.size}`);
+  }
+);

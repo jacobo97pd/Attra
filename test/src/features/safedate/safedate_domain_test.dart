@@ -117,6 +117,18 @@ void main() {
       expect(c.scheduledAt.toUtc(), due);
       expect(c.reminderCount, 2);
     });
+
+    test('Alert.fromMap lee alertType/severity del backend', () {
+      final SafeDateAlert a = SafeDateAlert.fromMap('a1', <String, dynamic>{
+        'safeDatePlanId': 'p1',
+        'userId': 'me',
+        'alertType': 'silent_alert',
+        'severity': 'urgent',
+      });
+      expect(a.alertType, SafeDateAlertType.silentAlert);
+      expect(a.alertType.isSilent, isTrue);
+      expect(a.severity, SafeDateAlertSeverity.urgent);
+    });
   });
 
   group('PostDateSafetyReview', () {

@@ -6,7 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/safedate_service.dart';
 import '../domain/safe_date_checkin.dart';
 import '../domain/safe_date_plan.dart';
+import '../domain/safedate_flags.dart';
 import '../domain/trusted_contact.dart';
+import 'active_date_screen.dart';
 
 /// Sección de check-ins del centro SafeDate. Muestra las citas en curso o
 /// próximas y sus check-ins pendientes, con respuesta en un toque. NUNCA llama a
@@ -17,12 +19,12 @@ class SafeDateCheckInsSection extends StatelessWidget {
     super.key,
     required this.uid,
     required this.service,
-    required this.emergencyNumber,
+    required this.flags,
   });
 
   final String uid;
   final SafeDateService service;
-  final String emergencyNumber;
+  final SafeDateFlags flags;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +51,7 @@ class SafeDateCheckInsSection extends StatelessWidget {
                 plan: plan,
                 service: service,
                 uid: uid,
-                emergencyNumber: emergencyNumber,
+                flags: flags,
               ),
             const SizedBox(height: 6),
           ],
@@ -64,13 +66,16 @@ class _PlanCheckInsCard extends StatelessWidget {
     required this.plan,
     required this.service,
     required this.uid,
-    required this.emergencyNumber,
+    required this.flags,
   });
 
   final SafeDatePlan plan;
   final SafeDateService service;
   final String uid;
-  final String emergencyNumber;
+  final SafeDateFlags flags;
+
+  bool get _canOpenActive =>
+      flags.liveLocationActive || flags.discreetAlertActive;
 
   String _when(BuildContext context) {
     final TimeOfDay t = TimeOfDay.fromDateTime(plan.scheduledAt);
@@ -131,12 +136,29 @@ class _PlanCheckInsCard extends StatelessWidget {
                         planId: plan.id,
                         service: service,
                         uid: uid,
-                        emergencyNumber: emergencyNumber,
+                        emergencyNumber: flags.emergencyNumber,
                       ),
                   ],
                 );
               },
             ),
+            if (_canOpenActive)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () =>
+                      Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => ActiveDateScreen(
+                      uid: uid,
+                      service: service,
+                      plan: plan,
+                      flags: flags,
+                    ),
+                  )),
+                  icon: const Icon(Icons.shield_moon_outlined, size: 18),
+                  label: const Text('Estoy en la cita'),
+                ),
+              ),
           ],
         ),
       ),
