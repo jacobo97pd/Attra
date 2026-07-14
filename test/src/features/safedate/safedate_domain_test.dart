@@ -1,3 +1,4 @@
+import 'package:attra/src/features/safedate/domain/conversation_risk.dart';
 import 'package:attra/src/features/safedate/domain/post_date_review.dart';
 import 'package:attra/src/features/safedate/domain/safe_date_alert.dart';
 import 'package:attra/src/features/safedate/domain/safe_date_checkin.dart';
@@ -128,6 +129,25 @@ void main() {
       expect(a.alertType, SafeDateAlertType.silentAlert);
       expect(a.alertType.isSilent, isTrue);
       expect(a.severity, SafeDateAlertSeverity.urgent);
+    });
+
+    test('ConversationRiskResult.fromMap parsea tier/categorías/consejos', () {
+      final ConversationRiskResult r =
+          ConversationRiskResult.fromMap(<String, dynamic>{
+        'tier': 'warning',
+        'categories': <String>['money_request'],
+        'intro': 'Ojo',
+        'tips': <String>['No envíes dinero'],
+      });
+      expect(r.tier, 'warning');
+      expect(r.hasSignals, isTrue);
+      expect(r.tips, contains('No envíes dinero'));
+      // Sin señales → hasSignals false.
+      expect(
+          ConversationRiskResult.fromMap(
+                  <String, dynamic>{'tier': 'info', 'tips': <String>[]})
+              .hasSignals,
+          isFalse);
     });
   });
 

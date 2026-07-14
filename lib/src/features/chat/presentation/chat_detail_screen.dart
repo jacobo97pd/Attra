@@ -37,6 +37,7 @@ import '../../anti_ghosting/presentation/close_conversation_sheet.dart';
 import '../../anti_ghosting/presentation/date_follow_up_sheet.dart';
 import '../../safedate/data/safedate_service.dart';
 import '../../safedate/presentation/create_plan_sheet.dart';
+import '../../safedate/presentation/safety_check_sheet.dart';
 import '../../safety/domain/report.dart';
 import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_entry_card.dart';
@@ -81,6 +82,7 @@ class ChatDetailScreen extends StatefulWidget {
     this.datePlanService,
     this.safeDateService,
     this.safeDatePlanEnabled = false,
+    this.safeDateAiRiskEnabled = false,
   });
 
   final String chatId;
@@ -133,6 +135,10 @@ class ChatDetailScreen extends StatefulWidget {
   /// (`feature_safedate_date_plan_enabled`) + servicio. Si off/null, no aparece.
   final SafeDateService? safeDateService;
   final bool safeDatePlanEnabled;
+
+  /// Attra SafeDate Fase 6: "Revisar seguridad" en el menú del chat. Opt-in por
+  /// flag (`feature_safedate_ai_risk_detection_enabled`) + servicio.
+  final bool safeDateAiRiskEnabled;
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -1017,7 +1023,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       case 'safedate_plan':
         await _openSafeDatePlan();
         break;
+      case 'safedate_check':
+        await _openSafetyCheck();
+        break;
     }
+  }
+
+  /// Attra SafeDate Fase 6: revisión preventiva de la conversación (opt-in).
+  Future<void> _openSafetyCheck() async {
+    final SafeDateService? service = widget.safeDateService;
+    if (service == null) return;
+    await SafetyCheckSheet.run(context, service: service, chatId: widget.chatId);
   }
 
   /// Attra SafeDate: crea un plan de cita segura para este match. Plan PRIVADO
@@ -1375,6 +1391,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 const PopupMenuItem<String>(
                     value: 'safedate_plan',
                     child: Text('Planear cita segura')),
+              if (widget.safeDateAiRiskEnabled && widget.safeDateService != null)
+                const PopupMenuItem<String>(
+                    value: 'safedate_check',
+                    child: Text('Revisar seguridad')),
               if (widget.closeGracefullyEnabled)
                 const PopupMenuItem<String>(
                     value: 'close', child: Text('Cerrar conversación')),

@@ -727,6 +727,147 @@ export const submitPostDateReview = onCall(
   }
 );
 
+// --- Fase 6: IA preventiva de riesgos (ventana pequeña + redacción PII) ---
+
+/// Redacta PII antes de cualquier análisis: emails, enlaces y secuencias tipo
+/// teléfono. Trunca. NUNCA se guarda ni se envía el texto en claro a ningún
+/// sitio; solo se usa en memoria para clasificar señales de riesgo.
+function redactPII(raw: string): string {
+  return raw
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
+    .replace(/https?:\/\/\S+/gi, "[enlace]")
+    .replace(/\b(?:\+?\d[\s-]?){7,}\b/g, "[número]")
+    .slice(0, 240);
+}
+
+interface RiskCategory {
+  key: string;
+  weight: number;
+  re: RegExp;
+  tip: string;
+}
+
+/// Señales de riesgo (heurística sobre texto redactado, es/en). Es un PUNTO DE
+/// INTEGRACIÓN: aquí podría enchufarse un modelo generativo (Vertex/Gemini) que
+/// devuelva las mismas categorías. Prevención, no acusación: nunca afirma que la
+/// persona sea peligrosa; ofrece consejos y deja el control al usuario.
+const RISK_CATEGORIES: RiskCategory[] = [
+  {
+    key: "off_platform_pressure",
+    weight: 1,
+    re: /whats\s?app|telegram|instagram|snapchat|pás?ame tu (número|numero|tel)|dame tu (número|numero)|fuera de la app|add me on|my number is/i,
+    tip: "No tienes por qué pasar tu número ni cambiar de app hasta que quieras. Tómate tu tiempo.",
+  },
+  {
+    key: "money_request",
+    weight: 2,
+    re: /bizum|paypal|transferencia|envíame|enviame|préstame|prestame|necesito dinero|inversión|inversion|cripto|bitcoin|gift ?card|western union/i,
+    tip: "Nunca envíes dinero ni datos bancarios a alguien que acabas de conocer.",
+  },
+  {
+    key: "sexual_pressure",
+    weight: 2,
+    re: /nudes|desnud|manda(me)? (una )?foto|send (a )?pic|foto íntima|foto intima|sin ropa/i,
+    tip: "Tus límites son válidos. No estás obligada/o a enviar nada; puedes parar cuando quieras.",
+  },
+  {
+    key: "aggressive",
+    weight: 2,
+    re: /te vas a arrepentir|cállate|callate|estúpid|estupid|imbécil|imbecil|amenaz|te voy a/i,
+    tip: "El respeto no es negociable. Si te sientes incómoda/o, puedes bloquear o reportar.",
+  },
+  {
+    key: "meeting_change",
+    weight: 1,
+    re: /ven a mi casa|a mi hotel|cambiemos el sitio|mejor en mi|te recojo|paso a por ti/i,
+    tip: "Para una primera cita, elige un lugar público y ve por tus medios.",
+  },
+  {
+    key: "secrecy_isolation",
+    weight: 2,
+    re: /no le digas a nadie|es un secreto|ven sola|ven solo|no se lo cuentes|entre nosotros/i,
+    tip: "Cuéntale a alguien de confianza dónde estarás. El secretismo es una señal de alarma.",
+  },
+];
+
+/// analyzeConversationRisk: revisa de forma PREVENTIVA una ventana pequeña de la
+/// conversación (solo mensajes del otro), con PII redactada, y devuelve consejos
+/// suaves. Requiere consentimiento explícito ([consent]=true). NUNCA bloquea ni
+/// reporta por sí sola, NUNCA informa al match, NO persiste el texto ni afirma
+/// que la persona sea peligrosa. El usuario mantiene todo el control.
+export const analyzeConversationRisk = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = requireAuthUid(request.auth);
+    const cfg = await requireSafeDateEnabled();
+    if (cfg.feature_safedate_ai_risk_detection_enabled !== true) {
+      throw new HttpsError("failed-precondition", "No disponible.");
+    }
+    if (request.data?.consent !== true) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Se requiere tu consentimiento para revisar la conversación."
+      );
+    }
+    // Kill switch de IA global (igual que el resto de IA).
+    if (cfg.aiKillSwitch === true || cfg.aiProcessingEnabled === false) {
+      throw new HttpsError(
+        "failed-precondition",
+        "La IA está deshabilitada temporalmente."
+      );
+    }
+    const chatId = requireStringArg(request.data?.chatId, "chatId");
+    const chatSnap = await col.chats.doc(chatId).get();
+    if (!chatSnap.exists) throw new HttpsError("not-found", "El chat no existe.");
+    const users: string[] = (chatSnap.data()?.users ?? []) as string[];
+    if (!users.includes(uid)) {
+      throw new HttpsError("permission-denied", "No participas en este chat.");
+    }
+    const otherUid = users.find((u) => u !== uid) ?? "";
+
+    // Ventana PEQUEÑA: últimos 20 mensajes; solo texto del OTRO; PII redactada.
+    const msgsSnap = await col.chats
+      .doc(chatId)
+      .collection("messages")
+      .orderBy("createdAt", "desc")
+      .limit(20)
+      .get();
+    const windowTexts: string[] = [];
+    for (const d of msgsSnap.docs) {
+      const m = d.data();
+      if ((m.type ?? "text").toString() !== "text") continue;
+      if ((m.senderId ?? "").toString() !== otherUid) continue;
+      const t = (m.text ?? "").toString();
+      if (t.trim().length === 0) continue;
+      windowTexts.push(redactPII(t));
+    }
+
+    // Clasificación heurística (integración futura: modelo generativo).
+    const joined = windowTexts.join(" \n ").toLowerCase();
+    const matched: string[] = [];
+    const tips: string[] = [];
+    let weight = 0;
+    for (const cat of RISK_CATEGORIES) {
+      if (cat.re.test(joined)) {
+        matched.push(cat.key);
+        tips.push(cat.tip);
+        weight += cat.weight;
+      }
+    }
+    const tier = weight >= 3 ? "urgent" : weight >= 1 ? "warning" : "info";
+
+    // Consejo general (nunca acusatorio, sin veredicto sobre la persona).
+    const intro =
+      tier === "info"
+        ? "No hemos detectado señales claras, pero confía en tu instinto: si algo no te encaja, tú decides."
+        : "Hemos visto algunas señales que conviene tener en cuenta. Esto NO significa que la persona sea peligrosa; son solo recordatorios de seguridad.";
+
+    // Privacidad: NO persistimos el texto ni los mensajes. Devolvemos solo el
+    // resultado al propio usuario (no se informa al match de nada).
+    return { tier, categories: matched, intro, tips };
+  }
+);
+
 /// Limpieza de ubicaciones temporales caducadas (privacidad: sin historial).
 /// Gated por master switch; si algo falla, no toca nada.
 export const safeDateLiveLocationSweep = onSchedule(

@@ -97,6 +97,17 @@ check-ins ON genera los 3 check-ins y dispara el flujo de recordatorios.
 - [ ] El reporte NO incluye texto libre con PII (solo categorías).
 - [ ] `safeDateSafetyReviews` no legible/escribible por el cliente (backend-only).
 
-## Pendiente por fase (6-7)
-IA preventiva; integración con citas propuestas + safe places. Entrega externa
-a contactos (SMS/email) por definir.
+## IA preventiva de riesgos (Fase 6 — implementado)
+- [ ] "Revisar seguridad" en el menú del chat solo con
+      `feature_safedate_ai_risk_detection_enabled` ON.
+- [ ] Pide CONSENTIMIENTO explícito antes de analizar.
+- [ ] Analiza solo una ventana pequeña (últimos 20, del otro) con PII redactada.
+- [ ] Respeta el kill switch de IA (`aiKillSwitch`/`aiProcessingEnabled`).
+- [ ] Devuelve consejos suaves; NUNCA veredicto sobre la persona; NO bloquea ni
+      reporta por sí sola; NO informa al match.
+- [ ] El backend NO persiste ni devuelve el texto de los mensajes.
+
+## Pendiente por fase (7)
+Integración con citas propuestas + safe places + filtro solo-verificados.
+Entrega externa a contactos (SMS/email) por definir. Integración de un modelo
+generativo (Vertex/Gemini) en el punto de integración del clasificador.

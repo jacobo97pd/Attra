@@ -32,6 +32,7 @@ class ChatsScreen extends StatelessWidget {
     this.datePlansEnabled = false,
     this.safeDateService,
     this.safeDatePlanEnabled = false,
+    this.safeDateAiRiskEnabled = false,
     required this.matchService,
     required this.summaries,
     this.storyService,
@@ -81,9 +82,11 @@ class ChatsScreen extends StatelessWidget {
   final DatePlanService? datePlanService;
   final bool datePlansEnabled;
 
-  /// Attra SafeDate: "Planear cita segura" en el menú del chat. Opt-in por flag.
+  /// Attra SafeDate: "Planear cita segura" + "Revisar seguridad" en el menú del
+  /// chat. Opt-in por flags.
   final SafeDateService? safeDateService;
   final bool safeDatePlanEnabled;
+  final bool safeDateAiRiskEnabled;
 
   final MatchService matchService;
   final ProfileSummaryRepository summaries;
@@ -140,6 +143,7 @@ class ChatsScreen extends StatelessWidget {
         datePlansEnabled: datePlansEnabled,
         safeDateService: safeDateService,
         safeDatePlanEnabled: safeDatePlanEnabled,
+        safeDateAiRiskEnabled: safeDateAiRiskEnabled,
         matchService: matchService,
         loadProfile: loadProfile,
         sparkService: sparkService,

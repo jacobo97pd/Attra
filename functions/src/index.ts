@@ -93,6 +93,7 @@ export {
   sendSafeDateAlert,
   safeDateLiveLocationSweep,
   submitPostDateReview,
+  analyzeConversationRisk,
 } from "./safedate";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";

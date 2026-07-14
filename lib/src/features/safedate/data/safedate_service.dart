@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
+import '../domain/conversation_risk.dart';
 import '../domain/safe_date_checkin.dart';
 import '../domain/safe_date_plan.dart';
 import '../domain/trusted_contact.dart';
@@ -209,6 +210,22 @@ class SafeDateService {
         'wantsToReport': wantsToReport,
         'concernCategories': concernCategories,
       });
+
+  // ── IA preventiva de riesgos (Fase 6) ────────────────────────────────────
+
+  /// Revisa de forma preventiva la conversación. Requiere consentimiento
+  /// explícito ([consent]=true). El backend no persiste ni devuelve el texto.
+  Future<ConversationRiskResult> analyzeConversationRisk(
+    String chatId, {
+    required bool consent,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('analyzeConversationRisk', <String, dynamic>{
+      'chatId': chatId,
+      'consent': consent,
+    });
+    return ConversationRiskResult.fromMap(data);
+  }
 
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {
