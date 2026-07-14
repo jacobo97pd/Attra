@@ -32,19 +32,18 @@ export const unmatch = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
-/// blockUser: crea bloqueo, cierra match/chat existentes y evita futuros
-/// matches/mensajes. El bloqueo se valida en sendLike/sendAttra y en las reglas.
-export const blockUser = onCall({ region: REGION }, async (request) => {
-  const blockerUid = requireAuthUid(request.auth);
-  const blockedUid = requireStringArg(request.data?.blockedUid, "blockedUid");
+/// Lógica de bloqueo reutilizable (usada por blockUser y por SafeDate). Crea el
+/// bloqueo y cierra match/chat existentes. Idempotente (merge).
+export async function applyBlock(
+  blockerUid: string,
+  blockedUid: string
+): Promise<void> {
   if (blockerUid === blockedUid) {
     throw new HttpsError("invalid-argument", "No puedes bloquearte a ti mismo.");
   }
-
   const matchId = pairId(blockerUid, blockedUid);
   const now = FieldValue.serverTimestamp();
   const batch = db.batch();
-
   batch.set(col.blocks.doc(directedId(blockerUid, blockedUid)), {
     blockerUid,
     blockedUid,
@@ -52,11 +51,45 @@ export const blockUser = onCall({ region: REGION }, async (request) => {
     chatId: matchId,
     createdAt: now,
   });
-  // Cierra relacion si existe (merge: no falla si no existe).
   batch.set(col.matches.doc(matchId), { status: "blocked", updatedAt: now }, { merge: true });
   batch.set(col.chats.doc(matchId), { status: "blocked", updatedAt: now }, { merge: true });
-
   await batch.commit();
+}
+
+/// Registro de reporte reutilizable. Nunca revela al reportado quién reporta.
+export async function createReport(params: {
+  reporterUid: string;
+  reportedUid: string;
+  reason: string;
+  details?: string;
+  matchId?: string | null;
+  chatId?: string | null;
+  messageId?: string | null;
+}): Promise<string> {
+  if (params.reporterUid === params.reportedUid) {
+    throw new HttpsError("invalid-argument", "Parametro invalido.");
+  }
+  const reportRef = col.reports.doc();
+  await reportRef.set({
+    reporterUid: params.reporterUid,
+    reportedUid: params.reportedUid,
+    reason: params.reason,
+    status: "pending",
+    details: (params.details ?? "").slice(0, 1000),
+    matchId: params.matchId ?? null,
+    chatId: params.chatId ?? null,
+    messageId: params.messageId ?? null,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return reportRef.id;
+}
+
+/// blockUser: crea bloqueo, cierra match/chat existentes y evita futuros
+/// matches/mensajes. El bloqueo se valida en sendLike/sendAttra y en las reglas.
+export const blockUser = onCall({ region: REGION }, async (request) => {
+  const blockerUid = requireAuthUid(request.auth);
+  const blockedUid = requireStringArg(request.data?.blockedUid, "blockedUid");
+  await applyBlock(blockerUid, blockedUid);
   return { ok: true };
 });
 
@@ -64,27 +97,16 @@ export const blockUser = onCall({ region: REGION }, async (request) => {
 export const reportUser = onCall({ region: REGION }, async (request) => {
   const reporterUid = requireAuthUid(request.auth);
   const reportedUid = requireStringArg(request.data?.reportedUid, "reportedUid");
-  if (reporterUid === reportedUid) {
-    throw new HttpsError("invalid-argument", "Parametro invalido.");
-  }
-  const reason =
-    typeof request.data?.reason === "string" ? request.data.reason : "other";
-  const details =
-    typeof request.data?.details === "string"
-      ? (request.data.details as string).slice(0, 1000)
-      : "";
-
-  const reportRef = col.reports.doc();
-  await reportRef.set({
+  const reportId = await createReport({
     reporterUid,
     reportedUid,
-    reason,
-    status: "pending",
-    details,
+    reason:
+      typeof request.data?.reason === "string" ? request.data.reason : "other",
+    details:
+      typeof request.data?.details === "string" ? request.data.details : "",
     matchId: request.data?.matchId ?? null,
     chatId: request.data?.chatId ?? null,
     messageId: request.data?.messageId ?? null,
-    createdAt: FieldValue.serverTimestamp(),
   });
-  return { reportId: reportRef.id };
+  return { reportId };
 });

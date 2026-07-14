@@ -86,6 +86,17 @@ check-ins ON genera los 3 check-ins y dispara el flujo de recordatorios.
 - [ ] En web: la ubicación en directo se oculta (no soportada); resto va.
 - [ ] `safeDateLiveLocations` no legible/escribible por el cliente (backend-only).
 
-## Pendiente por fase (5-7)
-Revisión post-cita + reporte/bloqueo; IA preventiva; integración con citas
-propuestas + safe places. Entrega externa a contactos (SMS/email) por definir.
+## Revisión post-cita + reporte/bloqueo (Fase 5 — implementado)
+- [ ] Al terminar la cita (o con "¿Cómo fue?" tras el regreso previsto) se
+      ofrece la revisión, gated `feature_safedate_post_date_review_enabled`.
+- [ ] La revisión es PRIVADA: no se muestra al evaluado, sin puntuación pública
+      ni rankings.
+- [ ] Solo se puede revisar a la persona del plan (no a un tercero).
+- [ ] "Reportar" → crea reporte estándar; el evaluado no sabe quién reporta.
+- [ ] "Bloquear" → aplica bloqueo estándar (cierra match/chat).
+- [ ] El reporte NO incluye texto libre con PII (solo categorías).
+- [ ] `safeDateSafetyReviews` no legible/escribible por el cliente (backend-only).
+
+## Pendiente por fase (6-7)
+IA preventiva; integración con citas propuestas + safe places. Entrega externa
+a contactos (SMS/email) por definir.

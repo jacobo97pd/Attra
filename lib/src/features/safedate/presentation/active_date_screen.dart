@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/safedate_service.dart';
 import '../domain/safe_date_plan.dart';
 import '../domain/safedate_flags.dart';
+import 'post_date_review_sheet.dart';
 
 /// Pantalla de "cita en curso". Acciones discretas y control total del usuario:
 /// compartir ubicación en directo (solo con consentimiento y temporal), pedir
@@ -190,6 +191,15 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
     try {
       await widget.service
           .setPlanStatus(widget.plan.id, SafeDatePlanStatus.completed);
+      // Ofrece la revisión privada al terminar (si la fase está activa).
+      if (mounted && widget.flags.postDateReviewActive) {
+        await PostDateReviewSheet.show(
+          context,
+          planId: widget.plan.id,
+          service: widget.service,
+          otherName: 'La otra persona',
+        );
+      }
       if (mounted) Navigator.of(context).pop();
     } on SafeDateException catch (e) {
       _snack(e.message);

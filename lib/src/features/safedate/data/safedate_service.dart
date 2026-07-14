@@ -185,6 +185,31 @@ class SafeDateService {
         'type': type,
       });
 
+  // ── Revisión post-cita (privada) — Fase 5 ────────────────────────────────
+
+  /// Envía una revisión PRIVADA de la cita. El backend deriva a quién se revisa
+  /// del propio plan. Opcionalmente reporta/bloquea. Nunca es visible al match.
+  Future<void> submitPostDateReview({
+    required String planId,
+    required bool feltSafe,
+    required bool respectedBoundaries,
+    required bool matchedProfile,
+    required bool experiencedPressure,
+    required bool wantsToBlock,
+    required bool wantsToReport,
+    List<String> concernCategories = const <String>[],
+  }) =>
+      _call('submitPostDateReview', <String, dynamic>{
+        'planId': planId,
+        'feltSafe': feltSafe,
+        'respectedBoundaries': respectedBoundaries,
+        'matchedProfile': matchedProfile,
+        'experiencedPressure': experiencedPressure,
+        'wantsToBlock': wantsToBlock,
+        'wantsToReport': wantsToReport,
+        'concernCategories': concernCategories,
+      });
+
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {
     try {

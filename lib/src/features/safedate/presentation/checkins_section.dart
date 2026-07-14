@@ -9,6 +9,7 @@ import '../domain/safe_date_plan.dart';
 import '../domain/safedate_flags.dart';
 import '../domain/trusted_contact.dart';
 import 'active_date_screen.dart';
+import 'post_date_review_sheet.dart';
 
 /// Sección de check-ins del centro SafeDate. Muestra las citas en curso o
 /// próximas y sus check-ins pendientes, con respuesta en un toque. NUNCA llama a
@@ -77,6 +78,10 @@ class _PlanCheckInsCard extends StatelessWidget {
   bool get _canOpenActive =>
       flags.liveLocationActive || flags.discreetAlertActive;
 
+  bool get _canReview =>
+      flags.postDateReviewActive &&
+      DateTime.now().isAfter(plan.effectiveReturnAt);
+
   String _when(BuildContext context) {
     final TimeOfDay t = TimeOfDay.fromDateTime(plan.scheduledAt);
     final String hm = t.format(context);
@@ -142,23 +147,36 @@ class _PlanCheckInsCard extends StatelessWidget {
                 );
               },
             ),
-            if (_canOpenActive)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () =>
-                      Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => ActiveDateScreen(
-                      uid: uid,
+            Wrap(
+              spacing: 8,
+              children: <Widget>[
+                if (_canOpenActive)
+                  TextButton.icon(
+                    onPressed: () =>
+                        Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => ActiveDateScreen(
+                        uid: uid,
+                        service: service,
+                        plan: plan,
+                        flags: flags,
+                      ),
+                    )),
+                    icon: const Icon(Icons.shield_moon_outlined, size: 18),
+                    label: const Text('Estoy en la cita'),
+                  ),
+                if (_canReview)
+                  TextButton.icon(
+                    onPressed: () => PostDateReviewSheet.show(
+                      context,
+                      planId: plan.id,
                       service: service,
-                      plan: plan,
-                      flags: flags,
+                      otherName: 'La otra persona',
                     ),
-                  )),
-                  icon: const Icon(Icons.shield_moon_outlined, size: 18),
-                  label: const Text('Estoy en la cita'),
-                ),
-              ),
+                    icon: const Icon(Icons.rate_review_outlined, size: 18),
+                    label: const Text('¿Cómo fue?'),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

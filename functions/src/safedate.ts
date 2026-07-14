@@ -4,6 +4,7 @@ import { FieldValue, DocumentData } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, requireAuthUid, requireStringArg } from "./common";
 import { createNotification } from "./notifications";
+import { applyBlock, createReport } from "./safety";
 
 /// Attra SafeDate — funciones server-side. Backend-autoritativo: el cliente lee
 /// sus propios datos (reglas), pero contactos/planes/alertas se escriben aquí.
@@ -647,6 +648,84 @@ export const sendSafeDateAlert = onCall({ region: REGION }, async (request) => {
   }
   return { ok: true, alertId: alertRef.id };
 });
+
+// --- Fase 5: revisión post-cita (privada) + reporte/bloqueo ---
+
+/// submitPostDateReview: guarda una revisión PRIVADA de la cita. COMPLETAMENTE
+/// privada: se guarda en `safeDateSafetyReviews` (backend-only), no se muestra
+/// al evaluado, no hay puntuación pública ni rankings. Si el usuario lo pide,
+/// reutiliza reporte/bloqueo (nunca se revela al evaluado quién reporta).
+export const submitPostDateReview = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = requireAuthUid(request.auth);
+    const cfg = await requireSafeDateEnabled();
+    if (cfg.feature_safedate_post_date_review_enabled !== true) {
+      throw new HttpsError("failed-precondition", "No disponible.");
+    }
+    const planId = requireStringArg(request.data?.planId, "planId");
+    const { ref, data } = await requireOwnedPlan(planId, uid);
+
+    // Solo se puede revisar a la persona de ESTE plan (no a un tercero).
+    const reviewedUserId = (data.otherUserId ?? "").toString();
+    if (!reviewedUserId) {
+      throw new HttpsError("failed-precondition", "El plan no tiene match.");
+    }
+
+    const wantsToReport = request.data?.wantsToReport === true;
+    const wantsToBlock = request.data?.wantsToBlock === true;
+    const concernCategories: string[] = Array.isArray(
+      request.data?.concernCategories
+    )
+      ? (request.data.concernCategories as unknown[])
+          .filter((x): x is string => typeof x === "string")
+          .slice(0, 12)
+      : [];
+
+    const b = (k: string): boolean => request.data?.[k] === true;
+
+    // 1) Revisión privada (backend-only). El backend fija reviewerUserId.
+    const reviewRef = db.collection("safeDateSafetyReviews").doc();
+    await reviewRef.set({
+      safeDatePlanId: planId,
+      reviewerUserId: uid,
+      reviewedUserId,
+      feltSafe: b("feltSafe"),
+      respectedBoundaries: b("respectedBoundaries"),
+      matchedProfile: b("matchedProfile"),
+      experiencedPressure: b("experiencedPressure"),
+      wantsToBlock,
+      wantsToReport,
+      concernCategories,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    // 2) Reporte (opcional). Detalles = categorías, SIN texto libre con PII.
+    if (wantsToReport) {
+      await createReport({
+        reporterUid: uid,
+        reportedUid: reviewedUserId,
+        reason: "safedate_post_date",
+        details: concernCategories.join(","),
+        matchId: (data.matchId ?? "").toString() || null,
+        chatId: (data.chatId ?? "").toString() || null,
+      });
+    }
+
+    // 3) Bloqueo (opcional). Reutiliza la lógica estándar.
+    if (wantsToBlock) {
+      await applyBlock(uid, reviewedUserId).catch(() => undefined);
+    }
+
+    // 4) Marca el plan como revisado y cerrado.
+    await ref.update({
+      status: data.status === "alerted" ? "alerted" : "completed",
+      postDateReviewedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { ok: true };
+  }
+);
 
 /// Limpieza de ubicaciones temporales caducadas (privacidad: sin historial).
 /// Gated por master switch; si algo falla, no toca nada.
