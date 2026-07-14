@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
+import '../domain/safe_date_checkin.dart';
 import '../domain/safe_date_plan.dart';
 import '../domain/trusted_contact.dart';
 
@@ -108,6 +109,37 @@ class SafeDateService {
       _call('setSafeDatePlanStatus', <String, dynamic>{
         'planId': planId,
         'status': status.wireName,
+      });
+
+  // ── Check-ins ────────────────────────────────────────────────────────────
+
+  /// Check-ins de un plan (`safeDatePlans/{planId}/checkIns`). Reglas: solo el
+  /// owner del plan. Ordenados por hora prevista ascendente.
+  Stream<List<SafeDateCheckIn>> observeCheckIns(String planId) {
+    return _firestore
+        .collection('safeDatePlans')
+        .doc(planId)
+        .collection('checkIns')
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
+            .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                SafeDateCheckIn.fromMap(d.id, d.data()))
+            .toList(growable: false)
+          ..sort((SafeDateCheckIn a, SafeDateCheckIn b) =>
+              a.scheduledAt.compareTo(b.scheduledAt)));
+  }
+
+  /// Responde a un check-in. [response] ∈ {ok, remind_later, need_call,
+  /// need_help, cancelled}. Backend valida pertenencia. NUNCA llama a nadie.
+  Future<void> respondCheckIn({
+    required String planId,
+    required String checkInId,
+    required String response,
+  }) =>
+      _call('respondCheckIn', <String, dynamic>{
+        'planId': planId,
+        'checkInId': checkInId,
+        'response': response,
       });
 
   Future<Map<String, dynamic>> _call(

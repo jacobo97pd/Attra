@@ -43,7 +43,30 @@
 - [ ] Los eventos no contienen nombre/teléfono/email/coordenadas/mensajes.
 - [ ] `SafeDateEvents.safeParams` filtra claves prohibidas.
 
-## Pendiente por fase (3-7)
-Check-ins programados + notificaciones + perdido; cita activa + acciones
-discretas + 112 + ubicación temporal; revisión post-cita + reporte/bloqueo; IA
-preventiva; integración con citas propuestas + safe places.
+## Check-ins + notificaciones (Fase 3 — implementado)
+- [ ] Crear plan con `feature_safedate_checkins_enabled` ON → se generan 3
+      check-ins (llegada, mitad, regreso previsto) en `checkIns`.
+- [ ] Al vencer un check-in → notificación in-app + push `safedate_checkin_due`.
+- [ ] Sin respuesta pasado el 1er intervalo → `safedate_checkin_reminder`.
+- [ ] Sin respuesta pasado el umbral → check-in `missed` +
+      `safedate_checkin_missed`; NO se llama a nadie automáticamente.
+- [ ] "Estoy bien" / "Recuérdame luego" / "Necesito ayuda" responden el check-in.
+- [ ] "Necesito ayuda" ofrece 112 + contactos, pero la acción la inicia la
+      persona (ninguna llamada automática).
+- [ ] Check-in perdido con contactos autorizados → alerta prudente registrada
+      (`alerts/missed_*`), `outboundDelivered:false` (entrega SMS/email = fase
+      posterior; no se afirma envío no confirmado).
+- [ ] Cancelar/completar plan → check-ins pendientes pasan a `cancelled`.
+- [ ] Barrido `safeDateCheckinSweep`: con master switch OFF o checkins OFF → no
+      hace nada (inerte).
+- [ ] Tiempos configurables por Remote Config
+      (`safedate_checkin_{first,second}_reminder_minutes`,
+      `safedate_checkin_missed_threshold_minutes`).
+
+Dependencia para probar E2E: crear plan desde el chat (UI de creación de plan
+pendiente; el callable `createSafeDatePlan` ya existe y valida pertenencia).
+
+## Pendiente por fase (4-7)
+Cita activa + acciones discretas + 112 + ubicación temporal + alerta silenciosa;
+revisión post-cita + reporte/bloqueo; IA preventiva; integración con citas
+propuestas + safe places. Entrega externa a contactos (SMS/email) por definir.

@@ -75,10 +75,13 @@ class SafeDateCheckIn {
   factory SafeDateCheckIn.fromMap(String id, Map<String, dynamic> map) {
     return SafeDateCheckIn(
       id: id,
-      safeDatePlanId: (map['safeDatePlanId'] ?? '').toString(),
-      userId: (map['userId'] ?? '').toString(),
+      // El backend escribe planId/ownerUserId/dueAt; toleramos nombres antiguos.
+      safeDatePlanId:
+          (map['planId'] ?? map['safeDatePlanId'] ?? '').toString(),
+      userId: (map['ownerUserId'] ?? map['userId'] ?? '').toString(),
       type: CheckInType.fromValue(map['type']),
-      scheduledAt: _asDate(map['scheduledAt']) ?? DateTime.now(),
+      scheduledAt:
+          _asDate(map['dueAt']) ?? _asDate(map['scheduledAt']) ?? DateTime.now(),
       respondedAt: _asDate(map['respondedAt']),
       status: CheckInStatus.fromValue(map['status']),
       reminderCount:

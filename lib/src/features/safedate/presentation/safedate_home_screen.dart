@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/safedate_service.dart';
 import '../domain/safedate_flags.dart';
+import 'checkins_section.dart';
 import 'trusted_contacts_screen.dart';
 
 /// Centro de Attra SafeDate. Tono calmado, control y privacidad. Sin falsas
@@ -66,6 +67,16 @@ class SafeDateHomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+
+          // Citas en curso/próximas + check-ins pendientes (Fase 3).
+          if (flags.checkinsActive) ...<Widget>[
+            SafeDateCheckInsSection(
+              uid: uid,
+              service: service,
+              emergencyNumber: flags.emergencyNumber,
+            ),
+            const SizedBox(height: 6),
+          ],
 
           if (flags.contactsActive) ...<Widget>[
             _SafeDateTile(

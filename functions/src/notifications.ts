@@ -8,9 +8,9 @@ import { col, resolvePublicDisplayName } from "./common";
 
 const DATABASE = "attra-database";
 
-type Accent = "desire" | "match" | "premium" | "calm" | "safety";
+export type Accent = "desire" | "match" | "premium" | "calm" | "safety";
 
-interface NotifContent {
+export interface NotifContent {
   kind: string;
   emoji: string;
   title: string;
@@ -86,7 +86,7 @@ function tplComeBack(days: number): NotifContent {
 /// Crea la notificación IN-APP en `notifications/{uid}/items` y envía PUSH (FCM)
 /// a los tokens del usuario. Best-effort: si el usuario es bot/no existe, se
 /// omite. NUNCA lanza (no debe tumbar el trigger que la invoca).
-async function createNotification(
+export async function createNotification(
   uid: string,
   c: NotifContent,
   data: Record<string, unknown> = {}

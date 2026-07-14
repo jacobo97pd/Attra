@@ -1,7 +1,9 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue } from "firebase-admin/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { FieldValue, DocumentData } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, requireAuthUid, requireStringArg } from "./common";
+import { createNotification } from "./notifications";
 
 /// Attra SafeDate — funciones server-side. Backend-autoritativo: el cliente lee
 /// sus propios datos (reglas), pero contactos/planes/alertas se escriben aquí.
@@ -13,7 +15,8 @@ const MAX_NAME = 80;
 
 /// Lee la config de flags y exige SafeDate activo (master switch). Defensa en
 /// profundidad: aunque el cliente lo salte, el backend rechaza si está OFF.
-async function requireSafeDateEnabled(): Promise<void> {
+/// Devuelve el doc de config para reutilizar (tiempos de check-in, etc.).
+async function requireSafeDateEnabled(): Promise<DocumentData> {
   const snap = await db.collection("config").doc("featureFlags").get();
   const cfg = snap.data() ?? {};
   if (cfg.feature_safedate_enabled !== true) {
@@ -22,6 +25,17 @@ async function requireSafeDateEnabled(): Promise<void> {
       "SafeDate no está disponible ahora mismo."
     );
   }
+  return cfg;
+}
+
+function cfgInt(cfg: DocumentData, key: string, fallback: number): number {
+  const v = cfg[key];
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = parseInt(v, 10);
+    if (!Number.isNaN(n)) return n;
+  }
+  return fallback;
 }
 
 function normalizePhone(raw: unknown): string | null {
@@ -121,7 +135,7 @@ export const deleteTrustedContact = onCall(
 /// dentro de la app). Guarda solo datos autorizados.
 export const createSafeDatePlan = onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request.auth);
-  await requireSafeDateEnabled();
+  const cfg = await requireSafeDateEnabled();
 
   const chatId = requireStringArg(request.data?.chatId, "chatId");
   const placeName = requireStringArg(request.data?.placeName, "placeName")
@@ -158,6 +172,9 @@ export const createSafeDatePlan = onCall({ region: REGION }, async (request) => 
       : null;
 
   const now = FieldValue.serverTimestamp();
+  const expectedReturnAt = new Date(
+    scheduledAt.getTime() + expectedDurationMinutes * 60000
+  );
   const ref = db.collection("safeDatePlans").doc();
   await ref.set({
     ownerUserId: uid,
@@ -168,9 +185,7 @@ export const createSafeDatePlan = onCall({ region: REGION }, async (request) => 
     placeAddress,
     scheduledAt,
     expectedDurationMinutes,
-    expectedReturnAt: new Date(
-      scheduledAt.getTime() + expectedDurationMinutes * 60000
-    ),
+    expectedReturnAt,
     status: "scheduled",
     trustedContactIds,
     shareProfileSnapshot: request.data?.shareProfileSnapshot === true,
@@ -178,7 +193,76 @@ export const createSafeDatePlan = onCall({ region: REGION }, async (request) => 
     createdAt: now,
     updatedAt: now,
   });
+
+  // Programa los check-ins del plan (llegada, mitad, regreso previsto) si la
+  // fase de check-ins está activa. Backend-autoritativo: el barrido programado
+  // (safeDateCheckinSweep) los recordará y marcará perdidos según config.
+  if (cfg.feature_safedate_checkins_enabled === true) {
+    const midAt = new Date(
+      scheduledAt.getTime() + (expectedDurationMinutes / 2) * 60000
+    );
+    const checkins: Array<{ type: string; dueAt: Date }> = [
+      { type: "arrival", dueAt: scheduledAt },
+      { type: "during_date", dueAt: midAt },
+      { type: "expected_return", dueAt: expectedReturnAt },
+    ];
+    const batch = db.batch();
+    for (const c of checkins) {
+      const cRef = ref.collection("checkIns").doc();
+      batch.set(cRef, {
+        planId: ref.id,
+        ownerUserId: uid,
+        type: c.type,
+        status: "pending",
+        dueAt: c.dueAt,
+        reminderCount: 0,
+        alertedContacts: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    await batch.commit();
+  }
   return { planId: ref.id };
+});
+
+/// respondCheckIn: el usuario responde a un check-in (estoy bien / recuérdame /
+/// necesito llamar / necesito ayuda). Solo el owner del plan. Marca el estado y,
+/// si pide ayuda, deja constancia para que el cliente ofrezca acciones (112,
+/// avisar contacto). NUNCA llama a emergencias automáticamente.
+export const respondCheckIn = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  await requireSafeDateEnabled();
+  const planId = requireStringArg(request.data?.planId, "planId");
+  const checkInId = requireStringArg(request.data?.checkInId, "checkInId");
+  const response = requireStringArg(request.data?.response, "response");
+  const allowed = ["ok", "remind_later", "need_call", "need_help", "cancelled"];
+  if (!allowed.includes(response)) {
+    throw new HttpsError("invalid-argument", "Respuesta no válida.");
+  }
+
+  const planRef = db.collection("safeDatePlans").doc(planId);
+  const planSnap = await planRef.get();
+  if (!planSnap.exists) throw new HttpsError("not-found", "El plan no existe.");
+  if (planSnap.data()?.ownerUserId !== uid) {
+    throw new HttpsError("permission-denied", "No es tu plan.");
+  }
+  const ciRef = planRef.collection("checkIns").doc(checkInId);
+  const ciSnap = await ciRef.get();
+  if (!ciSnap.exists) {
+    throw new HttpsError("not-found", "El check-in no existe.");
+  }
+  await ciRef.update({
+    status: response,
+    respondedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // "remind_later" reabre el check-in en la próxima ronda del barrido.
+  if (response === "remind_later") {
+    await ciRef.update({ status: "pending" });
+  }
+  return { ok: true };
 });
 
 /// cancelSafeDatePlan / completeSafeDatePlan: transición de estado por el owner.
@@ -198,14 +282,196 @@ export const setSafeDatePlanStatus = onCall(
       throw new HttpsError("permission-denied", "No es tu plan.");
     }
     await ref.update({ status, updatedAt: FieldValue.serverTimestamp() });
-    // Al cerrar la cita, elimina cualquier ubicación temporal (sin historial).
+    // Al cerrar la cita, elimina cualquier ubicación temporal (sin historial) y
+    // cancela los check-ins pendientes (no seguir molestando tras la cita).
     if (status === "cancelled" || status === "completed") {
       await db
         .collection("safeDateLiveLocations")
         .doc(planId)
         .delete()
         .catch(() => undefined);
+      const pending = await ref
+        .collection("checkIns")
+        .where("status", "==", "pending")
+        .get();
+      const batch = db.batch();
+      for (const d of pending.docs) {
+        batch.update(d.ref, {
+          status: "cancelled",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+      if (!pending.empty) await batch.commit();
     }
     return { ok: true };
   }
 );
+
+// --- Fase 3: check-ins programados + notificaciones + perdido ---
+
+const CHECKIN_LABEL: Record<string, string> = {
+  arrival: "¿Has llegado bien?",
+  during_date: "¿Va todo bien?",
+  expected_return: "¿Ya de vuelta?",
+  manual: "¿Todo bien?",
+};
+
+/// Barrido cada 5 min: recuerda check-ins vencidos y marca "perdidos" según los
+/// tiempos de Remote Config. NUNCA llama a emergencias: si un check-in se pierde
+/// y el usuario autorizó contactos, deja constancia de una alerta prudente. La
+/// entrega saliente a contactos externos (SMS/email) es dependencia posterior;
+/// aquí no se afirma que se haya enviado nada que no se pueda confirmar.
+export const safeDateCheckinSweep = onSchedule(
+  { schedule: "every 5 minutes", region: REGION },
+  async () => {
+    const cfgSnap = await db.collection("config").doc("featureFlags").get();
+    const cfg = cfgSnap.data() ?? {};
+    // Doble gate: master switch + fase de check-ins. Si algo falla → inerte.
+    if (
+      cfg.feature_safedate_enabled !== true ||
+      cfg.feature_safedate_checkins_enabled !== true
+    ) {
+      return;
+    }
+    const firstMin = cfgInt(cfg, "safedate_checkin_first_reminder_minutes", 10);
+    const secondMin = cfgInt(cfg, "safedate_checkin_second_reminder_minutes", 10);
+    const missedMin = cfgInt(cfg, "safedate_checkin_missed_threshold_minutes", 30);
+    const now = Date.now();
+
+    // Check-ins vencidos y aún pendientes (collectionGroup sobre subcolecciones).
+    const due = await db
+      .collectionGroup("checkIns")
+      .where("status", "==", "pending")
+      .where("dueAt", "<=", new Date(now))
+      .limit(200)
+      .get();
+
+    let reminders = 0;
+    let missed = 0;
+    for (const doc of due.docs) {
+      const ci = doc.data();
+      const uid = (ci.ownerUserId ?? "").toString();
+      if (!uid) continue;
+      const dueAt = (ci.dueAt?.toMillis?.() ?? now) as number;
+      const elapsedMin = Math.floor((now - dueAt) / 60000);
+      const reminderCount = (ci.reminderCount ?? 0) as number;
+      const type = (ci.type ?? "manual").toString();
+      const label = CHECKIN_LABEL[type] ?? CHECKIN_LABEL.manual;
+      const planId = (ci.planId ?? doc.ref.parent.parent?.id ?? "").toString();
+
+      // ¿Perdido? Supera el umbral sin respuesta → marca + alerta prudente.
+      if (elapsedMin >= missedMin) {
+        await doc.ref.update({
+          status: "missed",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        missed++;
+        // Aviso al propio usuario (puede estar sin cobertura / distraído). No es
+        // una emergencia por sí mismo; nunca se llama a nadie automáticamente.
+        await createNotification(
+          uid,
+          {
+            kind: "safedate_checkin_missed",
+            emoji: "🛟",
+            title: "No hemos sabido de ti",
+            body:
+              "No respondiste al check-in de tu cita. Si estás bien, ábrelo y confírmalo.",
+            accent: "safety",
+            route: "safedate",
+          },
+          { planId, checkInId: doc.id }
+        );
+        // Si el usuario autorizó contactos, registra una alerta prudente para
+        // que la surface el plan (entrega externa SMS/email = fase posterior).
+        await maybeRegisterMissedAlert(planId, uid, doc.id);
+        continue;
+      }
+
+      // Segundo recordatorio.
+      if (reminderCount >= 1 && elapsedMin >= firstMin + secondMin) {
+        if (reminderCount < 2) {
+          await doc.ref.update({
+            reminderCount: 2,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          await createNotification(
+            uid,
+            {
+              kind: "safedate_checkin_reminder",
+              emoji: "⏰",
+              title: label,
+              body: "Segundo aviso de tu check-in. Toca para responder.",
+              accent: "safety",
+              route: "safedate",
+            },
+            { planId, checkInId: doc.id }
+          );
+          reminders++;
+        }
+        continue;
+      }
+
+      // Primer aviso (check-in vencido).
+      if (reminderCount < 1 && elapsedMin >= 0) {
+        await doc.ref.update({
+          reminderCount: 1,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        await createNotification(
+          uid,
+          {
+            kind: "safedate_checkin_due",
+            emoji: "🛡️",
+            title: label,
+            body: "Tu check-in de SafeDate está listo. Responde en un toque.",
+            accent: "safety",
+            route: "safedate",
+          },
+          { planId, checkInId: doc.id }
+        );
+        reminders++;
+      }
+    }
+    console.log(
+      `[safeDateCheckinSweep] due=${due.size} reminders=${reminders} missed=${missed}`
+    );
+  }
+);
+
+/// Registra una alerta prudente por check-in perdido, SOLO si el plan tiene
+/// contactos de confianza autorizados. No afirma que se haya avisado a nadie por
+/// un canal externo; deja constancia para que el propio usuario y (en fases
+/// posteriores) el contacto vean el estado. Idempotente por check-in.
+async function maybeRegisterMissedAlert(
+  planId: string,
+  uid: string,
+  checkInId: string
+): Promise<void> {
+  if (!planId) return;
+  const planRef = db.collection("safeDatePlans").doc(planId);
+  const planSnap = await planRef.get();
+  if (!planSnap.exists) return;
+  const plan = planSnap.data() ?? {};
+  const contactIds: string[] = Array.isArray(plan.trustedContactIds)
+    ? (plan.trustedContactIds as unknown[]).filter(
+        (x): x is string => typeof x === "string"
+      )
+    : [];
+  if (contactIds.length === 0) return; // sin contactos autorizados → no alerta
+  const alertRef = planRef.collection("alerts").doc(`missed_${checkInId}`);
+  const exists = await alertRef.get();
+  if (exists.exists) return; // idempotente
+  await alertRef.set({
+    planId,
+    ownerUserId: uid,
+    type: "missed_checkin",
+    severity: "urgent",
+    checkInId,
+    // Constancia de a qué contactos concierne, sin exponer sus datos aquí.
+    trustedContactIds: contactIds,
+    // La entrega externa (SMS/email) es dependencia de infraestructura futura;
+    // por honestidad NO marcamos "enviado" hasta poder confirmarlo.
+    outboundDelivered: false,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}

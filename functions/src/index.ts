@@ -85,6 +85,8 @@ export {
   deleteTrustedContact,
   createSafeDatePlan,
   setSafeDatePlanStatus,
+  respondCheckIn,
+  safeDateCheckinSweep,
 } from "./safedate";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";

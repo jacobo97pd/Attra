@@ -98,6 +98,25 @@ void main() {
       expect(SafeDateAlertType.fromValue('silent_alert').isSilent, isTrue);
       expect(SafeDateAlertType.fromValue('contact_me').isSilent, isFalse);
     });
+
+    test('CheckIn.fromMap lee las claves del backend (planId/ownerUserId/dueAt)',
+        () {
+      final DateTime due = DateTime.utc(2026, 7, 14, 20, 30);
+      final SafeDateCheckIn c = SafeDateCheckIn.fromMap('c1', <String, dynamic>{
+        'planId': 'plan-1',
+        'ownerUserId': 'me',
+        'type': 'expected_return',
+        'status': 'pending',
+        'dueAt': due.toIso8601String(),
+        'reminderCount': 2,
+      });
+      expect(c.safeDatePlanId, 'plan-1');
+      expect(c.userId, 'me');
+      expect(c.type, CheckInType.expectedReturn);
+      expect(c.status, CheckInStatus.pending);
+      expect(c.scheduledAt.toUtc(), due);
+      expect(c.reminderCount, 2);
+    });
   });
 
   group('PostDateSafetyReview', () {
