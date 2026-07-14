@@ -1233,6 +1233,9 @@ class _FeedScreenState extends State<FeedScreen> {
 
     final SeedProfile profile = _profiles[_index];
     final bool likedMe = _likedMeUids.contains(profile.id);
+    // Intent-first: en modo amistad/grupos el lenguaje NO es romántico.
+    final bool social =
+        (widget.user?.intentMode ?? IntentMode.dating).isSocial;
     final bool rewindEnabled =
         !widget.canRewind || (_rewindHistory.isNotEmpty && !_rewinding);
     final String rewindTooltip = widget.canRewind
@@ -1295,11 +1298,25 @@ class _FeedScreenState extends State<FeedScreen> {
             left: 0,
             right: 0,
             bottom: 14,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                _CircleAction(
-                  icon: widget.canRewind
+                // Acción diferencial de Attra: invitar a un plan (lleva a Planes).
+                if (widget.onOpenGroups != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: ActionChip(
+                      avatar: const Icon(Icons.event_available_outlined,
+                          size: 18),
+                      label: const Text('Invitar a un plan'),
+                      onPressed: widget.onOpenGroups,
+                    ),
+                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    _CircleAction(
+                      icon: widget.canRewind
                       ? Icons.undo_rounded
                       : Icons.lock_outline_rounded,
                   size: 48,
@@ -1328,17 +1345,21 @@ class _FeedScreenState extends State<FeedScreen> {
                   size: 52,
                   gradient: const <Color>[AppColors.wine, AppColors.gold],
                   glow: AppColors.gold,
-                  tooltip: 'Enviar Attra',
+                  tooltip: social ? 'Destacar' : 'Enviar Attra',
                   onPressed: () => _onAttraProfile(profile),
                 ),
                 const SizedBox(width: 16),
                 _CircleAction(
-                  icon: Icons.favorite_rounded,
+                  icon: social
+                      ? Icons.person_add_alt_1_rounded
+                      : Icons.favorite_rounded,
                   size: 66,
                   gradient: AppColors.action,
                   glow: AppColors.attraRed,
-                  tooltip: 'Me gusta',
+                  tooltip: social ? 'Conectar' : 'Me gusta',
                   onPressed: _guardedLike,
+                ),
+                  ],
                 ),
               ],
             ),
