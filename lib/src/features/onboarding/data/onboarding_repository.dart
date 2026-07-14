@@ -455,6 +455,10 @@ class OnboardingRepository {
         'cityNormalized': currentCityNormalized,
         'languages': normalized.languages,
         'bio': _cleanText(normalized.bio),
+        // Intent-first: intención principal (dating|friends|both|groups) bajo
+        // `profile` (donde el Modo Amigos la lee/escribe). Default 'dating'.
+        'intentMode':
+            normalized.intentMode.isEmpty ? 'dating' : normalized.intentMode,
         'relationshipIntent': normalized.relationshipIntent,
         'relationshipType': normalized.relationshipType,
         'pronouns': normalized.pronouns,

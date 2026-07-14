@@ -29,6 +29,7 @@ class OnboardingDraft {
     this.bodyType = '',
     this.bio = '',
     this.relationshipIntent = '',
+    this.intentMode = '',
     this.pronouns = '',
     this.orientation = const <String>[],
     this.jobTitle = '',
@@ -100,6 +101,10 @@ class OnboardingDraft {
 
   final String bio;
   final String relationshipIntent;
+
+  /// Intención principal elegida al inicio (intent-first): dating|friends|both|
+  /// groups. Vacío = aún no se ha preguntado (muestra la pantalla de intención).
+  final String intentMode;
   final String pronouns;
   final List<String> orientation;
   final String jobTitle;
@@ -194,6 +199,7 @@ class OnboardingDraft {
       bodyType: (map['bodyType'] as String?) ?? '',
       bio: (map['bio'] as String?) ?? '',
       relationshipIntent: (map['relationshipIntent'] as String?) ?? '',
+      intentMode: (map['intentMode'] as String?) ?? '',
       pronouns: (map['pronouns'] as String?) ?? '',
       orientation: _asStringList(map['orientation']),
       jobTitle: (map['jobTitle'] as String?) ?? '',
@@ -271,6 +277,7 @@ class OnboardingDraft {
       'bodyType': bodyType,
       'bio': bio,
       'relationshipIntent': relationshipIntent,
+      'intentMode': intentMode,
       'pronouns': pronouns,
       'orientation': orientation,
       'jobTitle': jobTitle,
@@ -343,6 +350,7 @@ class OnboardingDraft {
     String? bodyType,
     String? bio,
     String? relationshipIntent,
+    String? intentMode,
     String? pronouns,
     List<String>? orientation,
     String? jobTitle,
@@ -419,6 +427,7 @@ class OnboardingDraft {
       bodyType: bodyType ?? this.bodyType,
       bio: bio ?? this.bio,
       relationshipIntent: relationshipIntent ?? this.relationshipIntent,
+      intentMode: intentMode ?? this.intentMode,
       pronouns: pronouns ?? this.pronouns,
       orientation: orientation ?? this.orientation,
       jobTitle: jobTitle ?? this.jobTitle,

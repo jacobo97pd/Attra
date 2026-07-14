@@ -452,6 +452,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
+  /// Intent-first: las preguntas románticas solo aplican en dating/ambas.
+  bool _isRomantic(OnboardingDraft draft) =>
+      draft.intentMode == 'dating' || draft.intentMode == 'both';
+
   String? _validateStep(OnboardingDraft draft, int step) {
     switch (step) {
       case 0:
@@ -501,7 +505,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         if (draft.bio.trim().length < 20) {
           return 'Escribe una bio autentica de al menos 20 caracteres.';
         }
-        if (draft.relationshipIntent.isEmpty) {
+        if (_isRomantic(draft) && draft.relationshipIntent.isEmpty) {
           return 'Selecciona tu intencion de relacion.';
         }
         return null;
@@ -523,7 +527,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         }
         return null;
       case 6:
-        if (draft.interestedIn.isEmpty) {
+        if (_isRomantic(draft) && draft.interestedIn.isEmpty) {
           return 'Selecciona en quien tienes interes.';
         }
         if (draft.preferredAgeMin < _minimumAge ||
@@ -704,6 +708,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     }
 
     final OnboardingDraft draft = _draft!;
+
+    // Intent-first: antes de todo el onboarding, preguntamos qué busca la
+    // persona. Attra no arranca por "¿quién te gusta?", sino por la intención.
+    if (draft.intentMode.isEmpty) {
+      return _buildIntentGate(theme, draft);
+    }
+
     final int step = draft.currentStep;
     final bool isLast = step == _totalSteps - 1;
 
@@ -732,6 +743,94 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               ),
               _buildFooter(theme, step, isLast),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pantalla intent-first: qué busca la persona en Attra. Se muestra ANTES del
+  /// onboarding. Las preguntas románticas solo aparecen si elige citas/ambas.
+  Widget _buildIntentGate(ThemeData theme, OnboardingDraft draft) {
+    void choose(String mode) => _updateDraft(draft.copyWith(intentMode: mode));
+    const List<({String mode, IconData icon, String title, String subtitle})>
+        options = <({
+      String mode,
+      IconData icon,
+      String title,
+      String subtitle
+    })>[
+      (
+        mode: 'friends',
+        icon: Icons.emoji_people_rounded,
+        title: 'Amistades',
+        subtitle: 'Conocer gente y hacer planes, sin rollo romántico.'
+      ),
+      (
+        mode: 'dating',
+        icon: Icons.favorite_rounded,
+        title: 'Citas',
+        subtitle: 'Conectar con alguien especial.'
+      ),
+      (
+        mode: 'both',
+        icon: Icons.auto_awesome_rounded,
+        title: 'Ambas',
+        subtitle: 'Abierto a lo que surja: amistad o citas.'
+      ),
+      (
+        mode: 'groups',
+        icon: Icons.groups_rounded,
+        title: 'Grupos y planes',
+        subtitle: 'Unirte a grupos y actividades por intereses.'
+      ),
+    ];
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: AttraGradientBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  '¿Qué quieres encontrar en Attra?',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: context.colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Puedes cambiarlo cuando quieras. Nos ayuda a mostrarte lo '
+                  'que de verdad te interesa.',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: context.colors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: options.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (BuildContext context, int i) {
+                      final ({
+                        String mode,
+                        IconData icon,
+                        String title,
+                        String subtitle
+                      }) o = options[i];
+                      return _IntentCard(
+                        icon: o.icon,
+                        title: o.title,
+                        subtitle: o.subtitle,
+                        onTap: () => choose(o.mode),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1074,22 +1173,25 @@ class _OnboardingScreenState extends State<OnboardingScreen>
               border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 12),
-          _buildSingleChoiceWrap(
-            title: 'Que buscas *',
-            options: _relationshipIntentOptions,
-            selected: draft.relationshipIntent,
-            onSelected: (String value) =>
-                _updateDraft(draft.copyWith(relationshipIntent: value)),
-          ),
-          const SizedBox(height: 12),
-          _buildSingleChoiceWrap(
-            title: 'Tipo de relación',
-            options: _relationshipTypeOptions,
-            selected: draft.relationshipType,
-            onSelected: (String value) =>
-                _updateDraft(draft.copyWith(relationshipType: value)),
-          ),
+          // Preguntas románticas: solo en modo citas/ambas (intent-first).
+          if (_isRomantic(draft)) ...<Widget>[
+            const SizedBox(height: 12),
+            _buildSingleChoiceWrap(
+              title: 'Que buscas *',
+              options: _relationshipIntentOptions,
+              selected: draft.relationshipIntent,
+              onSelected: (String value) =>
+                  _updateDraft(draft.copyWith(relationshipIntent: value)),
+            ),
+            const SizedBox(height: 12),
+            _buildSingleChoiceWrap(
+              title: 'Tipo de relación',
+              options: _relationshipTypeOptions,
+              selected: draft.relationshipType,
+              onSelected: (String value) =>
+                  _updateDraft(draft.copyWith(relationshipType: value)),
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _jobTitleController,
@@ -1259,14 +1361,18 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _buildMultiChoiceWrap(
-            title: 'Interes inicial *',
-            options: _interestedInOptions,
-            selected: draft.interestedIn,
-            onChanged: (List<String> values) =>
-                _updateDraft(draft.copyWith(interestedIn: values)),
-          ),
-          const SizedBox(height: 16),
+          // "En quién tienes interés" es una pregunta romántica: solo en
+          // citas/ambas (intent-first). En amistad/grupos no aplica.
+          if (_isRomantic(draft)) ...<Widget>[
+            _buildMultiChoiceWrap(
+              title: 'Interes inicial *',
+              options: _interestedInOptions,
+              selected: draft.interestedIn,
+              onChanged: (List<String> values) =>
+                  _updateDraft(draft.copyWith(interestedIn: values)),
+            ),
+            const SizedBox(height: 16),
+          ],
           Text('Rango de edad preferido *', style: theme.textTheme.titleSmall),
           RangeSlider(
             min: _minimumAge.toDouble(),
@@ -1641,6 +1747,67 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       return '';
     }
     return months[month - 1];
+  }
+}
+
+class _IntentCard extends StatelessWidget {
+  const _IntentCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Material(
+      color: Colors.white.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.attraRed.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: AppColors.attraRed),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: context.colors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        )),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: context.colors.textSecondary)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: context.colors.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
