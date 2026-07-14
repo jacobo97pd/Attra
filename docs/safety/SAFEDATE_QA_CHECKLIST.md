@@ -107,7 +107,17 @@ check-ins ON genera los 3 check-ins y dispara el flujo de recordatorios.
       reporta por sí sola; NO informa al match.
 - [ ] El backend NO persiste ni devuelve el texto de los mensajes.
 
-## Pendiente por fase (7)
-Integración con citas propuestas + safe places + filtro solo-verificados.
-Entrega externa a contactos (SMS/email) por definir. Integración de un modelo
-generativo (Vertex/Gemini) en el punto de integración del clasificador.
+## Safe places + filtro verificados (Fase 7 — implementado)
+- [ ] "Lugares recomendados" en el centro SafeDate (gated `safe_places`).
+- [ ] Lista lee `safePlaces` (reglas: read isSignedIn); estado vacío claro si
+      no hay datos (sembrar con tool/seed_safe_places.py).
+- [ ] Ningún lugar se etiqueta "seguro al 100%" (badgeLabel controlado).
+- [ ] Al planear cita, "Elegir de lugares recomendados" rellena lugar/dirección
+      (gated `safe_places`).
+- [ ] "Ver solo perfiles verificados" (gated `verified_only_filter`) → hoja
+      informativa que apunta al filtro nativo del feed ("Verificados").
+
+## Producción (pendiente, transversal)
+App Check + revisión legal. Entrega externa a contactos (SMS/email) por definir.
+Integración de un modelo generativo (Vertex/Gemini) en el clasificador de riesgo.
+Sembrar lugares reales/colaboradores en `safePlaces`.

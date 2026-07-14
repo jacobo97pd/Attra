@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/safedate_service.dart';
 import '../domain/safedate_flags.dart';
 import 'checkins_section.dart';
+import 'safe_places_screen.dart';
 import 'trusted_contacts_screen.dart';
 
 /// Centro de Attra SafeDate. Tono calmado, control y privacidad. Sin falsas
@@ -107,6 +108,28 @@ class SafeDateHomeScreen extends StatelessWidget {
             const SizedBox(height: 10),
           ],
 
+          if (flags.safePlacesActive) ...<Widget>[
+            _SafeDateTile(
+              icon: Icons.local_cafe_outlined,
+              title: 'Lugares recomendados',
+              subtitle: 'Sitios públicos para una primera cita cerca de ti.',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => SafePlacesScreen(service: service),
+              )),
+            ),
+            const SizedBox(height: 10),
+          ],
+
+          if (flags.verifiedOnlyFilterActive) ...<Widget>[
+            _SafeDateTile(
+              icon: Icons.verified_user_outlined,
+              title: 'Ver solo perfiles verificados',
+              subtitle: 'Actívalo en los filtros del feed (opción "Verificados").',
+              onTap: () => _showVerifiedInfo(context),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           _SafeDateTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacidad y datos',
@@ -150,6 +173,40 @@ class SafeDateHomeScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showVerifiedInfo(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) {
+        final ThemeData theme = Theme.of(ctx);
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 4,
+            bottom: MediaQuery.of(ctx).viewPadding.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('Ver solo perfiles verificados',
+                  style: theme.textTheme.titleLarge),
+              const SizedBox(height: 10),
+              Text(
+                'Puedes limitar tu feed a personas con perfil verificado desde '
+                'los filtros del feed: abre los filtros y activa "Verificados". '
+                'La verificación reduce perfiles falsos, pero no garantiza la '
+                'seguridad de una cita.',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

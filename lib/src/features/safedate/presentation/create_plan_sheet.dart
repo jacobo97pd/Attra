@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../data/safedate_service.dart';
+import '../domain/safe_place.dart';
 import '../domain/trusted_contact.dart';
+import 'safe_places_screen.dart';
 
 /// Hoja para crear un plan de cita segura desde el chat con un match. Recoge
 /// lugar, fecha/hora, duración prevista y a qué contactos avisar. El plan es
@@ -14,12 +16,14 @@ class CreatePlanSheet extends StatefulWidget {
     required this.chatId,
     required this.service,
     required this.otherName,
+    this.safePlacesEnabled = false,
   });
 
   final String uid;
   final String chatId;
   final SafeDateService service;
   final String otherName;
+  final bool safePlacesEnabled;
 
   /// Abre la hoja y devuelve `true` si se creó un plan.
   static Future<bool> show(
@@ -28,6 +32,7 @@ class CreatePlanSheet extends StatefulWidget {
     required String chatId,
     required SafeDateService service,
     required String otherName,
+    bool safePlacesEnabled = false,
   }) async {
     final bool? created = await showModalBottomSheet<bool>(
       context: context,
@@ -38,6 +43,7 @@ class CreatePlanSheet extends StatefulWidget {
         chatId: chatId,
         service: service,
         otherName: otherName,
+        safePlacesEnabled: safePlacesEnabled,
       ),
     );
     return created ?? false;
@@ -87,6 +93,19 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
       initialTime: _time ?? const TimeOfDay(hour: 20, minute: 0),
     );
     if (picked != null) setState(() => _time = picked);
+  }
+
+  Future<void> _pickSafePlace() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SafePlacesScreen(
+        service: widget.service,
+        onPick: (SafePlace p) {
+          _placeCtrl.text = p.name;
+          if (p.address.isNotEmpty) _addressCtrl.text = p.address;
+        },
+      ),
+    ));
+    if (mounted) setState(() {});
   }
 
   Future<void> _submit() async {
@@ -158,6 +177,14 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
                   ?.copyWith(color: theme.colorScheme.outline),
             ),
             const SizedBox(height: 16),
+            if (widget.safePlacesEnabled) ...<Widget>[
+              OutlinedButton.icon(
+                onPressed: _pickSafePlace,
+                icon: const Icon(Icons.local_cafe_outlined, size: 18),
+                label: const Text('Elegir de lugares recomendados'),
+              ),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: _placeCtrl,
               textCapitalization: TextCapitalization.sentences,

@@ -33,6 +33,7 @@ class ChatsScreen extends StatelessWidget {
     this.safeDateService,
     this.safeDatePlanEnabled = false,
     this.safeDateAiRiskEnabled = false,
+    this.safeDateSafePlacesEnabled = false,
     required this.matchService,
     required this.summaries,
     this.storyService,
@@ -87,6 +88,7 @@ class ChatsScreen extends StatelessWidget {
   final SafeDateService? safeDateService;
   final bool safeDatePlanEnabled;
   final bool safeDateAiRiskEnabled;
+  final bool safeDateSafePlacesEnabled;
 
   final MatchService matchService;
   final ProfileSummaryRepository summaries;
@@ -144,6 +146,7 @@ class ChatsScreen extends StatelessWidget {
         safeDateService: safeDateService,
         safeDatePlanEnabled: safeDatePlanEnabled,
         safeDateAiRiskEnabled: safeDateAiRiskEnabled,
+        safeDateSafePlacesEnabled: safeDateSafePlacesEnabled,
         matchService: matchService,
         loadProfile: loadProfile,
         sparkService: sparkService,

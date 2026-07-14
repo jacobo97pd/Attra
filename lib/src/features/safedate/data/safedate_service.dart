@@ -4,6 +4,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../domain/conversation_risk.dart';
 import '../domain/safe_date_checkin.dart';
 import '../domain/safe_date_plan.dart';
+import '../domain/safe_place.dart';
 import '../domain/trusted_contact.dart';
 
 class SafeDateException implements Exception {
@@ -210,6 +211,22 @@ class SafeDateService {
         'wantsToReport': wantsToReport,
         'concernCategories': concernCategories,
       });
+
+  // ── Lugares recomendados (Fase 7) ────────────────────────────────────────
+
+  /// Lugares públicos recomendados (`safePlaces`). Lectura pública (reglas:
+  /// isSignedIn). Nunca se etiqueta un lugar como "seguro al 100%".
+  Stream<List<SafePlace>> observeSafePlaces() {
+    return _firestore
+        .collection('safePlaces')
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
+            .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                SafePlace.fromMap(d.id, d.data()))
+            .toList(growable: false)
+          ..sort((SafePlace a, SafePlace b) =>
+              a.name.toLowerCase().compareTo(b.name.toLowerCase())));
+  }
 
   // ── IA preventiva de riesgos (Fase 6) ────────────────────────────────────
 

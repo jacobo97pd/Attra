@@ -83,6 +83,7 @@ class ChatDetailScreen extends StatefulWidget {
     this.safeDateService,
     this.safeDatePlanEnabled = false,
     this.safeDateAiRiskEnabled = false,
+    this.safeDateSafePlacesEnabled = false,
   });
 
   final String chatId;
@@ -139,6 +140,9 @@ class ChatDetailScreen extends StatefulWidget {
   /// Attra SafeDate Fase 6: "Revisar seguridad" en el menú del chat. Opt-in por
   /// flag (`feature_safedate_ai_risk_detection_enabled`) + servicio.
   final bool safeDateAiRiskEnabled;
+
+  /// Attra SafeDate Fase 7: permite elegir un lugar recomendado al planear.
+  final bool safeDateSafePlacesEnabled;
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -1048,6 +1052,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       chatId: widget.chatId,
       service: service,
       otherName: widget.other.displayName,
+      safePlacesEnabled: widget.safeDateSafePlacesEnabled,
     );
     if (created && mounted) {
       _snack('Plan de cita segura creado. Lo verás en SafeDate.');
