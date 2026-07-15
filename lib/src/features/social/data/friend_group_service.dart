@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../domain/friend_group.dart';
+import '../domain/group_message.dart';
 
 class FriendGroupException implements Exception {
   const FriendGroupException(this.message, {this.code});
@@ -72,6 +73,43 @@ class FriendGroupService {
     return _groups.doc(groupId).snapshots().map(
         (DocumentSnapshot<Map<String, dynamic>> d) =>
             d.exists ? FriendGroup.fromMap(d.id, d.data()!) : null);
+  }
+
+  // --- Chat de grupo ---
+
+  /// Mensajes del chat de un grupo, más recientes al final. Reglas: solo
+  /// miembros leen. Se limita a los últimos 100 para no crecer sin control.
+  Stream<List<GroupMessage>> observeGroupMessages(String groupId) {
+    return _groups
+        .doc(groupId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
+            .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                GroupMessage.fromMap(d.id, d.data()))
+            .toList(growable: false)
+            .reversed
+            .toList(growable: false));
+  }
+
+  /// Envía un mensaje al chat del grupo. Escritura directa (reglas: solo un
+  /// miembro puede crear su propio mensaje). El nombre se denormaliza.
+  Future<void> sendGroupMessage(
+    String groupId, {
+    required String senderId,
+    required String senderName,
+    required String text,
+  }) async {
+    final String clean = text.trim();
+    if (clean.isEmpty) return;
+    await _groups.doc(groupId).collection('messages').add(<String, dynamic>{
+      'senderId': senderId,
+      'senderName': senderName,
+      'text': clean.length > 2000 ? clean.substring(0, 2000) : clean,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Grupos donde el usuario es MIEMBRO.

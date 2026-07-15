@@ -640,6 +640,7 @@ class _HomeShellState extends State<HomeShell> {
             groupService: widget.friendGroupService!,
             discoveryService: widget.socialDiscoveryService!,
             summaries: widget.profileSummaryRepository,
+            currentUserName: widget.user?.displayName ?? '',
             city: widget.user?.city ?? '',
             myInterests: widget.user?.socialInterests ?? const <String>[],
           )
@@ -769,6 +770,7 @@ class _HomeShellState extends State<HomeShell> {
         groupService: gs,
         discoveryService: ds,
         summaries: widget.profileSummaryRepository,
+        currentUserName: widget.user?.displayName ?? '',
         city: widget.user?.city ?? '',
         myInterests: widget.user?.socialInterests ?? const <String>[],
       ),

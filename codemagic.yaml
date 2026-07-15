@@ -75,25 +75,42 @@ workflows:
         script: |
           APP_VERSION_FULL="$(grep '^version:' pubspec.yaml | sed 's/version: //')"
           APP_VERSION="${APP_VERSION_FULL%%+*}"
-          APP_BUILD_NUMBER="${APP_VERSION_FULL#*+}"
-          if [ "$APP_BUILD_NUMBER" = "$APP_VERSION_FULL" ]; then
-            APP_BUILD_NUMBER=1
-          fi
-          CM_BUILD_NUMBER="${PROJECT_BUILD_NUMBER:-0}"
-          case "$CM_BUILD_NUMBER" in
-            ''|*[!0-9]*) CM_BUILD_NUMBER=0 ;;
+          case "${PROJECT_BUILD_NUMBER:-}" in
+            ''|*[!0-9]*)
+              echo "PROJECT_BUILD_NUMBER must be a positive integer." >&2
+              exit 1
+              ;;
           esac
-          case "$APP_BUILD_NUMBER" in
-            ''|*[!0-9]*) APP_BUILD_NUMBER=1 ;;
-          esac
-          if [ "$CM_BUILD_NUMBER" -gt "$APP_BUILD_NUMBER" ]; then
-            APP_BUILD_NUMBER="$CM_BUILD_NUMBER"
+          if [ "$PROJECT_BUILD_NUMBER" -le 19 ]; then
+            echo "PROJECT_BUILD_NUMBER must be greater than 19." >&2
+            exit 1
           fi
-          echo "Building iOS version $APP_VERSION ($APP_BUILD_NUMBER)"
+          echo "Building iOS version $APP_VERSION ($PROJECT_BUILD_NUMBER)"
           flutter build ipa --release \
             --build-name=$APP_VERSION \
-            --build-number=$APP_BUILD_NUMBER \
+            --build-number=$PROJECT_BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist
+          IPA_PATH="$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)"
+          if [ -z "$IPA_PATH" ]; then
+            echo "No IPA was generated." >&2
+            exit 1
+          fi
+          IPA_CONTENTS="$(mktemp -d)"
+          trap 'rm -rf "$IPA_CONTENTS"' EXIT
+          unzip -q "$IPA_PATH" -d "$IPA_CONTENTS"
+          APP_PLIST="$(find "$IPA_CONTENTS/Payload" -maxdepth 2 -name Info.plist -print -quit)"
+          CF_BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PLIST")"
+          case "$CF_BUNDLE_VERSION" in
+            ''|*[!0-9]*)
+              echo "Generated IPA has an invalid CFBundleVersion: $CF_BUNDLE_VERSION" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$CF_BUNDLE_VERSION" -le 19 ]; then
+            echo "Generated IPA CFBundleVersion must be greater than 19; got $CF_BUNDLE_VERSION." >&2
+            exit 1
+          fi
+          echo "Verified generated IPA CFBundleVersion: $CF_BUNDLE_VERSION"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

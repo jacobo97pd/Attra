@@ -4,6 +4,7 @@ import '../../../theme/app_colors.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/data/social_discovery_service.dart';
 import '../../social/domain/friend_group.dart';
+import '../../social/presentation/group_chat_screen.dart';
 
 /// Pantalla de Inicio "plan-first" (rediseño premium): planes, grupos y gente
 /// como primera impresión, no un swipe. Todo lo demás sigue en sus pestañas.
@@ -115,9 +116,9 @@ class HomeLandingScreen extends StatelessWidget {
                 if (groupService != null)
                   _NextPlanSection(
                     uid: uid,
+                    userName: name,
                     service: groupService!,
                     onOpenGroup: onOpenGroup,
-                    onGoToChats: onGoToChats,
                     onGoToPlans: onGoToPlans,
                   ),
 
@@ -280,17 +281,29 @@ class _SectionLabel extends StatelessWidget {
 class _NextPlanSection extends StatelessWidget {
   const _NextPlanSection({
     required this.uid,
+    required this.userName,
     required this.service,
     required this.onOpenGroup,
-    required this.onGoToChats,
     required this.onGoToPlans,
   });
 
   final String uid;
+  final String userName;
   final FriendGroupService service;
   final void Function(FriendGroup group)? onOpenGroup;
-  final VoidCallback onGoToChats;
   final VoidCallback onGoToPlans;
+
+  void _openChat(BuildContext context, FriendGroup g) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => GroupChatScreen(
+        groupId: g.id,
+        groupName: g.name,
+        currentUid: uid,
+        currentUserName: userName,
+        service: service,
+      ),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -315,7 +328,7 @@ class _NextPlanSection extends StatelessWidget {
               _NextPlanCard(
                 group: groups.first,
                 onView: () => onOpenGroup?.call(groups.first),
-                onChat: onGoToChats,
+                onChat: () => _openChat(context, groups.first),
               ),
             const SizedBox(height: 26),
           ],

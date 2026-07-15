@@ -403,6 +403,23 @@ service cloud.firestore {
     match /friendGroups/{groupId} {
       allow read: if isSignedIn();
       allow write: if false;
+
+      // Chat del grupo: SOLO miembros leen y crean sus propios mensajes.
+      // Editar/borrar no está permitido (moderación futura vía backend).
+      function groupMembers() {
+        return get(/databases/$(database)/documents/friendGroups/$(groupId))
+            .data.get('memberIds', []);
+      }
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && request.auth.uid in groupMembers();
+        allow create: if isSignedIn()
+            && request.auth.uid in groupMembers()
+            && request.resource.data.senderId == request.auth.uid
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000;
+        allow update, delete: if false;
+      }
     }
 
     // ── Attra SafeDate ──────────────────────────────────────────────────────

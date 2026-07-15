@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../profile/data/profile_summary_repository.dart';
+import 'group_chat_screen.dart';
 import '../../profile/domain/profile_summary.dart';
 import '../data/friend_group_service.dart';
 import '../data/social_discovery_service.dart';
@@ -17,6 +18,7 @@ class GroupsScreen extends StatefulWidget {
     required this.groupService,
     required this.discoveryService,
     required this.summaries,
+    this.currentUserName = '',
     this.city = '',
     this.myInterests = const <String>[],
   });
@@ -25,6 +27,7 @@ class GroupsScreen extends StatefulWidget {
   final FriendGroupService groupService;
   final SocialDiscoveryService discoveryService;
   final ProfileSummaryRepository summaries;
+  final String currentUserName;
   final String city;
   final List<String> myInterests;
 
@@ -83,6 +86,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
       builder: (_) => _GroupDetailSheet(
         group: g,
         uid: widget.uid,
+        userName: widget.currentUserName,
         service: widget.groupService,
         summaries: widget.summaries,
       ),
@@ -721,12 +725,14 @@ class _GroupDetailSheet extends StatefulWidget {
   const _GroupDetailSheet({
     required this.group,
     required this.uid,
+    required this.userName,
     required this.service,
     required this.summaries,
   });
 
   final FriendGroup group;
   final String uid;
+  final String userName;
   final FriendGroupService service;
   final ProfileSummaryRepository summaries;
 
@@ -865,6 +871,27 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                                   ?.copyWith(color: theme.colorScheme.outline))
                           : null),
                 ),
+              // Chat del grupo: disponible para miembros.
+              if (member) ...<Widget>[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () =>
+                        Navigator.of(context).push(MaterialPageRoute<void>(
+                      builder: (_) => GroupChatScreen(
+                        groupId: g.id,
+                        groupName: g.name,
+                        currentUid: widget.uid,
+                        currentUserName: widget.userName,
+                        service: widget.service,
+                      ),
+                    )),
+                    icon: const Icon(Icons.forum_outlined),
+                    label: const Text('Abrir chat'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               // Acción principal según mi relación con el grupo.
               if (admin)
