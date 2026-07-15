@@ -514,6 +514,8 @@ class _HomeShellState extends State<HomeShell> {
               safeDatePlanEnabled: _safeDateFlags.datePlanActive,
               safeDateAiRiskEnabled: _safeDateFlags.aiRiskActive,
               safeDateSafePlacesEnabled: _safeDateFlags.safePlacesActive,
+              friendGroupService: widget.friendGroupService,
+              currentUserName: widget.user?.displayName ?? '',
               matchService: widget.matchService,
               summaries: widget.profileSummaryRepository,
               storyService: widget.storyService,

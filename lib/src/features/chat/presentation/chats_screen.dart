@@ -16,6 +16,9 @@ import '../../anti_ghosting/domain/conversation_turn.dart';
 import '../../anti_ghosting/presentation/your_turn_badge.dart';
 import '../../date_plans/data/date_plan_service.dart';
 import '../../safedate/data/safedate_service.dart';
+import '../../social/data/friend_group_service.dart';
+import '../../social/domain/friend_group.dart';
+import '../../social/presentation/group_chat_screen.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
@@ -34,6 +37,8 @@ class ChatsScreen extends StatelessWidget {
     this.safeDatePlanEnabled = false,
     this.safeDateAiRiskEnabled = false,
     this.safeDateSafePlacesEnabled = false,
+    this.friendGroupService,
+    this.currentUserName = '',
     required this.matchService,
     required this.summaries,
     this.storyService,
@@ -89,6 +94,10 @@ class ChatsScreen extends StatelessWidget {
   final bool safeDatePlanEnabled;
   final bool safeDateAiRiskEnabled;
   final bool safeDateSafePlacesEnabled;
+
+  /// Modo Amigos: chats de grupo en un apartado "Planes y grupos".
+  final FriendGroupService? friendGroupService;
+  final String currentUserName;
 
   final MatchService matchService;
   final ProfileSummaryRepository summaries;
@@ -179,6 +188,20 @@ class ChatsScreen extends StatelessWidget {
           for (final Story s in storySnap.data ?? const <Story>[])
             s.ownerUid: s,
         };
+        // "Planes y grupos": chats de grupo arriba (si hay). Se rinde solo si no
+        // hay grupos. El resto de la pantalla (matches/conversaciones) va debajo.
+        if (friendGroupService != null && currentUid.isNotEmpty) {
+          return Column(
+            children: <Widget>[
+              _GroupsChatSection(
+                uid: currentUid,
+                userName: currentUserName,
+                service: friendGroupService!,
+              ),
+              Expanded(child: _buildList(context, storyByOwner)),
+            ],
+          );
+        }
         return _buildList(context, storyByOwner);
       },
     );
@@ -296,6 +319,84 @@ class _SectionTitle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
       child: Text(text, style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+}
+
+/// Apartado "Planes y grupos": lista los grupos del usuario; cada uno abre su
+/// chat de grupo. Se rinde vacío (nada) si el usuario no está en ningún grupo.
+class _GroupsChatSection extends StatelessWidget {
+  const _GroupsChatSection({
+    required this.uid,
+    required this.userName,
+    required this.service,
+  });
+
+  final String uid;
+  final String userName;
+  final FriendGroupService service;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return StreamBuilder<List<FriendGroup>>(
+      stream: service.observeMyGroups(uid),
+      builder: (BuildContext context, AsyncSnapshot<List<FriendGroup>> snap) {
+        final List<FriendGroup> groups = snap.data ?? const <FriendGroup>[];
+        if (groups.isEmpty) return const SizedBox.shrink();
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const _SectionTitle('Planes y grupos'),
+            // Acotado: si hay muchos grupos, la lista tiene su propio scroll y no
+            // empuja las conversaciones fuera de la pantalla.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 244),
+              child: ListView.builder(
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                padding: EdgeInsets.zero,
+                itemCount: groups.length,
+                itemBuilder: (BuildContext context, int i) {
+                  final FriendGroup g = groups[i];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor:
+                          theme.colorScheme.primary.withValues(alpha: 0.15),
+                      child: Icon(Icons.groups_rounded,
+                          color: theme.colorScheme.primary),
+                    ),
+                    title: Text(g.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      <String>[
+                        if (g.city.isNotEmpty) g.city,
+                        '${g.memberCount} miembros',
+                      ].join('  ·  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => GroupChatScreen(
+                          groupId: g.id,
+                          groupName: g.name,
+                          currentUid: uid,
+                          currentUserName: userName,
+                          service: service,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 16),
+          ],
+        );
+      },
     );
   }
 }
