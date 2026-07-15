@@ -195,3 +195,38 @@ export const closeFriendGroup = onCall({ region: REGION }, async (request) => {
   await ref.update({ status: "closed", updatedAt: FieldValue.serverTimestamp() });
   return { ok: true };
 });
+
+/// setFriendGroupPhoto: fija (o quita) la foto de perfil del grupo. SOLO el
+/// creador. La imagen se sube antes a Storage (owner-write); aquí se valida la
+/// propiedad y se guarda la URL en el doc del grupo.
+export const setFriendGroupPhoto = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  const groupId = requireStringArg(request.data?.groupId, "groupId");
+  const photoUrl =
+    typeof request.data?.photoUrl === "string"
+      ? request.data.photoUrl.trim().slice(0, 1000)
+      : "";
+  const photoStoragePath =
+    typeof request.data?.photoStoragePath === "string"
+      ? request.data.photoStoragePath.slice(0, 500)
+      : "";
+  // Acepta URLs de Firebase Storage o vacío (para quitar la foto).
+  if (photoUrl && !/^https:\/\//.test(photoUrl)) {
+    throw new HttpsError("invalid-argument", "URL de foto no válida.");
+  }
+  const ref = groups.doc(groupId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "El grupo no existe.");
+  if (snap.data()?.createdBy !== uid) {
+    throw new HttpsError(
+      "permission-denied",
+      "Solo el creador puede cambiar la foto."
+    );
+  }
+  await ref.update({
+    photoUrl,
+    photoStoragePath,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+});

@@ -79,6 +79,7 @@ export {
   respondJoinRequest,
   leaveFriendGroup,
   closeFriendGroup,
+  setFriendGroupPhoto,
 } from "./friendGroups";
 export {
   saveTrustedContact,

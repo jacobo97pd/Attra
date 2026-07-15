@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_colors.dart';
 import '../data/friend_group_service.dart';
 import '../domain/group_message.dart';
+import 'group_avatar.dart';
 
 /// Chat de un grupo (Modo Amigos). Solo los miembros pueden leer y escribir
 /// (validado por reglas). Mensajes propios a la derecha, ajenos a la izquierda
@@ -15,6 +16,7 @@ class GroupChatScreen extends StatefulWidget {
     required this.currentUid,
     required this.currentUserName,
     required this.service,
+    this.groupPhotoUrl = '',
   });
 
   final String groupId;
@@ -22,6 +24,7 @@ class GroupChatScreen extends StatefulWidget {
   final String currentUid;
   final String currentUserName;
   final FriendGroupService service;
+  final String groupPhotoUrl;
 
   @override
   State<GroupChatScreen> createState() => _GroupChatScreenState();
@@ -68,8 +71,18 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       backgroundColor: AppColors.black,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
-        title: Text(widget.groupName,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+        titleSpacing: 0,
+        title: Row(
+          children: <Widget>[
+            GroupAvatar(
+                photoUrl: widget.groupPhotoUrl, size: 36, circle: true),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(widget.groupName,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: <Widget>[

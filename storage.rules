@@ -58,6 +58,14 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024;
     }
 
+    // Foto de perfil de grupo (Modo Amigos). El usuario sube bajo su propio uid;
+    // la Cloud Function setFriendGroupPhoto valida que es el creador del grupo
+    // (Storage Rules no pueden leer la base nombrada). Lectura: cualquier sesion.
+    match /groups/{groupId}/photo/{uid}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid) && isImageUpload();
+    }
+
     // Fotos bomba: el cliente solo sube. Nadie lee directamente desde reglas;
     // la Cloud Function openBombImage devuelve una URL temporal una sola vez.
     match /chats/{chatId}/bombs/{uid}/{fileName} {

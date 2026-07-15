@@ -156,6 +156,7 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
       friendGroupService: FriendGroupService(
         firestore: firestore,
         functions: functions,
+        storage: FirebaseStorage.instance,
       ),
       socialDiscoveryService: SocialDiscoveryService(firestore: firestore),
       profileSummaryRepository: ProfileSummaryRepository(firestore: firestore),

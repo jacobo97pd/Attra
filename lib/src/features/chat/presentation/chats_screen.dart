@@ -18,6 +18,7 @@ import '../../date_plans/data/date_plan_service.dart';
 import '../../safedate/data/safedate_service.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/domain/friend_group.dart';
+import '../../social/presentation/group_avatar.dart';
 import '../../social/presentation/group_chat_screen.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
@@ -338,7 +339,6 @@ class _GroupsChatSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return StreamBuilder<List<FriendGroup>>(
       stream: service.observeMyGroups(uid),
       builder: (BuildContext context, AsyncSnapshot<List<FriendGroup>> snap) {
@@ -361,12 +361,8 @@ class _GroupsChatSection extends StatelessWidget {
                 itemBuilder: (BuildContext context, int i) {
                   final FriendGroup g = groups[i];
                   return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor:
-                          theme.colorScheme.primary.withValues(alpha: 0.15),
-                      child: Icon(Icons.groups_rounded,
-                          color: theme.colorScheme.primary),
-                    ),
+                    leading: GroupAvatar(
+                        photoUrl: g.photoUrl, size: 44, circle: true),
                     title: Text(g.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
@@ -383,6 +379,7 @@ class _GroupsChatSection extends StatelessWidget {
                         builder: (_) => GroupChatScreen(
                           groupId: g.id,
                           groupName: g.name,
+                          groupPhotoUrl: g.photoUrl,
                           currentUid: uid,
                           currentUserName: userName,
                           service: service,

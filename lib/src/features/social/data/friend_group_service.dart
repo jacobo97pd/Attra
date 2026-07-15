@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import '../domain/friend_group.dart';
 import '../domain/group_message.dart';
@@ -18,11 +21,14 @@ class FriendGroupService {
   FriendGroupService({
     required FirebaseFirestore firestore,
     required FirebaseFunctions functions,
+    required FirebaseStorage storage,
   })  : _firestore = firestore,
-        _functions = functions;
+        _functions = functions,
+        _storage = storage;
 
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
+  final FirebaseStorage _storage;
 
   CollectionReference<Map<String, dynamic>> get _groups =>
       _firestore.collection('friendGroups');
@@ -66,6 +72,36 @@ class FriendGroupService {
 
   Future<void> closeGroup(String groupId) =>
       _call('closeFriendGroup', <String, dynamic>{'groupId': groupId});
+
+  /// Sube la foto elegida por el creador a Storage y la fija en el grupo (vía
+  /// Cloud Function que valida que es el creador). Devuelve la URL pública.
+  Future<String> updateGroupPhoto(
+    String groupId, {
+    required String uid,
+    required Uint8List bytes,
+    String contentType = 'image/jpeg',
+  }) async {
+    final String ext = contentType.endsWith('png') ? 'png' : 'jpg';
+    final String path =
+        'groups/$groupId/photo/$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final Reference ref = _storage.ref().child(path);
+    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    final String url = await ref.getDownloadURL();
+    await _call('setFriendGroupPhoto', <String, dynamic>{
+      'groupId': groupId,
+      'photoUrl': url,
+      'photoStoragePath': path,
+    });
+    return url;
+  }
+
+  /// Quita la foto del grupo (solo el creador).
+  Future<void> removeGroupPhoto(String groupId) =>
+      _call('setFriendGroupPhoto', <String, dynamic>{
+        'groupId': groupId,
+        'photoUrl': '',
+        'photoStoragePath': '',
+      });
 
   // --- Lecturas ---
 

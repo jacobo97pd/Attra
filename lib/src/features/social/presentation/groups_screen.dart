@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'dart:typed_data';
+
+import 'package:image_picker/image_picker.dart';
+
 import '../../../theme/app_colors.dart';
 import '../../profile/data/profile_summary_repository.dart';
+import 'group_avatar.dart';
 import 'group_chat_screen.dart';
 import '../../profile/domain/profile_summary.dart';
 import '../data/friend_group_service.dart';
@@ -273,23 +278,6 @@ IconData groupCategoryIcon(FriendGroup g) {
   return Icons.groups_rounded;
 }
 
-class _CategoryIconSquare extends StatelessWidget {
-  const _CategoryIconSquare({required this.icon});
-  final IconData icon;
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: AppColors.attraRed.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Icon(icon, color: AppColors.attraRed, size: 24),
-    );
-  }
-}
-
 /// Botón redondo "+" con glow y destellos (esquina superior de la cabecera).
 class _RoundAddButton extends StatelessWidget {
   const _RoundAddButton({required this.onTap});
@@ -469,7 +457,7 @@ class _MyGroupTile extends StatelessWidget {
             ),
             child: Row(
               children: <Widget>[
-                const _CategoryIconSquare(icon: Icons.groups_rounded),
+                GroupAvatar(photoUrl: group.photoUrl),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -534,7 +522,9 @@ class _RecommendedTile extends StatelessWidget {
             ),
             child: Row(
               children: <Widget>[
-                _CategoryIconSquare(icon: groupCategoryIcon(group)),
+                GroupAvatar(
+                    photoUrl: group.photoUrl,
+                    fallbackIcon: groupCategoryIcon(group)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -742,6 +732,47 @@ class _GroupDetailSheet extends StatefulWidget {
 
 class _GroupDetailSheetState extends State<_GroupDetailSheet> {
   bool _busy = false;
+  bool _uploadingPhoto = false;
+  final ImagePicker _picker = ImagePicker();
+
+  Future<void> _pickPhoto(FriendGroup g) async {
+    if (_uploadingPhoto) return;
+    final XFile? file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    setState(() => _uploadingPhoto = true);
+    try {
+      final Uint8List bytes = await file.readAsBytes();
+      final String ct = file.name.toLowerCase().endsWith('.png')
+          ? 'image/png'
+          : 'image/jpeg';
+      await widget.service.updateGroupPhoto(
+        g.id,
+        uid: widget.uid,
+        bytes: bytes,
+        contentType: ct,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Foto del grupo actualizada')));
+      }
+    } on FriendGroupException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo subir la foto.')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
 
   Future<void> _run(Future<void> Function() action, String okMsg) async {
     if (_busy) return;
@@ -786,16 +817,90 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(g.name, style: theme.textTheme.titleLarge),
-              const SizedBox(height: 4),
-              Text(
-                <String>[
-                  if (g.city.isNotEmpty) g.city,
-                  '${g.memberCount}/${g.maxMembers} miembros',
-                  g.status.wireName,
-                ].join('  ·  '),
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // Avatar del grupo (editable si soy el creador).
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      GroupAvatar(
+                        photoUrl: g.photoUrl,
+                        size: 60,
+                        circle: true,
+                      ),
+                      if (_uploadingPhoto)
+                        const Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0x99000000),
+                            ),
+                            child: Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (admin && !_uploadingPhoto)
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: GestureDetector(
+                            onTap: () => _pickPhoto(g),
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: AppColors.attraRed,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: theme.scaffoldBackgroundColor,
+                                    width: 2),
+                              ),
+                              child: const Icon(Icons.camera_alt_rounded,
+                                  size: 14, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(g.name, style: theme.textTheme.titleLarge),
+                        const SizedBox(height: 4),
+                        Text(
+                          <String>[
+                            if (g.city.isNotEmpty) g.city,
+                            '${g.memberCount}/${g.maxMembers} miembros',
+                            g.status.wireName,
+                          ].join('  ·  '),
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.colorScheme.outline),
+                        ),
+                        if (admin) ...<Widget>[
+                          const SizedBox(height: 6),
+                          GestureDetector(
+                            onTap:
+                                _uploadingPhoto ? null : () => _pickPhoto(g),
+                            child: Text(
+                                g.hasPhoto ? 'Cambiar foto' : 'Añadir foto',
+                                style: TextStyle(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
               if (g.description.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 10),
@@ -882,6 +987,7 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                       builder: (_) => GroupChatScreen(
                         groupId: g.id,
                         groupName: g.name,
+                        groupPhotoUrl: g.photoUrl,
                         currentUid: widget.uid,
                         currentUserName: widget.userName,
                         service: widget.service,

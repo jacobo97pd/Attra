@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../../../theme/app_colors.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/data/social_discovery_service.dart';
 import '../../social/domain/friend_group.dart';
+import '../../social/presentation/group_avatar.dart';
 import '../../social/presentation/group_chat_screen.dart';
 
 /// Pantalla de Inicio "plan-first" (rediseño premium): planes, grupos y gente
@@ -298,6 +301,7 @@ class _NextPlanSection extends StatelessWidget {
       builder: (_) => GroupChatScreen(
         groupId: g.id,
         groupName: g.name,
+        groupPhotoUrl: g.photoUrl,
         currentUid: uid,
         currentUserName: userName,
         service: service,
@@ -361,7 +365,9 @@ class _NextPlanCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const _IconSquare(icon: Icons.event_note_rounded),
+              GroupAvatar(
+                  photoUrl: group.photoUrl,
+                  fallbackIcon: Icons.event_note_rounded),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -691,13 +697,23 @@ class _PlanImageCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Positioned(
-                      right: -6,
-                      bottom: -8,
-                      child: Icon(_iconForGroup(group),
-                          size: 96,
-                          color: Colors.white.withValues(alpha: 0.14)),
-                    ),
+                    // Foto del grupo si existe; si no, el icono grande de fondo.
+                    if (group.hasPhoto)
+                      Positioned.fill(
+                        child: CachedNetworkImage(
+                          imageUrl: group.photoUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      )
+                    else
+                      Positioned(
+                        right: -6,
+                        bottom: -8,
+                        child: Icon(_iconForGroup(group),
+                            size: 96,
+                            color: Colors.white.withValues(alpha: 0.14)),
+                      ),
                     Positioned(
                       left: 10,
                       top: 10,
