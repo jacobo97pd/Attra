@@ -26,6 +26,7 @@ class AppUser {
     this.countryName = '',
     this.maxDistanceKm,
     this.slowDatingEnabled = false,
+    this.tutorialCompleted = false,
     this.screenshotProtectionEnabled = false,
     this.analyticsConsent = true,
     this.aiPersonalization = true,
@@ -77,6 +78,10 @@ class AppUser {
   /// perfiles pero más afines (ranking/visibilidad), priorizando conexiones
   /// intencionales. Opt-in desde Ajustes (`settings['privacy.slowDating']`).
   final bool slowDatingEnabled;
+
+  /// Tutorial de bienvenida completado (`settings['tutorial.completed']`). Los
+  /// nuevos usuarios lo ven obligatoriamente hasta terminarlo.
+  final bool tutorialCompleted;
 
   /// Protección anti-captura global (`settings['security.screenshotProtection']`).
   final bool screenshotProtectionEnabled;
@@ -209,6 +214,7 @@ class AppUser {
           '',
       maxDistanceKm: _asIntOrNull(preferences['maxDistanceKm']),
       slowDatingEnabled: _asBool(settings['privacy.slowDating']),
+      tutorialCompleted: _asBool(settings['tutorial.completed']),
       screenshotProtectionEnabled:
           _asBool(settings['security.screenshotProtection']),
       analyticsConsent: settings['data.analyticsConsent'] != false,

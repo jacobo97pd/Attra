@@ -114,6 +114,7 @@ class HomeShell extends StatefulWidget {
     this.user,
     this.errorMessage,
     this.showTutorial = false,
+    this.onCompleteTutorial,
   });
 
   final AppUser? user;
@@ -123,6 +124,9 @@ class HomeShell extends StatefulWidget {
   /// tutorial de bienvenida una sola vez. Los usuarios existentes lo reciben en
   /// false (y pueden reverlo desde Ajustes).
   final bool showTutorial;
+
+  /// Persiste que el tutorial (obligatorio) se completó, para no repetirlo.
+  final VoidCallback? onCompleteTutorial;
   final VoidCallback onLogout;
   final Future<ProfileCompletionState> Function() onLoadProfileState;
   final Future<void> Function({
@@ -231,6 +235,27 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
   int _feedReloadToken = 0;
+
+  /// Paso actual del tour guiado (-1 = inactivo). Cada paso resalta una pestaña.
+  int _tourStep = -1;
+
+  static const List<_TourStep> _tourSteps = <_TourStep>[
+    _TourStep(0, Icons.home_rounded, 'Inicio',
+        'Tu punto de partida: planes cerca, tus grupos y personas afines. '
+        'Empieza por lo que te apetece hacer.'),
+    _TourStep(1, Icons.explore_rounded, 'Planes',
+        'Explora, únete o crea planes y grupos por ciudad e intereses. '
+        'Pon una foto al grupo y quedad en la vida real.'),
+    _TourStep(2, Icons.people_rounded, 'Personas',
+        'Conoce gente compatible. En citas puedes dar like; en amistad, '
+        'conectar. Y siempre puedes "Invitar a un plan".'),
+    _TourStep(3, Icons.forum_rounded, 'Chats',
+        'Tus conversaciones y los chats de tus grupos, todo en un sitio. '
+        'Propón un plan directamente desde el chat.'),
+    _TourStep(4, Icons.person_rounded, 'Perfil',
+        'Completa tu perfil, elige qué buscas (citas, amistad, ambas o '
+        'grupos) y gestiona tu seguridad y privacidad.'),
+  ];
   SettingsController? _settingsController;
   EntitlementController? _entitlementController;
   PendingConversationsController? _pendingController;
@@ -252,12 +277,37 @@ class _HomeShellState extends State<HomeShell> {
     // app cerrada) y escucha futuros taps (background).
     NotificationRouter.instance.pendingRoute.addListener(_onPushRoute);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onPushRoute());
-    // Tutorial de bienvenida: solo para usuarios recién registrados, una vez.
+    // Tutorial de bienvenida OBLIGATORIO para nuevos usuarios: carrusel a
+    // pantalla completa (no se puede saltar) + tour guiado por las pestañas.
     if (widget.showTutorial) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) TutorialScreen.show(context);
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _runIntroFlow());
     }
+  }
+
+  /// Slideshow no-saltable → tour guiado por las pestañas → persiste completado.
+  Future<void> _runIntroFlow() async {
+    if (!mounted) return;
+    await TutorialScreen.show(context);
+    if (!mounted) return;
+    setState(() {
+      _tab = 0;
+      _tourStep = 0;
+    });
+  }
+
+  /// Avanza el tour guiado: cambia a la pestaña del paso y, al terminar, cierra
+  /// el tour y persiste que el tutorial se completó (no se repite).
+  void _tourNext() {
+    if (_tourStep < 0) return;
+    if (_tourStep >= _tourSteps.length - 1) {
+      setState(() => _tourStep = -1);
+      widget.onCompleteTutorial?.call();
+      return;
+    }
+    setState(() {
+      _tourStep++;
+      _tab = _tourSteps[_tourStep].tabIndex;
+    });
   }
 
   void _onPushRoute() {
@@ -350,12 +400,16 @@ class _HomeShellState extends State<HomeShell> {
     const int discoverIndex = validation ? 2 : 0;
     const int playIndex = 1;
     const int chatsIndex = validation ? 3 : 2;
-    void goTo(int index) => setState(() {
-          if (index == discoverIndex && _tab != discoverIndex) {
-            _feedReloadToken++;
-          }
-          _tab = index;
-        });
+    void goTo(int index) {
+      // Durante el tour guiado, la navegación la controla el tour (obligatorio).
+      if (_tourStep >= 0) return;
+      setState(() {
+        if (index == discoverIndex && _tab != discoverIndex) {
+          _feedReloadToken++;
+        }
+        _tab = index;
+      });
+    }
     final int attrasBalance = _entitlementController?.attrasBalance ?? 0;
 
     final bool isPro = _entitlementController?.isProActive ?? false;
@@ -695,7 +749,20 @@ class _HomeShellState extends State<HomeShell> {
           ];
 
     return Scaffold(
-      body: IndexedStack(index: _tab, children: tabs),
+      body: Stack(
+        children: <Widget>[
+          IndexedStack(index: _tab, children: tabs),
+          // Tour guiado (obligatorio): superpuesto sobre el cuerpo; la barra de
+          // navegación queda visible abajo, con la pestaña del paso resaltada.
+          if (_tourStep >= 0)
+            _TourOverlay(
+              step: _tourStep,
+              total: _tourSteps.length,
+              stepData: _tourSteps[_tourStep],
+              onNext: _tourNext,
+            ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: goTo,
@@ -942,6 +1009,138 @@ class _SlowDatingBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Un paso del tour guiado: qué pestaña resalta y qué explica.
+class _TourStep {
+  const _TourStep(this.tabIndex, this.icon, this.title, this.body);
+  final int tabIndex;
+  final IconData icon;
+  final String title;
+  final String body;
+}
+
+/// Superposición del tour guiado: una tarjeta sobre la barra de navegación que
+/// explica la pestaña actual (ya seleccionada). No se puede cerrar sin avanzar
+/// (tutorial obligatorio). Un foco resalta el destino activo abajo.
+class _TourOverlay extends StatelessWidget {
+  const _TourOverlay({
+    required this.step,
+    required this.total,
+    required this.stepData,
+    required this.onNext,
+  });
+
+  final int step;
+  final int total;
+  final _TourStep stepData;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isLast = step >= total - 1;
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.72),
+        child: SafeArea(
+          child: Column(
+            children: <Widget>[
+              const Spacer(),
+              // Tarjeta explicativa.
+              Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: AppColors.surfaceLine),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                        color: AppColors.attraRed.withValues(alpha: 0.25),
+                        blurRadius: 24,
+                        spreadRadius: 1),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.attraRed.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                          child: Icon(stepData.icon,
+                              color: AppColors.attraRed, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(stepData.title,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800)),
+                        const Spacer(),
+                        Text('${step + 1}/$total',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 13)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(stepData.body,
+                        style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14.5,
+                            height: 1.4)),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: <Widget>[
+                        for (int i = 0; i < total; i++)
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.only(right: 5),
+                            width: i == step ? 20 : 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: i == step
+                                  ? AppColors.attraRed
+                                  : AppColors.surfaceLine,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                        const Spacer(),
+                        FilledButton(
+                          onPressed: onNext,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.attraRed,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(99)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 12),
+                          ),
+                          child: Text(isLast ? '¡Listo!' : 'Siguiente',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Flecha que apunta a la barra de navegación (pestaña resaltada).
+              const Icon(Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.attraRed, size: 30),
+              const SizedBox(height: 4),
+            ],
+          ),
+        ),
       ),
     );
   }

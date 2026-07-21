@@ -163,6 +163,18 @@ class SessionController extends ChangeNotifier {
     await _refreshAuthenticatedUser(uid);
   }
 
+  /// Marca el tutorial de bienvenida como completado (persiste en `settings`) y
+  /// refresca el usuario para que no se vuelva a mostrar. Best-effort.
+  Future<void> completeTutorial() async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    try {
+      await _settingsRepository
+          .patchValues(uid, <String, Object?>{'tutorial.completed': true});
+      await _refreshAuthenticatedUser(uid);
+    } catch (_) {/* no bloquea la app si falla la escritura */}
+  }
+
   /// MODO OCUPADO (Attra Clear §4): pausa temporal. Persiste en `settings`
   /// (escribible por el dueño, sin tocar reglas). Si [enabled] es false, limpia
   /// la pausa. Refresca el usuario para que la UI reaccione al instante.

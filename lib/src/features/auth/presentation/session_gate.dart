@@ -54,7 +54,12 @@ class SessionGate extends StatelessWidget {
             screen = HomeShell(
               user: state.user,
               errorMessage: state.errorMessage,
-              showTutorial: state.justOnboarded,
+              // Obligatorio para nuevos usuarios: se muestra hasta completarlo
+              // (persistido en settings). justOnboarded lo fuerza al instante.
+              showTutorial: state.justOnboarded ||
+                  (state.user?.onboardingCompleted == true &&
+                      state.user?.tutorialCompleted == false),
+              onCompleteTutorial: controller.completeTutorial,
               onLogout: controller.signOut,
               onLoadProfileState: controller.loadProfileCompletionState,
               onUploadAdditionalPhoto: controller.uploadAdditionalPhoto,
