@@ -95,6 +95,15 @@ class FriendGroupService {
     return url;
   }
 
+  /// Fija una imagen PRESET (bundled, `asset:...`) como foto del grupo. Solo el
+  /// creador (validado en la Cloud Function).
+  Future<void> setGroupPreset(String groupId, String presetValue) =>
+      _call('setFriendGroupPhoto', <String, dynamic>{
+        'groupId': groupId,
+        'photoUrl': presetValue,
+        'photoStoragePath': '',
+      });
+
   /// Quita la foto del grupo (solo el creador).
   Future<void> removeGroupPhoto(String groupId) =>
       _call('setFriendGroupPhoto', <String, dynamic>{

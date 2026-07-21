@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import 'group_photo_picker.dart';
 
 /// Avatar de grupo: muestra la foto del grupo si existe, o un icono rojo tintado
 /// de respaldo. Sirve como cuadrado redondeado (tarjetas) o círculo (chats).
@@ -26,14 +27,19 @@ class GroupAvatar extends StatelessWidget {
     final BorderRadius br =
         BorderRadius.circular(circle ? size / 2 : radius);
     if (photoUrl.isEmpty) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: AppColors.attraRed.withValues(alpha: 0.15),
-          borderRadius: br,
+      return _fallback(br);
+    }
+    // Preset bundled (asset:) → Image.asset. Si no, URL de Storage.
+    if (isAssetPhoto(photoUrl)) {
+      return ClipRRect(
+        borderRadius: br,
+        child: Image.asset(
+          assetPathOf(photoUrl),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _fallback(br),
         ),
-        child: Icon(fallbackIcon, color: AppColors.attraRed, size: size * 0.46),
       );
     }
     return ClipRRect(
@@ -48,17 +54,18 @@ class GroupAvatar extends StatelessWidget {
           height: size,
           color: AppColors.surfaceHigh,
         ),
-        errorWidget: (_, __, ___) => Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: AppColors.attraRed.withValues(alpha: 0.15),
-            borderRadius: br,
-          ),
-          child: Icon(fallbackIcon,
-              color: AppColors.attraRed, size: size * 0.46),
-        ),
+        errorWidget: (_, __, ___) => _fallback(br),
       ),
     );
   }
+
+  Widget _fallback(BorderRadius br) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: AppColors.attraRed.withValues(alpha: 0.15),
+          borderRadius: br,
+        ),
+        child: Icon(fallbackIcon, color: AppColors.attraRed, size: size * 0.46),
+      );
 }

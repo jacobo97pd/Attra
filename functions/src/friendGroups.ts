@@ -210,9 +210,9 @@ export const setFriendGroupPhoto = onCall({ region: REGION }, async (request) =>
     typeof request.data?.photoStoragePath === "string"
       ? request.data.photoStoragePath.slice(0, 500)
       : "";
-  // Acepta URLs de Firebase Storage o vacío (para quitar la foto).
-  if (photoUrl && !/^https:\/\//.test(photoUrl)) {
-    throw new HttpsError("invalid-argument", "URL de foto no válida.");
+  // Acepta URLs de Storage (https), presets bundled (asset:) o vacío (quitar).
+  if (photoUrl && !/^(https:\/\/|asset:)/.test(photoUrl)) {
+    throw new HttpsError("invalid-argument", "Foto no válida.");
   }
   const ref = groups.doc(groupId);
   const snap = await ref.get();

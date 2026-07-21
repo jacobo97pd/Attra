@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'dart:typed_data';
-
-import 'package:image_picker/image_picker.dart';
-
 import '../../../theme/app_colors.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import 'group_avatar.dart';
 import 'group_chat_screen.dart';
+import 'group_photo_picker.dart';
 import '../../profile/domain/profile_summary.dart';
 import '../data/friend_group_service.dart';
 import '../data/social_discovery_service.dart';
@@ -69,13 +66,30 @@ class _GroupsScreenState extends State<GroupsScreen> {
         await _CreateGroupSheet.show(context, widget.city);
     if (input == null) return;
     try {
-      await widget.groupService.createGroup(
+      final String groupId = await widget.groupService.createGroup(
         name: input.name,
         description: input.description,
         city: input.city,
         interests: input.interests,
         maxMembers: input.maxMembers,
       );
+      // Foto elegida al crear (preset o subida). Best-effort: no bloquea la
+      // creación si falla.
+      final GroupPhotoChoice? photo = input.photoChoice;
+      if (groupId.isNotEmpty && photo != null) {
+        try {
+          if (photo.isPreset) {
+            await widget.groupService.setGroupPreset(groupId, photo.presetValue!);
+          } else if (photo.bytes != null) {
+            await widget.groupService.updateGroupPhoto(
+              groupId,
+              uid: widget.uid,
+              bytes: photo.bytes!,
+              contentType: photo.contentType,
+            );
+          }
+        } catch (_) {/* la foto es opcional */}
+      }
       _snack('Grupo creado ✨');
       _refresh();
     } on FriendGroupException catch (e) {
@@ -733,28 +747,23 @@ class _GroupDetailSheet extends StatefulWidget {
 class _GroupDetailSheetState extends State<_GroupDetailSheet> {
   bool _busy = false;
   bool _uploadingPhoto = false;
-  final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickPhoto(FriendGroup g) async {
     if (_uploadingPhoto) return;
-    final XFile? file = await _picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1080,
-      imageQuality: 85,
-    );
-    if (file == null) return;
+    final GroupPhotoChoice? choice = await GroupPhotoPickerSheet.show(context);
+    if (choice == null || !mounted) return;
     setState(() => _uploadingPhoto = true);
     try {
-      final Uint8List bytes = await file.readAsBytes();
-      final String ct = file.name.toLowerCase().endsWith('.png')
-          ? 'image/png'
-          : 'image/jpeg';
-      await widget.service.updateGroupPhoto(
-        g.id,
-        uid: widget.uid,
-        bytes: bytes,
-        contentType: ct,
-      );
+      if (choice.isPreset) {
+        await widget.service.setGroupPreset(g.id, choice.presetValue!);
+      } else if (choice.bytes != null) {
+        await widget.service.updateGroupPhoto(
+          g.id,
+          uid: widget.uid,
+          bytes: choice.bytes!,
+          contentType: choice.contentType,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Foto del grupo actualizada')));
@@ -767,7 +776,7 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se pudo subir la foto.')));
+            const SnackBar(content: Text('No se pudo actualizar la foto.')));
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
@@ -1099,12 +1108,14 @@ class _NewGroupInput {
     required this.city,
     required this.interests,
     required this.maxMembers,
+    this.photoChoice,
   });
   final String name;
   final String description;
   final String city;
   final List<String> interests;
   final int maxMembers;
+  final GroupPhotoChoice? photoChoice;
 }
 
 class _CreateGroupSheet extends StatefulWidget {
@@ -1131,6 +1142,12 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   final TextEditingController _interests = TextEditingController();
   double _maxMembers = 8;
   bool _tried = false;
+  GroupPhotoChoice? _photoChoice;
+
+  Future<void> _pickGroupPhoto() async {
+    final GroupPhotoChoice? choice = await GroupPhotoPickerSheet.show(context);
+    if (choice != null && mounted) setState(() => _photoChoice = choice);
+  }
 
   @override
   void initState() {
@@ -1161,6 +1178,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
       city: _city.text.trim(),
       interests: interests,
       maxMembers: _maxMembers.round(),
+      photoChoice: _photoChoice,
     ));
   }
 
@@ -1180,7 +1198,59 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text('Crear grupo', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
+            // Foto del grupo (preset o subida). Opcional.
+            Center(
+              child: GestureDetector(
+                onTap: _pickGroupPhoto,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        _photoChoice?.bytes != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(18),
+                                child: Image.memory(_photoChoice!.bytes!,
+                                    width: 72, height: 72, fit: BoxFit.cover),
+                              )
+                            : GroupAvatar(
+                                photoUrl: _photoChoice?.presetValue ?? '',
+                                size: 72,
+                                radius: 18),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: AppColors.attraRed,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: theme.scaffoldBackgroundColor,
+                                  width: 2),
+                            ),
+                            child: const Icon(Icons.camera_alt_rounded,
+                                size: 14, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                        _photoChoice == null
+                            ? 'Foto del grupo (opcional)'
+                            : 'Cambiar foto',
+                        style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: _name,
               textCapitalization: TextCapitalization.sentences,

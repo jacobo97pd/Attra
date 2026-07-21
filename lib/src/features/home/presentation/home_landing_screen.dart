@@ -8,6 +8,7 @@ import '../../social/data/social_discovery_service.dart';
 import '../../social/domain/friend_group.dart';
 import '../../social/presentation/group_avatar.dart';
 import '../../social/presentation/group_chat_screen.dart';
+import '../../social/presentation/group_photo_picker.dart';
 
 /// Pantalla de Inicio "plan-first" (rediseño premium): planes, grupos y gente
 /// como primera impresión, no un swipe. Todo lo demás sigue en sus pestañas.
@@ -698,7 +699,16 @@ class _PlanImageCard extends StatelessWidget {
                       ),
                     ),
                     // Foto del grupo si existe; si no, el icono grande de fondo.
-                    if (group.hasPhoto)
+                    if (group.hasPhoto && isAssetPhoto(group.photoUrl))
+                      Positioned.fill(
+                        child: Image.asset(
+                          assetPathOf(group.photoUrl),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      )
+                    else if (group.hasPhoto)
                       Positioned.fill(
                         child: CachedNetworkImage(
                           imageUrl: group.photoUrl,
