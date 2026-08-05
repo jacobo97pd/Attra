@@ -115,9 +115,6 @@ DEMO_PROFILE = {
     "profileCompletionPercent": 100,
     "geo": {"lat": 40.4168, "lng": -3.7038},
     "location": {"latitude": 40.4168, "longitude": -3.7038},
-    # Guideline 1.2: constancia de la aceptacion del EULA (ver
-    # lib/core/config/legal_links.dart -> LegalLinks.termsVersion).
-    "termsAcceptedVersion": "2026-08-04",
 }
 
 

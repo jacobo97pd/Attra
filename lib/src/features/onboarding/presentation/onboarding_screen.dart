@@ -2074,9 +2074,19 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   ),
                 ),
                 Expanded(
+                  // El brillo se toma del tema real de la hoja. Fijarlo a dark
+                  // pintaba el texto en blanco sobre fondo claro y el selector
+                  // se veia VACIO. El color se fuerza desde el colorScheme para
+                  // que sea legible en claro y en oscuro.
                   child: CupertinoTheme(
-                    data: const CupertinoThemeData(
-                      brightness: Brightness.dark,
+                    data: CupertinoThemeData(
+                      brightness: Theme.of(context).brightness,
+                      textTheme: CupertinoTextThemeData(
+                        dateTimePickerTextStyle: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 20,
+                        ),
+                      ),
                     ),
                     child: CupertinoDatePicker(
                       mode: CupertinoDatePickerMode.date,

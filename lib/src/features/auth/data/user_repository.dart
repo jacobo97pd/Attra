@@ -77,10 +77,6 @@ class UserRepository {
         'pendingProfileTasks': <String>[],
         'profileCompletionRewardsClaimed': <String>[],
         'availableProfileRewards': <String>[],
-        // Guideline 1.2: en el login NO se puede continuar sin marcar la
-        // aceptacion del EULA, asi que dejamos constancia de la version.
-        'termsAcceptedVersion': LegalLinks.termsVersion,
-        'termsAcceptedAt': FieldValue.serverTimestamp(),
       };
       await userDoc.set(baseData);
 
@@ -114,12 +110,6 @@ class UserRepository {
     }
     if (currentData['profileCompleted'] is! bool) {
       updateData['profileCompleted'] = false;
-    }
-    // Guideline 1.2: cada inicio de sesion exige marcar la aceptacion del EULA
-    // en el login, asi que registramos la version aceptada si ha cambiado.
-    if (currentData['termsAcceptedVersion'] != LegalLinks.termsVersion) {
-      updateData['termsAcceptedVersion'] = LegalLinks.termsVersion;
-      updateData['termsAcceptedAt'] = FieldValue.serverTimestamp();
     }
 
     // El email SI se sincroniza desde el proveedor (auth es la fuente de
@@ -195,6 +185,40 @@ class UserRepository {
       user: AppUser.fromDocument(updatedDoc),
       isNewUser: false,
     );
+  }
+
+  /// Guideline 1.2: deja constancia de que el usuario acepto el EULA en el
+  /// login (donde la casilla es obligatoria).
+  ///
+  /// Se guarda en el consent ledger `users/{uid}/consentRecords`, NO en
+  /// `users/{uid}`: las reglas limitan el documento de usuario a una lista
+  /// cerrada de claves de primer nivel, asi que anadir campos nuevos ahi
+  /// tumbaria TODA la escritura con permission-denied.
+  ///
+  /// Id determinista por version: el ledger es inmutable (`update` prohibido),
+  /// asi que solo se crea si no existe. Nunca propaga errores: dejar constancia
+  /// no puede impedir entrar en la app.
+  Future<void> recordTermsAcceptance(String uid) async {
+    if (uid.isEmpty) return;
+    try {
+      final DocumentReference<Map<String, dynamic>> ref = _usersCollection
+          .doc(uid)
+          .collection('consentRecords')
+          .doc('terms_${LegalLinks.termsVersion}');
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await ref.get();
+      if (snapshot.exists) return;
+      await ref.set(<String, dynamic>{
+        'purpose': 'terms_of_use',
+        'granted': true,
+        // Mismo vocabulario que LegalBasis del catalogo de ajustes.
+        'legalBasis': 'contract',
+        'settingKey': 'terms_of_use',
+        'termsVersion': LegalLinks.termsVersion,
+        'recordedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      debugPrint('[Attra][Terms] no se pudo registrar la aceptacion: $error');
+    }
   }
 
   Future<AppUser> fetchByUid(String uid) async {

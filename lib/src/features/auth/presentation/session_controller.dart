@@ -927,6 +927,10 @@ class SessionController extends ChangeNotifier {
       final UserSyncResult syncResult =
           await _userRepository.syncUserFromAuth(firebaseUser);
 
+      // Guideline 1.2: constancia de la aceptacion del EULA marcada en el
+      // login. Nunca lanza, asi que no puede bloquear la entrada.
+      await _userRepository.recordTermsAcceptance(firebaseUser.uid);
+
       if (syncResult.needsOnboarding) {
         _emit(
           SessionState(

@@ -84,8 +84,8 @@ acceso**, una casilla obligatoria:
 Debajo hay dos enlaces funcionales que abren los documentos completos. Mientras
 la casilla no esté marcada, **ningún método de acceso funciona** (teléfono,
 Apple ni Google): al pulsarlos, la app avisa de que hay que aceptar las
-condiciones. La versión del EULA aceptada se registra en el documento del
-usuario (`termsAcceptedVersion`).
+condiciones. La versión del EULA aceptada queda registrada en el ledger de
+consentimientos del usuario (`users/{uid}/consentRecords/terms_<versión>`).
 
 El EULA (https://attra-database.web.app/terms.html) abre con la sección
 **«1. Tolerancia cero con el contenido ofensivo y los usuarios abusivos»**, que
