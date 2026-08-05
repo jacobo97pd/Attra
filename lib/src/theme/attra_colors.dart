@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// Colores NEUTROS dependientes del tema (claro/oscuro). Los colores de MARCA
-/// (attraRed, coral, gold, gradientes…) viven en [AppColors] y NO cambian con el
-/// modo (identidad de marca). Aquí solo los fondos/superficies/texto, que sí
-/// se invierten entre claro y oscuro.
+/// Neutros y acento adaptativos de Attra.
 ///
-/// Uso: `context.colors.bg`, `context.colors.surface`, etc. (ver extension
-/// abajo). Se registra como ThemeExtension en AppTheme.light/dark.
+/// Uso: `context.colors.bg`, `context.colors.surface`, etc. Se registra como
+/// [ThemeExtension] en los temas claro y oscuro.
 @immutable
 class AttraColors extends ThemeExtension<AttraColors> {
   const AttraColors({
@@ -22,70 +19,53 @@ class AttraColors extends ThemeExtension<AttraColors> {
     required this.accentSoft,
   });
 
-  /// Fondo principal (scaffold).
   final Color bg;
-
-  /// Superficie de tarjetas/sheets.
   final Color surface;
-
-  /// Superficie elevada (inputs, chips, tiles).
   final Color surfaceHigh;
-
-  /// Bordes y divisores.
   final Color surfaceLine;
-
-  /// Texto principal.
   final Color textPrimary;
-
-  /// Texto secundario.
   final Color textSecondary;
-
-  /// Texto atenuado (hints, captions).
   final Color textMuted;
 
-  /// Acento del tema. En OSCURO es el coral de marca; en CLARO ("Piedra") es un
-  /// pizarra sobrio. Se consume vía `AppTheme._build` (colorScheme.primary,
-  /// botones, chips, nav, inputs…), de modo que todo el chrome Material se tiñe
-  /// según el tema sin tocar cada widget.
+  /// Acento neutral adaptado para conservar contraste en claro y oscuro.
   final Color accent;
-
-  /// Variante profunda del acento (estados pulsados, gradiente).
   final Color accentDeep;
-
-  /// Variante suave del acento (fondos/tintes, ~10-20% opacidad ya resuelta).
   final Color accentSoft;
 
-  /// Color de contraste para colocar SOBRE [accent] (texto/icono de botones).
-  Color get onAccent =>
-      accent.computeLuminance() > 0.55 ? const Color(0xFF2C3139) : Colors.white;
+  /// Color con mayor contraste para colocar sobre [accent].
+  Color get onAccent {
+    const Color ink = Color(0xFF171717);
+    return _contrast(accent, Colors.white) >= _contrast(accent, ink)
+        ? Colors.white
+        : ink;
+  }
 
-  /// Paleta OSCURA: idéntica a la actual (coral de marca sobre grafito).
+  /// Paleta oscura sobria y acromática.
   static const AttraColors dark = AttraColors(
-    bg: Color(0xFF0E0E10),
-    surface: Color(0xFF1A1A1D),
-    surfaceHigh: Color(0xFF232327),
-    surfaceLine: Color(0xFF2E2E34),
-    textPrimary: Color(0xFFFFFEFD),
-    textSecondary: Color(0xFFA7A7AD),
-    textMuted: Color(0xFF6E707A),
-    accent: Color(0xFFFF4F68), // coral de marca
-    accentDeep: Color(0xFFD71945),
-    accentSoft: Color(0x33FF4F68),
+    bg: Color(0xFF111111),
+    surface: Color(0xFF1D1D1D),
+    surfaceHigh: Color(0xFF2A2A2A),
+    surfaceLine: Color(0xFF404040),
+    textPrimary: Color(0xFFFAFAFA),
+    textSecondary: Color(0xFFC8C8C8),
+    textMuted: Color(0xFF999999),
+    accent: Color(0xFFF4F4F4),
+    accentDeep: Color(0xFFB8B8B8),
+    accentSoft: Color(0xFF303030),
   );
 
-  /// Paleta CLARA = "Piedra": blanco frío + tonos piedra suaves, con acento
-  /// PIZARRA sobrio (no coral), sereno y minimalista.
+  /// Paleta clara: blanco, tinta y grises editoriales.
   static const AttraColors light = AttraColors(
-    bg: Color(0xFFF3F5F7), // blanco frío piedra (scaffold)
-    surface: Color(0xFFFFFFFF), // tarjetas blancas
-    surfaceHigh: Color(0xFFE7EAEF), // inputs/chips
-    surfaceLine: Color(0xFFDADEE5), // bordes
-    textPrimary: Color(0xFF2C3139), // pizarra oscuro
-    textSecondary: Color(0xFF737A85), // gris azulado medio
-    textMuted: Color(0xFFA6ADB8), // gris piedra suave
-    accent: Color(0xFF8E99A8), // pizarra sobrio (acento Piedra)
-    accentDeep: Color(0xFF6D798B), // pizarra profundo (pulsado)
-    accentSoft: Color(0xFFE6EAF0), // pizarra muy suave (tintes)
+    bg: Color(0xFFFAFAFA),
+    surface: Color(0xFFFFFFFF),
+    surfaceHigh: Color(0xFFF1F1F1),
+    surfaceLine: Color(0xFFDEDEDE),
+    textPrimary: Color(0xFF171717),
+    textSecondary: Color(0xFF555555),
+    textMuted: Color(0xFF777777),
+    accent: Color(0xFF171717),
+    accentDeep: Color(0xFF000000),
+    accentSoft: Color(0xFFECECEC),
   );
 
   @override
@@ -131,10 +111,16 @@ class AttraColors extends ThemeExtension<AttraColors> {
       accentSoft: Color.lerp(accentSoft, other.accentSoft, t)!,
     );
   }
+
+  static double _contrast(Color a, Color b) {
+    final double aLum = a.computeLuminance();
+    final double bLum = b.computeLuminance();
+    final double high = aLum > bLum ? aLum : bLum;
+    final double low = aLum > bLum ? bLum : aLum;
+    return (high + 0.05) / (low + 0.05);
+  }
 }
 
-/// Acceso cómodo: `context.colors.bg`, `context.colors.textPrimary`…
-/// Si por lo que sea no hay extensión registrada, cae a la paleta oscura.
 extension AttraColorsX on BuildContext {
   AttraColors get colors =>
       Theme.of(this).extension<AttraColors>() ?? AttraColors.dark;

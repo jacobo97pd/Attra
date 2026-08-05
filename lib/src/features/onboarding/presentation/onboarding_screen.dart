@@ -22,6 +22,8 @@ import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/attra_loader.dart';
 import '../data/onboarding_repository.dart';
 import '../domain/onboarding_draft.dart';
+import '../domain/voice_profile_suggestion.dart';
+import 'voice_profile_setup.dart';
 
 /// Metadatos visuales por paso (icono + etiqueta corta para el progreso).
 const List<({IconData icon, String label})> _stepMeta =
@@ -42,10 +44,12 @@ class OnboardingScreen extends StatefulWidget {
     required this.onLoadDraft,
     required this.onSaveDraft,
     required this.onUploadLiveSelfieDraft,
+    required this.onGenerateVoiceProfile,
     required this.onSubmitOnboarding,
     required this.onLogout,
     this.user,
     this.errorMessage,
+    this.onCheckVoiceProfileAvailability,
   });
 
   final AppUser? user;
@@ -56,6 +60,8 @@ class OnboardingScreen extends StatefulWidget {
     required Uint8List liveSelfieBytes,
     required String liveSelfieFileExtension,
   }) onUploadLiveSelfieDraft;
+  final VoiceProfileGenerator onGenerateVoiceProfile;
+  final Future<bool> Function()? onCheckVoiceProfileAvailability;
   final Future<void> Function({
     required OnboardingDraft draft,
     Uint8List? liveSelfieBytes,
@@ -88,8 +94,11 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   bool _loadingDraft = true;
   bool _submitting = false;
   String? _localError;
+  DateTime? _ageGateSelectedDate;
+  bool _savingAgeGate = false;
   bool _birthCityValid = false;
   bool _currentCityValid = false;
+  bool _voiceProfileAvailable = true;
 
   Uint8List? _liveSelfieBytes;
   String _liveSelfieFileExtension = 'jpg';
@@ -143,8 +152,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   Future<void> _loadDraft() async {
+    final Future<bool> availabilityFuture =
+        widget.onCheckVoiceProfileAvailability?.call() ??
+            Future<bool>.value(true);
     try {
       final OnboardingDraft loadedDraft = await widget.onLoadDraft();
+      bool voiceProfileAvailable = false;
+      try {
+        voiceProfileAvailable = await availabilityFuture;
+      } catch (_) {
+        // Fail closed: the manual onboarding always remains available.
+      }
       if (!mounted) {
         return;
       }
@@ -153,22 +171,28 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       _heightController.text = loadedDraft.heightCm?.toString() ?? '';
       _bioController.text = loadedDraft.bio;
       _jobTitleController.text = loadedDraft.jobTitle;
+      _birthCityValid = loadedDraft.birthCountryCode.isNotEmpty &&
+          loadedDraft.birthCity.trim().isNotEmpty;
+      _currentCityValid = loadedDraft.currentCountryCode.isNotEmpty &&
+          loadedDraft.currentCity.trim().isNotEmpty;
 
       setState(() {
         _draft = loadedDraft;
         _loadingDraft = false;
         _localError = null;
+        _voiceProfileAvailable = voiceProfileAvailable;
       });
 
       _lastPersistedFingerprint = _draftFingerprint(loadedDraft);
       _hasPendingDraftChanges = false;
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
+        if (!mounted || !_pageController.hasClients) {
           return;
         }
-        _pageController
-            .jumpToPage(loadedDraft.currentStep.clamp(0, _totalSteps - 1));
+        final List<int> steps = _visibleSteps(loadedDraft);
+        final int position = steps.indexOf(loadedDraft.currentStep);
+        _pageController.jumpToPage(position < 0 ? 0 : position);
       });
     } catch (error) {
       if (!mounted) {
@@ -176,6 +200,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       }
       final OnboardingDraft fallbackDraft =
           OnboardingDraft.fromUser(widget.user);
+      bool voiceProfileAvailable = false;
+      try {
+        voiceProfileAvailable = await availabilityFuture;
+      } catch (_) {
+        // The fallback draft still has the full manual path.
+      }
       _visibleNameController.text = fallbackDraft.visibleName;
       _heightController.text = fallbackDraft.heightCm?.toString() ?? '';
       _bioController.text = fallbackDraft.bio;
@@ -185,6 +215,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         _localError =
             'No se pudo cargar el onboarding guardado. Intenta de nuevo. ($error)';
         _draft = fallbackDraft;
+        _voiceProfileAvailable = voiceProfileAvailable;
       });
       _lastPersistedFingerprint = _draftFingerprint(fallbackDraft);
       _hasPendingDraftChanges = false;
@@ -344,12 +375,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       _localError = null;
     });
 
-    if (normalized.currentStep == _totalSteps - 1) {
+    final List<int> visibleSteps = _visibleSteps(normalized);
+    final int position = visibleSteps.indexOf(normalized.currentStep);
+    if (position < 0) {
+      setState(() {
+        _localError =
+            'No hemos podido recuperar este paso. Vuelve a elegir el método de configuración.';
+      });
+      return;
+    }
+    if (position == visibleSteps.length - 1) {
       await _submit(normalized);
       return;
     }
 
-    final int nextStep = normalized.currentStep + 1;
+    final int nextPosition = position + 1;
+    final int nextStep = visibleSteps[nextPosition];
     setState(() {
       _draft = normalized.copyWith(currentStep: nextStep);
     });
@@ -359,7 +400,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       return;
     }
     await _pageController.animateToPage(
-      nextStep,
+      nextPosition,
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOut,
     );
@@ -367,12 +408,16 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Future<void> _goBack() async {
     final OnboardingDraft? current = _draft;
-    if (current == null || current.currentStep == 0 || _submitting) {
+    if (current == null || _submitting) {
       return;
     }
 
     final OnboardingDraft normalized = _syncControllersIntoDraft(current);
-    final int previousStep = normalized.currentStep - 1;
+    final List<int> visibleSteps = _visibleSteps(normalized);
+    final int position = visibleSteps.indexOf(normalized.currentStep);
+    if (position <= 0) return;
+    final int previousPosition = position - 1;
+    final int previousStep = visibleSteps[previousPosition];
     setState(() {
       _draft = normalized.copyWith(currentStep: previousStep);
     });
@@ -383,9 +428,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     }
 
     await _pageController.animateToPage(
-      previousStep,
+      previousPosition,
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOut,
+    );
+  }
+
+  void _returnToSetupMode() {
+    final OnboardingDraft? current = _draft;
+    if (current == null || _submitting) return;
+    _updateDraft(
+      _syncControllersIntoDraft(current).copyWith(
+        currentStep: 0,
+        setupMode: '',
+        voiceProfileGenerated: false,
+        quickRemainingSteps: const <int>[],
+      ),
     );
   }
 
@@ -464,6 +522,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         }
         return null;
       case 1:
+        if (draft.visibleName.trim().length < 2) {
+          return 'Escribe un nombre visible de al menos 2 caracteres.';
+        }
         if (draft.birthDate == null) {
           return 'Selecciona tu fecha de nacimiento.';
         }
@@ -709,14 +770,42 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
     final OnboardingDraft draft = _draft!;
 
+    // La edad se confirma antes de cualquier flujo opcional de IA. La fecha se
+    // persiste antes de avanzar para que la Function también pueda exigir +18.
+    if (draft.birthDate == null ||
+        _calculateAge(draft.birthDate!) < _minimumAge) {
+      return _buildAgeGate(theme);
+    }
+
     // Intent-first: antes de todo el onboarding, preguntamos qué busca la
     // persona. Attra no arranca por "¿quién te gusta?", sino por la intención.
     if (draft.intentMode.isEmpty) {
       return _buildIntentGate(theme, draft);
     }
 
-    final int step = draft.currentStep;
-    final bool isLast = step == _totalSteps - 1;
+    if (draft.setupMode.isEmpty) {
+      return _buildSetupModeGate(theme, draft);
+    }
+
+    if (draft.setupMode == 'quick' && !draft.voiceProfileGenerated) {
+      if (!_voiceProfileAvailable) {
+        return _buildSetupModeGate(theme, draft);
+      }
+      return VoiceProfileSetup(
+        intentMode: draft.intentMode,
+        onGenerate: _generateVoiceSuggestionForReview,
+        onAccepted: _applyVoiceSuggestion,
+        onUseManual: () => _chooseSetupMode('manual'),
+        onBack: () => _chooseSetupMode(''),
+      );
+    }
+
+    final List<int> visibleSteps = _visibleSteps(draft);
+    final int step = visibleSteps.contains(draft.currentStep)
+        ? draft.currentStep
+        : visibleSteps.first;
+    final int position = visibleSteps.indexOf(step);
+    final bool isLast = position == visibleSteps.length - 1;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -724,24 +813,26 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         child: SafeArea(
           child: Column(
             children: <Widget>[
-              _buildHeader(theme, step),
+              _buildHeader(
+                theme,
+                step,
+                position: position,
+                total: visibleSteps.length,
+              ),
               Expanded(
                 child: PageView(
                   controller: _pageController,
                   physics: const NeverScrollableScrollPhysics(),
-                  children: <Widget>[
-                    _buildSelfieStep(theme, draft),
-                    _buildIdentityStep(theme, draft),
-                    _buildAppearanceStep(theme, draft),
-                    _buildPersonalStep(theme, draft),
-                    _buildLifestyleStep(theme, draft),
-                    _buildStyleStep(theme, draft),
-                    _buildPreferencesStep(theme, draft),
-                    _buildPromptsStep(theme, draft),
-                  ],
+                  children: visibleSteps
+                      .map((int index) => _buildStep(theme, draft, index))
+                      .toList(growable: false),
                 ),
               ),
-              _buildFooter(theme, step, isLast),
+              _buildFooter(
+                theme,
+                isLast,
+                position: position,
+              ),
             ],
           ),
         ),
@@ -749,17 +840,444 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
+  List<int> _visibleSteps(OnboardingDraft draft) {
+    if (draft.setupMode == 'quick' && draft.voiceProfileGenerated) {
+      final List<int> steps = draft.quickRemainingSteps
+          .where((int step) => step >= 0 && step <= 6)
+          .toSet()
+          .toList(growable: false)
+        ..sort();
+      // Backward-compatible fallback for a quick draft created before the
+      // condensed-step field existed.
+      return steps.isEmpty ? const <int>[0, 1, 2, 6] : steps;
+    }
+    return List<int>.generate(_totalSteps, (int index) => index);
+  }
+
+  Widget _buildStep(
+    ThemeData theme,
+    OnboardingDraft draft,
+    int index,
+  ) {
+    return switch (index) {
+      0 => _buildSelfieStep(theme, draft),
+      1 => _buildIdentityStep(theme, draft),
+      2 => _buildAppearanceStep(theme, draft),
+      3 => _buildPersonalStep(theme, draft),
+      4 => _buildLifestyleStep(theme, draft),
+      5 => _buildStyleStep(theme, draft),
+      6 => _buildPreferencesStep(theme, draft),
+      _ => _buildPromptsStep(theme, draft),
+    };
+  }
+
+  Widget _buildAgeGate(ThemeData theme) {
+    final DateTime? selected = _ageGateSelectedDate;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: AttraGradientBackground(
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _savingAgeGate ? null : widget.onLogout,
+                        child: const Text('Cerrar sesión'),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Container(
+                      width: 62,
+                      height: 62,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: context.colors.accentSoft,
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusLg),
+                        border: Border.all(color: context.colors.surfaceLine),
+                      ),
+                      child: Icon(
+                        Icons.cake_outlined,
+                        color: context.colors.accent,
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Primero, confirmemos tu edad',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: context.colors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        height: 1.08,
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Attra es solo para mayores de 18 años. Necesitamos tu '
+                      'fecha antes de ofrecer cualquier configuración con IA.',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: context.colors.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    AttraCard(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          Text(
+                            'Fecha de nacimiento',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'No se muestra completa en tu perfil.',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 14),
+                          OutlinedButton.icon(
+                            onPressed: _savingAgeGate
+                                ? null
+                                : () async {
+                                    final DateTime? picked =
+                                        await _pickBirthDate(selected);
+                                    if (!mounted || picked == null) return;
+                                    setState(() {
+                                      _ageGateSelectedDate = picked;
+                                      _localError = null;
+                                    });
+                                  },
+                            icon: const Icon(Icons.calendar_month_outlined),
+                            label: Text(
+                              selected == null
+                                  ? 'Seleccionar fecha'
+                                  : _formatDate(selected),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_localError != null) ...<Widget>[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.attraRed.withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(AppSpacing.radiusMd),
+                          border: Border.all(
+                            color: AppColors.attraRed.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          _localError!,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 22),
+                    AttraPrimaryButton(
+                      label: 'Confirmar y continuar',
+                      icon: Icons.arrow_forward_rounded,
+                      loading: _savingAgeGate,
+                      onPressed: selected == null ? null : _confirmAgeGate,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Icon(
+                          Icons.lock_outline_rounded,
+                          size: 18,
+                          color: context.colors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'La fecha se usa para comprobar la mayoría de edad '
+                            'y calcular la edad pública; nunca se envía al '
+                            'modelo de IA.',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmAgeGate() async {
+    final DateTime? birthDate = _ageGateSelectedDate;
+    final OnboardingDraft? current = _draft;
+    if (_savingAgeGate || birthDate == null || current == null) return;
+    if (_calculateAge(birthDate) < _minimumAge) {
+      setState(() => _localError =
+          'Debes tener al menos $_minimumAge años para usar Attra.');
+      return;
+    }
+
+    final OnboardingDraft updated = current.copyWith(birthDate: birthDate);
+    setState(() {
+      _savingAgeGate = true;
+      _localError = null;
+    });
+    try {
+      // Persist before advancing: the voice callable independently verifies
+      // this value and fails closed if it is absent.
+      await widget.onSaveDraft(updated);
+      if (!mounted) return;
+      setState(() {
+        _draft = updated;
+        _ageGateSelectedDate = null;
+        _savingAgeGate = false;
+      });
+      _lastPersistedFingerprint = _draftFingerprint(updated);
+      _hasPendingDraftChanges = false;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _savingAgeGate = false;
+        _localError =
+            'No hemos podido verificar la edad. Comprueba tu conexión e inténtalo de nuevo.';
+      });
+    }
+  }
+
+  Widget _buildSetupModeGate(ThemeData theme, OnboardingDraft draft) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: AttraGradientBackground(
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        IconButton(
+                          onPressed: () => _updateDraft(
+                            draft.copyWith(intentMode: ''),
+                          ),
+                          tooltip: 'Atrás',
+                          icon: const Icon(Icons.arrow_back_rounded),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: widget.onLogout,
+                          child: const Text('Cerrar sesión'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'Haz que tu perfil empiece sonando a ti',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: context.colors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        height: 1.08,
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _voiceProfileAvailable
+                          ? 'Elige cómo quieres empezar. Los dos caminos terminan '
+                              'en la misma revisión y puedes cambiar de idea '
+                              'cuando quieras.'
+                          : 'Puedes completar el perfil paso a paso. La opción '
+                              'por voz aparecerá cuando su procesamiento privado '
+                              'esté disponible.',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: context.colors.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    if (_voiceProfileAvailable) ...<Widget>[
+                      _SetupModeCard(
+                        recommended: true,
+                        icon: Icons.graphic_eq_rounded,
+                        title: 'Configuración rápida',
+                        duration: 'Un audio · unos 2 min',
+                        description:
+                            'Nos cuentas cómo eres y la IA propone una bio, '
+                            'rasgos y preguntas. Lo revisas todo antes de '
+                            'continuar.',
+                        features: const <String>[
+                          'Audio privado y de un solo uso',
+                          'Borrador editable antes del alta',
+                          'Sin inferir datos sensibles',
+                        ],
+                        onTap: () => _chooseSetupMode('quick'),
+                      ),
+                      const SizedBox(height: 14),
+                    ] else ...<Widget>[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: context.colors.surfaceHigh,
+                          borderRadius:
+                              BorderRadius.circular(AppSpacing.radiusLg),
+                          border: Border.all(color: context.colors.surfaceLine),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Icon(
+                              Icons.mic_off_outlined,
+                              color: context.colors.textMuted,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'La configuración por voz está temporalmente '
+                                'en pausa. No necesitas esperar para crear tu '
+                                'perfil.',
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(height: 1.4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    _SetupModeCard(
+                      icon: Icons.tune_rounded,
+                      title: 'Paso a paso',
+                      duration: 'Tú completas cada apartado',
+                      description:
+                          'La configuración actual, pregunta por pregunta, con '
+                          'control directo sobre cada dato.',
+                      features: const <String>[
+                        'Sin procesamiento de voz',
+                        'Puedes guardar y seguir luego',
+                      ],
+                      onTap: () => _chooseSetupMode('manual'),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Icon(
+                          Icons.info_outline_rounded,
+                          size: 18,
+                          color: context.colors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'En ambos casos te pediremos aparte la selfie y los '
+                            'datos que una IA nunca debería adivinar.',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _chooseSetupMode(String mode) {
+    final OnboardingDraft? current = _draft;
+    if (current == null) return;
+    _updateDraft(
+      current.copyWith(
+        currentStep: mode == 'manual' ? 0 : current.currentStep,
+        setupMode: mode,
+        voiceProfileGenerated:
+            mode == 'quick' ? current.voiceProfileGenerated : false,
+        quickRemainingSteps:
+            mode == 'quick' ? current.quickRemainingSteps : const <int>[],
+      ),
+    );
+  }
+
+  Future<VoiceProfileSuggestion> _generateVoiceSuggestionForReview({
+    required Uint8List bytes,
+    required String contentType,
+    required String extension,
+    required int durationMs,
+    required String intentMode,
+  }) async {
+    final VoiceProfileSuggestion generated =
+        await widget.onGenerateVoiceProfile(
+      bytes: bytes,
+      contentType: contentType,
+      extension: extension,
+      durationMs: durationMs,
+      intentMode: intentMode,
+    );
+    final OnboardingDraft? base = _draft;
+    if (base == null) return generated;
+    return generated.withDraftFallback(base);
+  }
+
+  Future<void> _applyVoiceSuggestion(
+    VoiceProfileSuggestion suggestion,
+  ) async {
+    final OnboardingDraft? current = _draft;
+    if (current == null) return;
+    OnboardingDraft updated = suggestion.applyTo(
+      _syncControllersIntoDraft(current),
+    );
+    final List<int> remainingSteps = <int>[
+      for (int step = 0; step <= 6; step++)
+        if (_validateStep(updated, step) != null) step,
+    ];
+    // Preferences is the final confirmation in quick mode, even when defaults
+    // are already valid. Prompts and completed AI sections are not repeated.
+    if (!remainingSteps.contains(6)) remainingSteps.add(6);
+    remainingSteps.sort();
+    updated = updated.copyWith(
+      currentStep: remainingSteps.first,
+      quickRemainingSteps: remainingSteps,
+    );
+    _bioController.text = updated.bio;
+    _jobTitleController.text = updated.jobTitle;
+    setState(() {
+      _draft = updated;
+      _localError = null;
+    });
+    _markDraftDirtyAndDebounceSave();
+    await _persistCurrentDraft(force: true);
+  }
+
   /// Pantalla intent-first: qué busca la persona en Attra. Se muestra ANTES del
   /// onboarding. Las preguntas románticas solo aparecen si elige citas/ambas.
   Widget _buildIntentGate(ThemeData theme, OnboardingDraft draft) {
     void choose(String mode) => _updateDraft(draft.copyWith(intentMode: mode));
     const List<({String mode, IconData icon, String title, String subtitle})>
-        options = <({
-      String mode,
-      IconData icon,
-      String title,
-      String subtitle
-    })>[
+        options =
+        <({String mode, IconData icon, String title, String subtitle})>[
       (
         mode: 'friends',
         icon: Icons.emoji_people_rounded,
@@ -837,7 +1355,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
-  Widget _buildHeader(ThemeData theme, int step) {
+  Widget _buildHeader(
+    ThemeData theme,
+    int step, {
+    required int position,
+    required int total,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
       child: Column(
@@ -850,7 +1373,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Paso ${step + 1} de $_totalSteps',
+                      'Paso ${position + 1} de $total',
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: AppColors.attraRed,
                         fontWeight: FontWeight.w700,
@@ -877,13 +1400,17 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             ],
           ),
           const SizedBox(height: 12),
-          _StepProgress(current: step, total: _totalSteps),
+          _StepProgress(current: position, total: total),
         ],
       ),
     );
   }
 
-  Widget _buildFooter(ThemeData theme, int step, bool isLast) {
+  Widget _buildFooter(
+    ThemeData theme,
+    bool isLast, {
+    required int position,
+  }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
       decoration: BoxDecoration(
@@ -923,13 +1450,15 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             ),
           Row(
             children: <Widget>[
-              if (step > 0) ...<Widget>[
-                _CircleNavButton(
-                  icon: Icons.arrow_back_rounded,
-                  onPressed: _submitting ? null : _goBack,
-                ),
-                const SizedBox(width: 12),
-              ],
+              _CircleNavButton(
+                icon: Icons.arrow_back_rounded,
+                onPressed: _submitting
+                    ? null
+                    : position > 0
+                        ? _goBack
+                        : _returnToSetupMode,
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: AttraPrimaryButton(
                   label: isLast ? 'Finalizar' : 'Continuar',
@@ -1500,7 +2029,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
   }
 
-  Future<void> _selectBirthDate(DateTime? current) async {
+  Future<DateTime?> _pickBirthDate(DateTime? current) async {
     final DateTime now = DateTime.now();
     final DateTime minimumDate = DateTime(now.year - 100, 1, 1);
     final DateTime maximumDate =
@@ -1569,10 +2098,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       },
     );
 
-    if (!mounted || picked == null || _draft == null) {
-      return;
-    }
+    return mounted ? picked : null;
+  }
 
+  Future<void> _selectBirthDate(DateTime? current) async {
+    final DateTime? picked = await _pickBirthDate(current);
+    if (!mounted || picked == null || _draft == null) return;
     _updateDraft(_draft!.copyWith(birthDate: picked));
   }
 
@@ -1747,6 +2278,142 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       return '';
     }
     return months[month - 1];
+  }
+}
+
+class _SetupModeCard extends StatelessWidget {
+  const _SetupModeCard({
+    required this.icon,
+    required this.title,
+    required this.duration,
+    required this.description,
+    required this.features,
+    required this.onTap,
+    this.recommended = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String duration;
+  final String description;
+  final List<String> features;
+  final VoidCallback onTap;
+  final bool recommended;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return AttraCard(
+      onTap: onTap,
+      borderColor:
+          recommended ? context.colors.accent : context.colors.surfaceLine,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: recommended
+                      ? context.colors.accentSoft
+                      : context.colors.surfaceHigh,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                child: Icon(
+                  icon,
+                  color: recommended
+                      ? context.colors.accent
+                      : context.colors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        if (recommended)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: context.colors.accentSoft,
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.radiusPill,
+                              ),
+                            ),
+                            child: Text(
+                              'Recomendado',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: context.colors.accent,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      duration,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: recommended
+                            ? context.colors.accent
+                            : context.colors.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: context.colors.textMuted,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            description,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          for (final String feature in features)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.check_circle_outline_rounded,
+                    size: 17,
+                    color: recommended
+                        ? context.colors.accent
+                        : context.colors.textMuted,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(feature, style: theme.textTheme.bodySmall),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

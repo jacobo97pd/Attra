@@ -101,13 +101,13 @@ abstract class AppLocalizations {
   /// Etiqueta de la pestaña de descubrimiento
   ///
   /// In es, this message translates to:
-  /// **'Feed'**
+  /// **'Descubrir'**
   String get navFeed;
 
   /// No description provided for @navLikes.
   ///
   /// In es, this message translates to:
-  /// **'Likes'**
+  /// **'Conexiones'**
   String get navLikes;
 
   /// No description provided for @navChats.
@@ -149,7 +149,7 @@ abstract class AppLocalizations {
   /// No description provided for @likesTitle.
   ///
   /// In es, this message translates to:
-  /// **'Likes'**
+  /// **'Conexiones'**
   String get likesTitle;
 
   /// No description provided for @chatsTitle.

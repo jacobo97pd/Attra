@@ -1,18 +1,18 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../../../../l10n/app_localizations.dart';
 import '../../../security/screen_guard.dart';
-import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
+import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_backgrounds.dart';
 
-import '../../../../core/config/app_store_validation_config.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
 import '../../anti_ghosting/data/pending_conversations_controller.dart';
 import '../../anti_ghosting/domain/anti_ghosting_config.dart';
-import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
@@ -23,7 +23,6 @@ import '../../social/data/friend_group_service.dart';
 import '../../social/data/friend_mode_service.dart';
 import '../../social/data/social_discovery_service.dart';
 import '../../social/presentation/groups_screen.dart';
-import 'home_landing_screen.dart';
 import '../../social/presentation/intent_mode_selector.dart';
 import '../../social/domain/intent_mode.dart';
 import '../../chat/presentation/chats_screen.dart';
@@ -44,7 +43,6 @@ import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
 import '../../monetization/domain/premium_feature.dart';
 import '../../monetization/domain/subscription_tier.dart';
-import '../../monetization/presentation/boost_store_sheet.dart';
 import '../../monetization/presentation/entitlement_controller.dart';
 import '../../monetization/presentation/paywall_screen.dart';
 import '../../profile/data/profile_summary_repository.dart';
@@ -232,29 +230,47 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
+enum _HomeDestination {
+  discover,
+  connections,
+  chats,
+  profile,
+}
+
 class _HomeShellState extends State<HomeShell> {
-  int _tab = 0;
+  _HomeDestination _destination = _HomeDestination.discover;
   int _feedReloadToken = 0;
 
   /// Paso actual del tour guiado (-1 = inactivo). Cada paso resalta una pestaña.
   int _tourStep = -1;
 
   static const List<_TourStep> _tourSteps = <_TourStep>[
-    _TourStep(0, Icons.home_rounded, 'Inicio',
-        'Tu punto de partida: planes cerca, tus grupos y personas afines. '
-        'Empieza por lo que te apetece hacer.'),
-    _TourStep(1, Icons.explore_rounded, 'Planes',
-        'Explora, únete o crea planes y grupos por ciudad e intereses. '
-        'Pon una foto al grupo y quedad en la vida real.'),
-    _TourStep(2, Icons.people_rounded, 'Personas',
-        'Conoce gente compatible. En citas puedes dar like; en amistad, '
-        'conectar. Y siempre puedes "Invitar a un plan".'),
-    _TourStep(3, Icons.forum_rounded, 'Chats',
-        'Tus conversaciones y los chats de tus grupos, todo en un sitio. '
-        'Propón un plan directamente desde el chat.'),
-    _TourStep(4, Icons.person_rounded, 'Perfil',
-        'Completa tu perfil, elige qué buscas (citas, amistad, ambas o '
-        'grupos) y gestiona tu seguridad y privacidad.'),
+    _TourStep(
+      _HomeDestination.discover,
+      Icons.explore_rounded,
+      'Descubrir',
+      'Personas seleccionadas según tus preferencias, con contexto para '
+          'decidir con calma.',
+    ),
+    _TourStep(
+      _HomeDestination.connections,
+      Icons.favorite_rounded,
+      'Conexiones',
+      'Tus likes y matches viven juntos para que siempre sepas qué está '
+          'pasando.',
+    ),
+    _TourStep(
+      _HomeDestination.chats,
+      Icons.forum_rounded,
+      'Chats',
+      'Continúa las conversaciones y propón un plan cuando tenga sentido.',
+    ),
+    _TourStep(
+      _HomeDestination.profile,
+      Icons.person_rounded,
+      'Perfil',
+      'Ajusta cómo te presentas, qué buscas y tus preferencias de seguridad.',
+    ),
   ];
   SettingsController? _settingsController;
   EntitlementController? _entitlementController;
@@ -290,7 +306,7 @@ class _HomeShellState extends State<HomeShell> {
     await TutorialScreen.show(context);
     if (!mounted) return;
     setState(() {
-      _tab = 0;
+      _destination = _HomeDestination.discover;
       _tourStep = 0;
     });
   }
@@ -306,15 +322,17 @@ class _HomeShellState extends State<HomeShell> {
     }
     setState(() {
       _tourStep++;
-      _tab = _tourSteps[_tourStep].tabIndex;
+      _destination = _tourSteps[_tourStep].destination;
     });
   }
 
   void _onPushRoute() {
     final String? route = NotificationRouter.instance.consume();
     if (route == null) return;
-    final int? tab = _tabForRoute(route);
-    if (tab != null && mounted) setState(() => _tab = tab);
+    final _HomeDestination? destination = _destinationForRoute(route);
+    if (destination != null && mounted) {
+      setState(() => _destination = destination);
+    }
   }
 
   @override
@@ -393,29 +411,31 @@ class _HomeShellState extends State<HomeShell> {
     final AppLocalizations l10n = AppLocalizations.of(context);
     final String uid = widget.user?.uid ?? '';
 
-    // App Store validation experience: primary tabs become
-    // Connect · Play · Discover · Messages · Profile (Connect is the first
-    // screen). Discover/Messages/Profile reuse the existing feed/chats/profile.
-    const bool validation = kAppStoreValidationExperience;
-    const int discoverIndex = validation ? 2 : 0;
-    const int playIndex = 1;
-    const int chatsIndex = validation ? 3 : 2;
-    void goTo(int index) {
+    void goTo(_HomeDestination destination) {
       // Durante el tour guiado, la navegación la controla el tour (obligatorio).
       if (_tourStep >= 0) return;
       setState(() {
-        if (index == discoverIndex && _tab != discoverIndex) {
+        if (destination == _HomeDestination.discover &&
+            _destination != _HomeDestination.discover) {
           _feedReloadToken++;
         }
-        _tab = index;
+        _destination = destination;
       });
     }
+
     final int attrasBalance = _entitlementController?.attrasBalance ?? 0;
 
     final bool isPro = _entitlementController?.isProActive ?? false;
     final bool slowDating = widget.user?.slowDatingEnabled ?? false;
     final Widget feedTab = Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        titleTextStyle: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
+              color: Colors.white,
+            ),
         title: slowDating
             ? const Row(
                 mainAxisSize: MainAxisSize.min,
@@ -432,21 +452,6 @@ class _HomeShellState extends State<HomeShell> {
               service: widget.notificationService!,
               uid: uid,
               onTap: _openNotifications,
-            ),
-          if (widget.boostService != null)
-            IconButton(
-              tooltip: 'Boosts y Swipes',
-              icon: const Icon(Icons.bolt_rounded, color: Color(0xFFFF4F68)),
-              onPressed: _openBoostStore,
-            ),
-          if (!isPro)
-            TextButton.icon(
-              onPressed: _openPaywall,
-              icon:
-                  const Icon(Icons.workspace_premium, color: Color(0xFFB8860B)),
-              label: const Text('Plus / Pro',
-                  style: TextStyle(
-                      color: Color(0xFFB8860B), fontWeight: FontWeight.w700)),
             ),
         ],
       ),
@@ -487,7 +492,7 @@ class _HomeShellState extends State<HomeShell> {
         pendingController: _pendingController,
         isBusy: widget.user?.busyModeActive ?? false,
         isPro: _entitlementController?.isProActive ?? false,
-        onOpenChats: () => goTo(chatsIndex),
+        onOpenChats: () => goTo(_HomeDestination.chats),
         // Modo Amigos: acceso a grupos desde el feed cuando estás en modo social.
         onOpenGroups: (widget.friendGroupService == null ||
                 widget.socialDiscoveryService == null)
@@ -498,41 +503,16 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
 
-    final bool likesProtected =
-        !(_entitlementController?.canSeeAllLikes ?? false);
     final Widget likesTab = Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        title: Text(l10n.likesTitle),
-        actions: <Widget>[
-          if (likesProtected)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.shield_outlined,
-                      size: 16, color: AppColors.attraRed),
-                  const SizedBox(width: 6),
-                  RichText(
-                    text: TextSpan(
-                      style: const TextStyle(fontSize: 12.5),
-                      children: <TextSpan>[
-                        TextSpan(
-                            text: 'Tus likes están\n',
-                            style:
-                                TextStyle(color: context.colors.textSecondary)),
-                        const TextSpan(
-                            text: 'protegidos',
-                            style: TextStyle(
-                                color: AppColors.attraRed,
-                                fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        titleTextStyle: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
+              color: Colors.white,
             ),
-        ],
+        title: Text(l10n.likesTitle),
       ),
       body: uid.isEmpty
           ? const SizedBox.shrink()
@@ -541,12 +521,11 @@ class _HomeShellState extends State<HomeShell> {
               matchService: widget.matchService,
               chatService: widget.chatService,
               summaries: widget.profileSummaryRepository,
-              canSeeAll: _entitlementController?.canSeeAllLikes ?? false,
               showCompatibility: _entitlementController?.isProActive ?? false,
               currentUserInterests: widget.user?.interests ?? const <String>[],
-              onImproveProfile: () => setState(() => _tab = 3),
-              onUpgrade: _openPaywall,
-              // Plus/Pro pueden abrir el perfil de quien les dio like.
+              onImproveProfile: () =>
+                  setState(() => _destination = _HomeDestination.profile),
+              // El perfil de cada conexión forma parte del flujo principal.
               loadProfile: widget.onLoadProfileByUid,
               sparkService: widget.sparkService,
               sparkEnabled: _entitlementController?.sparkEnabled ?? false,
@@ -555,7 +534,16 @@ class _HomeShellState extends State<HomeShell> {
     );
 
     final Widget chatsTab = Scaffold(
-      appBar: AppBar(title: Text(l10n.chatsTitle)),
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        titleTextStyle: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
+              color: Colors.white,
+            ),
+        title: Text(l10n.chatsTitle),
+      ),
       body: uid.isEmpty
           ? const SizedBox.shrink()
           : ChatsScreen(
@@ -610,8 +598,7 @@ class _HomeShellState extends State<HomeShell> {
                   _antiGhosting.enabled && _antiGhosting.nudgesEnabled,
               dateFollowupEnabled:
                   _antiGhosting.enabled && _antiGhosting.dateFollowupEnabled,
-              onDiscover: () => goTo(discoverIndex),
-              onOpenPlay: () => goTo(playIndex),
+              onDiscover: () => goTo(_HomeDestination.discover),
             ),
     );
 
@@ -645,10 +632,9 @@ class _HomeShellState extends State<HomeShell> {
       onOpenAiVisual: _openAiVisual,
       // SafeDate: entrada al centro solo si el master switch remoto está ON y
       // hay servicio inyectado. OFF por defecto → invisible.
-      onOpenSafeDate:
-          (_safeDateFlags.enabled && widget.safeDateService != null)
-              ? _openSafeDate
-              : null,
+      onOpenSafeDate: (_safeDateFlags.enabled && widget.safeDateService != null)
+          ? _openSafeDate
+          : null,
       onSetSlowDating: widget.onSetSlowDating,
       // Modo Amigos: solo si hay callback inyectado (si no, se oculta).
       onOpenFriendMode: widget.onSetIntentMode == null ? null : _openFriendMode,
@@ -658,115 +644,65 @@ class _HomeShellState extends State<HomeShell> {
           : _openGroups,
     );
 
-    // Inicio tab (plan-first): la primera impresión son planes/grupos/gente,
-    // no un swipe. Personas/Chats/Perfil siguen accesibles en sus pestañas.
-    final bool safeDateOn = _safeDateFlags.enabled &&
-        widget.safeDateService != null &&
-        uid.isNotEmpty;
-    final Widget inicioTab = HomeLandingScreen(
-      uid: uid,
-      displayName: widget.user?.displayName,
-      city: widget.user?.city ?? '',
-      interests: widget.user?.socialInterests ??
-          widget.user?.interests ??
-          const <String>[],
-      onGoToPeople: () => goTo(discoverIndex),
-      onGoToPlans: () => goTo(playIndex),
-      onGoToChats: () => goTo(chatsIndex),
-      groupService: widget.friendGroupService,
-      discoveryService: widget.socialDiscoveryService,
-      onOpenSafeDate: safeDateOn ? _openSafeDate : null,
-      onOpenGroup: (_) => goTo(playIndex),
-      topBarActions: <Widget>[
-        if (widget.notificationService != null && uid.isNotEmpty)
-          NotificationBell(
-            service: widget.notificationService!,
-            uid: uid,
-            onTap: _openNotifications,
-          ),
-      ],
-    );
+    final List<Widget> tabs = <Widget>[
+      feedTab,
+      likesTab,
+      chatsTab,
+      profileTab,
+    ];
 
-    // Planes tab: explorar/crear/gestionar planes y grupos (Modo Amigos).
-    final Widget planesTab = (widget.friendGroupService != null &&
-            widget.socialDiscoveryService != null &&
-            uid.isNotEmpty)
-        ? GroupsScreen(
-            uid: uid,
-            groupService: widget.friendGroupService!,
-            discoveryService: widget.socialDiscoveryService!,
-            summaries: widget.profileSummaryRepository,
-            currentUserName: widget.user?.displayName ?? '',
-            city: widget.user?.city ?? '',
-            myInterests: widget.user?.socialInterests ?? const <String>[],
-          )
-        : ConversationGamesScreen(onDiscover: () => goTo(discoverIndex));
-
-    final List<Widget> tabs = validation
-        ? <Widget>[inicioTab, planesTab, feedTab, chatsTab, profileTab]
-        : <Widget>[feedTab, likesTab, chatsTab, profileTab];
-
-    final List<NavigationDestination> destinations = validation
-        ? const <NavigationDestination>[
-            NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Inicio'),
-            NavigationDestination(
-                icon: Icon(Icons.explore_outlined),
-                selectedIcon: Icon(Icons.explore),
-                label: 'Planes'),
-            NavigationDestination(
-                icon: Icon(Icons.people_outline),
-                selectedIcon: Icon(Icons.people),
-                label: 'Personas'),
-            NavigationDestination(
-                icon: Icon(Icons.forum_outlined),
-                selectedIcon: Icon(Icons.forum),
-                label: 'Chats'),
-            NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Perfil'),
-          ]
-        : <NavigationDestination>[
-            NavigationDestination(
-                icon: const Icon(Icons.explore_outlined),
-                selectedIcon: const Icon(Icons.explore),
-                label: l10n.navFeed),
-            NavigationDestination(
-                icon: const Icon(Icons.favorite_border),
-                selectedIcon: const Icon(Icons.favorite),
-                label: l10n.navLikes),
-            NavigationDestination(
-                icon: const Icon(Icons.forum_outlined),
-                selectedIcon: const Icon(Icons.forum),
-                label: l10n.navChats),
-            NavigationDestination(
-                icon: const Icon(Icons.person_outline),
-                selectedIcon: const Icon(Icons.person),
-                label: l10n.navProfile),
-          ];
+    final List<NavigationDestination> destinations = <NavigationDestination>[
+      NavigationDestination(
+        icon: const Icon(Icons.explore_outlined),
+        selectedIcon: const Icon(Icons.explore_rounded),
+        label: l10n.navFeed,
+      ),
+      NavigationDestination(
+        icon: const Icon(Icons.favorite_border_rounded),
+        selectedIcon: const Icon(Icons.favorite_rounded),
+        label: l10n.navLikes,
+      ),
+      NavigationDestination(
+        icon: const Icon(Icons.forum_outlined),
+        selectedIcon: const Icon(Icons.forum_rounded),
+        label: l10n.navChats,
+      ),
+      NavigationDestination(
+        icon: const Icon(Icons.person_outline_rounded),
+        selectedIcon: const Icon(Icons.person_rounded),
+        label: l10n.navProfile,
+      ),
+    ];
 
     return Scaffold(
-      body: Stack(
-        children: <Widget>[
-          IndexedStack(index: _tab, children: tabs),
-          // Tour guiado (obligatorio): superpuesto sobre el cuerpo; la barra de
-          // navegación queda visible abajo, con la pestaña del paso resaltada.
-          if (_tourStep >= 0)
-            _TourOverlay(
-              step: _tourStep,
-              total: _tourSteps.length,
-              stepData: _tourSteps[_tourStep],
-              onNext: _tourNext,
-            ),
-        ],
+      body: AttraAppShellBackground(
+        child: Stack(
+          children: <Widget>[
+            IndexedStack(index: _destination.index, children: tabs),
+            // Tour guiado (obligatorio): superpuesto sobre el cuerpo; la barra de
+            // navegación queda visible abajo, con la pestaña del paso resaltada.
+            if (_tourStep >= 0)
+              _TourOverlay(
+                step: _tourStep,
+                total: _tourSteps.length,
+                stepData: _tourSteps[_tourStep],
+                onNext: _tourNext,
+              ),
+          ],
+        ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: goTo,
-        destinations: destinations,
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: context.colors.surfaceLine),
+          ),
+        ),
+        child: NavigationBar(
+          selectedIndex: _destination.index,
+          onDestinationSelected: (int index) =>
+              goTo(_HomeDestination.values[index]),
+          destinations: destinations,
+        ),
       ),
     );
   }
@@ -797,7 +733,8 @@ class _HomeShellState extends State<HomeShell> {
     try {
       await setMode(chosen);
       if (mounted) {
-        setState(() => _feedReloadToken++); // refresca el feed con el nuevo modo
+        setState(
+            () => _feedReloadToken++); // refresca el feed con el nuevo modo
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Modo actualizado')));
       }
@@ -904,41 +841,29 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
-  /// Pestaña destino para una ruta lógica de notificación. Los índices cambian
-  /// según el modo de navegación (validación: Inicio·Planes·Personas·Chats·Perfil).
-  int? _tabForRoute(String route) {
-    const bool v = kAppStoreValidationExperience;
+  /// Destino principal para una ruta lógica de notificación.
+  _HomeDestination? _destinationForRoute(String route) {
     switch (route.split(':').first) {
       case 'feed':
-        return v ? 2 : 0;
+        return _HomeDestination.discover;
       case 'likes':
-        return v ? 2 : 1; // sin pestaña Likes en validación → Discover
+        return _HomeDestination.connections;
       case 'chats':
       case 'chat':
-        return v ? 3 : 2;
+        return _HomeDestination.chats;
       case 'profile':
-        return v ? 4 : 3;
+        return _HomeDestination.profile;
     }
     return null;
   }
 
   /// Desde la bandeja in-app: cierra la bandeja y cambia de pestaña.
   void _handleNotifRoute(String route) {
-    final int? tab = _tabForRoute(route);
-    if (tab != null && mounted) {
+    final _HomeDestination? destination = _destinationForRoute(route);
+    if (destination != null && mounted) {
       Navigator.of(context).maybePop(); // cierra la bandeja
-      setState(() => _tab = tab);
+      setState(() => _destination = destination);
     }
-  }
-
-  void _openBoostStore() {
-    final BoostService? service = widget.boostService;
-    if (service == null) return;
-    showBoostStoreSheet(
-      context,
-      service: service,
-      user: widget.user,
-    );
   }
 
   void _openSettings() {
@@ -973,9 +898,8 @@ class _AttraTitleLogo extends StatelessWidget {
         height: 28,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
-        // Wordmark blanco → tíntalo con el color de texto del tema (legible en
-        // claro y oscuro).
-        color: Theme.of(context).colorScheme.onSurface,
+        // El wordmark conserva el blanco original sobre la cabecera oscura.
+        color: Colors.white,
       ),
     );
   }
@@ -990,20 +914,21 @@ class _SlowDatingBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFE5384E).withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(999),
-        border:
-            Border.all(color: const Color(0xFFE5384E).withValues(alpha: 0.5)),
+        color: context.colors.accentSoft,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        border: Border.all(
+          color: context.colors.accent.withValues(alpha: 0.42),
+        ),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.spa_rounded, size: 13, color: Color(0xFFE5384E)),
-          SizedBox(width: 5),
+          Icon(Icons.spa_rounded, size: 13, color: context.colors.accent),
+          const SizedBox(width: 5),
           Text(
             'Slow Dating',
             style: TextStyle(
-              color: Color(0xFFE5384E),
+              color: context.colors.accent,
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
             ),
@@ -1016,8 +941,8 @@ class _SlowDatingBadge extends StatelessWidget {
 
 /// Un paso del tour guiado: qué pestaña resalta y qué explica.
 class _TourStep {
-  const _TourStep(this.tabIndex, this.icon, this.title, this.body);
-  final int tabIndex;
+  const _TourStep(this.destination, this.icon, this.title, this.body);
+  final _HomeDestination destination;
   final IconData icon;
   final String title;
   final String body;
@@ -1044,7 +969,7 @@ class _TourOverlay extends StatelessWidget {
     final bool isLast = step >= total - 1;
     return Positioned.fill(
       child: Material(
-        color: Colors.black.withValues(alpha: 0.72),
+        color: Colors.black.withValues(alpha: 0.62),
         child: SafeArea(
           child: Column(
             children: <Widget>[
@@ -1054,15 +979,9 @@ class _TourOverlay extends StatelessWidget {
                 margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: AppColors.surfaceLine),
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                        color: AppColors.attraRed.withValues(alpha: 0.25),
-                        blurRadius: 24,
-                        spreadRadius: 1),
-                  ],
+                  color: context.colors.surface,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                  border: Border.all(color: context.colors.surfaceLine),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1074,30 +993,31 @@ class _TourOverlay extends StatelessWidget {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: AppColors.attraRed.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(13),
+                            color: context.colors.accentSoft,
+                            borderRadius:
+                                BorderRadius.circular(AppSpacing.radiusMd),
                           ),
                           child: Icon(stepData.icon,
-                              color: AppColors.attraRed, size: 24),
+                              color: context.colors.accent, size: 24),
                         ),
                         const SizedBox(width: 12),
-                        Text(stepData.title,
-                            style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800)),
-                        const Spacer(),
-                        Text('${step + 1}/$total',
-                            style: const TextStyle(
-                                color: AppColors.textSecondary, fontSize: 13)),
+                        Expanded(
+                          child: Text(
+                            stepData.title,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        Text(
+                          '${step + 1}/$total',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Text(stepData.body,
-                        style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 14.5,
-                            height: 1.4)),
+                    Text(
+                      stepData.body,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       children: <Widget>[
@@ -1109,25 +1029,15 @@ class _TourOverlay extends StatelessWidget {
                             height: 7,
                             decoration: BoxDecoration(
                               color: i == step
-                                  ? AppColors.attraRed
-                                  : AppColors.surfaceLine,
+                                  ? context.colors.accent
+                                  : context.colors.surfaceLine,
                               borderRadius: BorderRadius.circular(99),
                             ),
                           ),
                         const Spacer(),
                         FilledButton(
                           onPressed: onNext,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.attraRed,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(99)),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 24, vertical: 12),
-                          ),
-                          child: Text(isLast ? '¡Listo!' : 'Siguiente',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700)),
+                          child: Text(isLast ? '¡Listo!' : 'Siguiente'),
                         ),
                       ],
                     ),
@@ -1135,8 +1045,11 @@ class _TourOverlay extends StatelessWidget {
                 ),
               ),
               // Flecha que apunta a la barra de navegación (pestaña resaltada).
-              const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: AppColors.attraRed, size: 30),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: context.colors.accent,
+                size: 30,
+              ),
               const SizedBox(height: 4),
             ],
           ),

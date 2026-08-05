@@ -67,7 +67,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Attra puede guardar contenido que generes o selecciones para tu perfil.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Attra necesita acceso al microfono para grabar notas de voz en chats y perfil.</string>
+	<string>Attra necesita acceso al microfono para grabar notas de voz y, si eliges la configuracion rapida, crear con IA un borrador de perfil que revisaras antes de publicarlo.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Attra usa tu ubicacion aproximada para mostrarte perfiles cercanos segun tu radio de busqueda.</string>
 	<key>NSFaceIDUsageDescription</key>

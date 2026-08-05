@@ -9,10 +9,10 @@ class AppLocalizationsEs extends AppLocalizations {
   AppLocalizationsEs([String locale = 'es']) : super(locale);
 
   @override
-  String get navFeed => 'Feed';
+  String get navFeed => 'Descubrir';
 
   @override
-  String get navLikes => 'Likes';
+  String get navLikes => 'Conexiones';
 
   @override
   String get navChats => 'Chats';
@@ -34,7 +34,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get feedReload => 'Recargar';
 
   @override
-  String get likesTitle => 'Likes';
+  String get likesTitle => 'Conexiones';
 
   @override
   String get chatsTitle => 'Chats';

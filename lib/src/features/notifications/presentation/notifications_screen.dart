@@ -255,15 +255,15 @@ class NotificationBell extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   constraints: const BoxConstraints(minWidth: 16),
                   decoration: BoxDecoration(
-                    color: AppColors.attraRed,
+                    color: context.colors.accent,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: context.colors.bg, width: 1.5),
                   ),
                   child: Text(
                     n > 9 ? '9+' : '$n',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.white,
+                    style: TextStyle(
+                        color: context.colors.onAccent,
                         fontSize: 10,
                         fontWeight: FontWeight.w800),
                   ),

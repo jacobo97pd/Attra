@@ -20,6 +20,26 @@ service firebase.storage {
       allow write: if isOwner(uid) && isImageUpload();
     }
 
+    // Audio efímero para crear el borrador de perfil con IA. No se permite
+    // descargarlo: el cliente conserva su copia local y solo Admin/Vertex lee
+    // este objeto. La Function lo borra en `finally` y un sweeper cubre
+    // abandonos de más de una hora.
+    match /ephemeral/onboarding_voice/{uid}/{fileName} {
+      allow read: if false;
+      allow delete: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && fileName.matches(
+          'voice_[0-9]+[.](m4a|mp4|aac|mp3|ogg|opus|wav|webm)'
+        )
+        && request.resource.contentType.matches('audio/.*')
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.metadata.assetType == 'onboarding_voice_once'
+        && request.resource.metadata.uploadedBy == uid
+        && request.resource.metadata.consentVersion
+          == 'voice-profile-2026-07-29-v1';
+      allow update: if false;
+    }
+
     match /users/{uid}/public/profile/{fileName} {
       allow read: if isSignedIn();
       allow write: if isOwner(uid) && isImageUpload();

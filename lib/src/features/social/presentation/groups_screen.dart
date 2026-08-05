@@ -79,7 +79,8 @@ class _GroupsScreenState extends State<GroupsScreen> {
       if (groupId.isNotEmpty && photo != null) {
         try {
           if (photo.isPreset) {
-            await widget.groupService.setGroupPreset(groupId, photo.presetValue!);
+            await widget.groupService
+                .setGroupPreset(groupId, photo.presetValue!);
           } else if (photo.bytes != null) {
             await widget.groupService.updateGroupPhoto(
               groupId,
@@ -128,7 +129,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                 gradient: RadialGradient(
                   center: Alignment(-1.0, -1.0),
                   radius: 1.2,
-                  colors: <Color>[Color(0x33FF4F68), Color(0x000E0E10)],
+                  colors: <Color>[Color(0x33707070), Color(0x00111111)],
                   stops: <double>[0.0, 0.55],
                 ),
               ),
@@ -253,7 +254,9 @@ class _GroupsScreenState extends State<GroupsScreen> {
               const SizedBox(height: 4),
               const Text('Explora grupos y planes para hacer cosas increíbles.',
                   style: TextStyle(
-                      color: AppColors.textSecondary, fontSize: 15, height: 1.3)),
+                      color: AppColors.textSecondary,
+                      fontSize: 15,
+                      height: 1.3)),
             ],
           ),
         ),
@@ -431,8 +434,8 @@ class _EmptyLine extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Text(text,
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 14)),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
       );
 }
 
@@ -585,11 +588,13 @@ class _MetaLine extends StatelessWidget {
         );
     return Row(
       children: <Widget>[
-        const Icon(Icons.place_outlined, size: 14, color: AppColors.textSecondary),
+        const Icon(Icons.place_outlined,
+            size: 14, color: AppColors.textSecondary),
         const SizedBox(width: 3),
         Text(group.city.isEmpty ? '—' : group.city, style: base),
         dot(),
-        const Icon(Icons.group_outlined, size: 14, color: AppColors.textSecondary),
+        const Icon(Icons.group_outlined,
+            size: 14, color: AppColors.textSecondary),
         const SizedBox(width: 3),
         Text('${group.memberCount}/${group.maxMembers}', style: base),
         if (group.interests.isNotEmpty) ...<Widget>[
@@ -896,8 +901,7 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                         if (admin) ...<Widget>[
                           const SizedBox(height: 6),
                           GestureDetector(
-                            onTap:
-                                _uploadingPhoto ? null : () => _pickPhoto(g),
+                            onTap: _uploadingPhoto ? null : () => _pickPhoto(g),
                             child: Text(
                                 g.hasPhoto ? 'Cambiar foto' : 'Añadir foto',
                                 style: TextStyle(
@@ -1028,7 +1032,8 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                   label: const Text('Salir del grupo'),
                 )
               else if (pending)
-                const Text('Solicitud enviada. Espera la respuesta del creador.')
+                const Text(
+                    'Solicitud enviada. Espera la respuesta del creador.')
               else
                 FilledButton.icon(
                   onPressed: (!g.isJoinable || _busy)
@@ -1036,7 +1041,8 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                       : () => _run(() => widget.service.requestJoin(g.id),
                           'Solicitud enviada'),
                   icon: const Icon(Icons.person_add_alt),
-                  label: Text(g.isJoinable ? 'Solicitar unirse' : 'No disponible'),
+                  label:
+                      Text(g.isJoinable ? 'Solicitar unirse' : 'No disponible'),
                 ),
             ],
           ),
@@ -1078,8 +1084,7 @@ class _PersonRow extends StatelessWidget {
                 radius: 18,
                 backgroundColor:
                     theme.colorScheme.primary.withValues(alpha: 0.15),
-                backgroundImage:
-                    photo.isNotEmpty ? NetworkImage(photo) : null,
+                backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
                 child: photo.isEmpty
                     ? Text(
                         name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -1089,8 +1094,7 @@ class _PersonRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
               if (trailing != null) trailing!,
             ],
@@ -1258,8 +1262,9 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                 labelText: 'Nombre',
                 hintText: 'Senderismo por Madrid',
                 border: const OutlineInputBorder(),
-                errorText:
-                    _tried && _name.text.trim().isEmpty ? 'Ponle un nombre' : null,
+                errorText: _tried && _name.text.trim().isEmpty
+                    ? 'Ponle un nombre'
+                    : null,
               ),
               onChanged: (_) => setState(() {}),
             ),

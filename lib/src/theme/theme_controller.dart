@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// del usuario (`settings['appearance.themeMode']`) y se vuelca aquí al cargar
 /// la sesión o al cambiar el toggle de Ajustes.
 class ThemeController extends ValueNotifier<ThemeMode> {
-  ThemeController([super.initial = ThemeMode.dark]);
+  ThemeController([super.initial = ThemeMode.system]);
 
   /// Singleton sencillo (sin dependencias). Se lee en app.dart.
   static final ThemeController instance = ThemeController();
@@ -14,7 +14,7 @@ class ThemeController extends ValueNotifier<ThemeMode> {
     if (value != mode) value = mode;
   }
 
-  /// Mapea el string guardado en ajustes a ThemeMode (default: oscuro).
+  /// Mapea el string guardado en ajustes a ThemeMode (default: sistema).
   static ThemeMode fromWire(Object? raw) {
     switch ((raw ?? '').toString().trim().toLowerCase()) {
       case 'light':
@@ -24,7 +24,7 @@ class ThemeController extends ValueNotifier<ThemeMode> {
       case 'dark':
         return ThemeMode.dark;
       default:
-        return ThemeMode.dark;
+        return ThemeMode.system;
     }
   }
 

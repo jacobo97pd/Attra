@@ -9,6 +9,89 @@ const DATABASE = "attra-database";
 
 const discovery = db.collection("discovery");
 
+interface PublicTraitDefinition {
+  key: string;
+  group: string;
+  field: string;
+  sensitive?: boolean;
+}
+
+interface EffectiveVisibility {
+  visibleInProfile: boolean;
+  useForFilters: boolean;
+}
+
+/// Mantener en paridad con `ProfileTraitsCatalog` del cliente. La clave se usa
+/// para resolver el consentimiento y group/field para leer y publicar el dato.
+const PUBLIC_TRAITS: readonly PublicTraitDefinition[] = [
+  { key: "pronouns", group: "profile", field: "pronouns" },
+  {
+    key: "sexualOrientation",
+    group: "profile",
+    field: "orientation",
+    sensitive: true,
+  },
+  { key: "languages", group: "profile", field: "languages" },
+  { key: "hometown", group: "profile", field: "birthCity" },
+  { key: "height", group: "appearance", field: "heightCm" },
+  { key: "zodiac", group: "profile", field: "zodiac" },
+  { key: "eyes", group: "appearance", field: "eyeColor" },
+  { key: "bodyType", group: "appearance", field: "bodyType" },
+  { key: "tattoos", group: "appearance", field: "tattoos" },
+  { key: "glasses", group: "appearance", field: "glasses" },
+  {
+    key: "relationshipGoal",
+    group: "profile",
+    field: "relationshipIntent",
+  },
+  { key: "children", group: "lifestyle", field: "hasChildren" },
+  { key: "familyPlans", group: "lifestyle", field: "wantsChildren" },
+  { key: "smoking", group: "lifestyle", field: "smoking" },
+  { key: "drinking", group: "lifestyle", field: "drinking" },
+  {
+    key: "cannabis",
+    group: "lifestyle",
+    field: "cannabis",
+    sensitive: true,
+  },
+  {
+    key: "drugs",
+    group: "lifestyle",
+    field: "drugs",
+    sensitive: true,
+  },
+  { key: "diet", group: "lifestyle", field: "diet" },
+  { key: "pets", group: "lifestyle", field: "pets" },
+  { key: "jobTitle", group: "profile", field: "jobTitle" },
+  { key: "company", group: "profile", field: "company" },
+  { key: "educationLevel", group: "profile", field: "educationLevel" },
+  { key: "university", group: "profile", field: "university" },
+  { key: "interestTags", group: "profile", field: "interests" },
+  {
+    key: "personalityTags",
+    group: "style",
+    field: "personalityTags",
+  },
+  {
+    key: "ethnicity",
+    group: "origin",
+    field: "ethnicity",
+    sensitive: true,
+  },
+  {
+    key: "religion",
+    group: "profile",
+    field: "religion",
+    sensitive: true,
+  },
+  {
+    key: "politics",
+    group: "profile",
+    field: "politics",
+    sensitive: true,
+  },
+];
+
 /// True si el tier del doc de entitlements es de pago y sigue activo (no
 /// caducado). Espeja la logica de `UserEntitlements.isActiveAt` del cliente.
 function isPaidActive(entData: DocumentData | undefined): boolean {
@@ -24,6 +107,7 @@ function isPaidActive(entData: DocumentData | undefined): boolean {
 /// Un usuario es descubrible (aparece en el feed de otros) si completo el
 /// onboarding y el perfil, NO es un bot y no se ha ocultado:
 ///   - `privacy.hideProfile` (gratis): se sale del feed siempre.
+///   - `privacy.showInRecommendations=false`: no aparece recomendado.
 ///   - `privacy.incognito` (Plus): solo surte efecto con plan de pago activo;
 ///     asi el modo incognito es una ventaja real de Attra Plus/Pro.
 function isDiscoverable(
@@ -40,6 +124,7 @@ function isDiscoverable(
   }
   const settings = asMap(data.settings);
   if (settings["privacy.hideProfile"] === true) return false;
+  if (settings["privacy.showInRecommendations"] === false) return false;
   if (settings["privacy.incognito"] === true && isPaid) return false;
   return true;
 }
@@ -52,6 +137,70 @@ function asMap(value: unknown): DocumentData {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function asDouble(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function roundTo(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function isUsableTraitValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    const clean = value.trim();
+    return clean.length > 0 && clean !== "prefer_not_to_say";
+  }
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) {
+    return value.some(
+      (item) =>
+        typeof item === "string" &&
+        item.trim().length > 0 &&
+        item.trim() !== "prefer_not_to_say"
+    );
+  }
+  return false;
+}
+
+function cleanTraitValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(
+        (item) => item.length > 0 && item !== "prefer_not_to_say"
+      );
+  }
+  return typeof value === "string" ? value.trim() : value;
+}
+
+function effectiveVisibility(
+  data: DocumentData,
+  trait: PublicTraitDefinition
+): EffectiveVisibility {
+  const fields = asMap(asMap(data.profileVisibility).fields);
+  const saved = asMap(fields[trait.key]);
+  // Igual que ProfileVisibility.effectiveFor: no sensibles opt-out y sensibles
+  // opt-in. Un mapa parcial conserva el default de cada propiedad.
+  const fallback = trait.sensitive !== true;
+  return {
+    visibleInProfile:
+      typeof saved.visibleInProfile === "boolean"
+        ? saved.visibleInProfile
+        : fallback,
+    useForFilters:
+      typeof saved.useForFilters === "boolean"
+        ? saved.useForFilters
+        : fallback,
+  };
 }
 
 /// Construye el documento PLANO de discovery con SOLO campos publicos, con las
@@ -133,11 +282,23 @@ function publicIntroMedia(value: unknown): DocumentData | null {
 function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
   const profile = asMap(data.profile);
   const prefs = asMap(data.preferences);
+  const settings = asMap(data.settings);
   const age =
     asInt(profile.age) ??
     asInt(data.age) ??
     ageFromBirthDate(profile.birthDate ?? data.birthDate);
-  return {
+
+  const nestedTravel = asMap(settings.travel);
+  const travel =
+    Object.keys(nestedTravel).length > 0 ? nestedTravel : asMap(data.travel);
+  const traveling =
+    travel.active === true && asString(travel.country).length > 0;
+  const realCity = asString(profile.currentCity ?? profile.city);
+  const realCountry = asString(profile.currentCountryName);
+  const publicCity = traveling ? asString(travel.city) : realCity;
+  const showCity = settings["location.showOnProfile"] !== false;
+
+  const out: DocumentData = {
     uid,
     isBot: false,
     displayName: resolvePublicDisplayName(data),
@@ -147,11 +308,11 @@ function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
     interestedIn: Array.isArray(prefs.interestedIn) ? prefs.interestedIn : [],
     age,
     bio: profile.bio ?? "",
-    currentCity: profile.currentCity ?? profile.city ?? "",
-    currentCountryName: profile.currentCountryName ?? "",
-    jobTitle: profile.jobTitle ?? "",
-    company: profile.company ?? "",
-    interests: Array.isArray(profile.interests) ? profile.interests : [],
+    currentCity: showCity ? publicCity : "",
+    currentCountryName: traveling ? asString(travel.country) : realCountry,
+    traveling,
+    showDistance: settings["privacy.showDistance"] !== false,
+    showActiveStatus: settings["privacy.showActiveStatus"] !== false,
     // Modo Amigos: intención + intereses sociales (default dating si falta).
     intentMode:
       typeof profile.intentMode === "string" && profile.intentMode
@@ -160,12 +321,62 @@ function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
     socialInterests: Array.isArray(profile.socialInterests)
       ? profile.socialInterests
       : [],
-    orientation: Array.isArray(profile.orientation) ? profile.orientation : [],
-    profilePrompts: publicProfilePrompts(data),
-    introAudio: publicIntroMedia(profile.introAudio),
-    introVideo: publicIntroMedia(profile.introVideo),
-    updatedAt: FieldValue.serverTimestamp(),
   };
+
+  const filterTraits: DocumentData = {};
+  for (const trait of PUBLIC_TRAITS) {
+    const value = asMap(data[trait.group])[trait.field];
+    if (!isUsableTraitValue(value)) continue;
+    const visibility = effectiveVisibility(data, trait);
+    if (visibility.visibleInProfile) {
+      out[trait.field] = cleanTraitValue(value);
+    }
+    if (
+      trait.sensitive === true &&
+      visibility.useForFilters &&
+      typeof value === "string"
+    ) {
+      filterTraits[trait.field] = value.trim();
+    }
+  }
+  if (Object.keys(filterTraits).length > 0) {
+    out.filterTraits = filterTraits;
+  }
+
+  const prompts = publicProfilePrompts(data);
+  if (prompts.length > 0) out.profilePrompts = prompts;
+
+  const introAudio = publicIntroMedia(profile.introAudio);
+  if (introAudio) out.introAudio = introAudio;
+  const introVideo = publicIntroMedia(profile.introVideo);
+  if (introVideo) out.introVideo = introVideo;
+
+  if (settings["integrations.instagram"] === true) {
+    const instagram = asString(settings["integrations.instagramHandle"]);
+    if (instagram.length > 0) out.instagram = instagram;
+  }
+
+  const verification = asMap(data.verification);
+  if (asString(verification.liveSelfiePublicPhotoUrl).length > 0) {
+    out.verified = true;
+  }
+
+  // Coordenadas aproximadas: nunca copiamos latitud/longitud exactas.
+  const location = asMap(data.location);
+  const latitude = asDouble(location.latitude);
+  const longitude = asDouble(location.longitude);
+  if (latitude !== null && longitude !== null) {
+    const approximate =
+      asString(settings["location.precision"]).toLowerCase() === "approximate";
+    const digits = approximate ? 1 : 2;
+    out.geo = {
+      lat: roundTo(latitude, digits),
+      lng: roundTo(longitude, digits),
+    };
+  }
+
+  out.updatedAt = FieldValue.serverTimestamp();
+  return out;
 }
 
 /// Espeja un user en discovery (o lo borra si no es descubrible). Idempotente.
@@ -182,7 +393,9 @@ async function syncOne(uid: string, data: DocumentData | undefined): Promise<voi
     await ref.delete().catch(() => undefined);
     return;
   }
-  await ref.set(buildDiscoveryDoc(uid, data as DocumentData), { merge: true });
+  // Reemplazo completo: al ocultar, revocar o borrar un campo no puede quedar
+  // una copia antigua en el documento publico.
+  await ref.set(buildDiscoveryDoc(uid, data as DocumentData));
 }
 
 /// Trigger: cada vez que cambia users/{uid}, sincroniza su espejo publico en
@@ -245,9 +458,7 @@ export const backfillDiscovery = onCall({ region: REGION }, async (request) => {
       lastId = doc.id;
       const data = doc.data();
       if (isDiscoverable(data, paidById.get(doc.id) ?? false)) {
-        batch.set(discovery.doc(doc.id), buildDiscoveryDoc(doc.id, data), {
-          merge: true,
-        });
+        batch.set(discovery.doc(doc.id), buildDiscoveryDoc(doc.id, data));
         published += 1;
       } else {
         batch.delete(discovery.doc(doc.id));

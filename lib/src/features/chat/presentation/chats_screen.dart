@@ -241,8 +241,10 @@ class ChatsScreen extends StatelessWidget {
             return aw.compareTo(bw); // más antiguo esperando primero
           });
           rest.sort((Chat a, Chat b) {
-            final DateTime aw = a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final DateTime bw = b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final DateTime aw =
+                a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final DateTime bw =
+                b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
             return bw.compareTo(aw); // más reciente primero
           });
         } else {
@@ -417,6 +419,7 @@ class _RingAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
     final Widget avatar = CircleAvatar(
       radius: radius,
       backgroundColor: const Color(0xFFE0E0E0),
@@ -430,12 +433,15 @@ class _RingAvatar extends StatelessWidget {
       onTap: () => onOpenStory?.call(s),
       child: Container(
         padding: const EdgeInsets.all(2.5),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: <Color>[Color(0xFFB8860B), Color(0xFF1D6A96)],
+            colors: <Color>[
+              theme.colorScheme.primary,
+              theme.colorScheme.outline,
+            ],
           ),
         ),
         child: CircleAvatar(
@@ -695,9 +701,7 @@ class _EmptyAction extends StatelessWidget {
       height: 52,
       child: primary
           ? FilledButton.icon(
-              onPressed: onTap,
-              icon: Icon(icon),
-              label: Text(label))
+              onPressed: onTap, icon: Icon(icon), label: Text(label))
           : OutlinedButton.icon(
               onPressed: onTap,
               icon: Icon(icon, color: theme.colorScheme.primary),

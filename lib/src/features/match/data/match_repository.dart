@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../domain/like.dart';
 import '../domain/received_like_priority.dart';
+import '../domain/sent_like_ordering.dart';
 import '../domain/user_match.dart';
 
 /// Lecturas en vivo de matches y likes recibidos. SOLO lectura: las escrituras
@@ -100,6 +101,25 @@ class MatchRepository {
     return _matches.doc(matchId).snapshots().map(
         (DocumentSnapshot<Map<String, dynamic>> d) =>
             d.exists ? UserMatch.fromMap(d.id, d.data()!) : null);
+  }
+
+  /// Likes enviados que siguen pendientes de respuesta, más recientes primero.
+  ///
+  /// Los likes que ya produjeron match pasan a `matched`, por lo que no se
+  /// duplican aquí y en la pestaña de matches.
+  Stream<List<Like>> observeSentLikes(String uid) {
+    return _likes
+        .where('fromUid', isEqualTo: uid)
+        .where('status', isEqualTo: 'active')
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> snap) {
+      return SentLikeOrdering.newestPending(
+        snap.docs.map(
+          (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+              Like.fromMap(d.data()),
+        ),
+      );
+    });
   }
 
   /// Likes recibidos activos (bandeja "Te han dado like"). Los de tipo attra se

@@ -11,11 +11,12 @@ class AppSpacing {
   static const double xl = 24;
   static const double xxl = 32;
 
-  // Radios de borde (premium = redondeados grandes).
-  static const double radiusSm = 12;
-  static const double radiusMd = 18;
-  static const double radiusLg = 24;
-  static const double radiusXl = 32;
+  // Radios con jerarquía: controles < tarjetas < superficies destacadas.
+  // `radiusPill` se reserva para chips, badges y controles segmentados.
+  static const double radiusSm = 10;
+  static const double radiusMd = 14;
+  static const double radiusLg = 20;
+  static const double radiusXl = 28;
   static const double radiusPill = 999;
 
   static const EdgeInsets screen = EdgeInsets.all(lg);

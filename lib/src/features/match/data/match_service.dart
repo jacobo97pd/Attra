@@ -138,6 +138,9 @@ class MatchService {
   Stream<UserMatch?> observeMatchById(String matchId) =>
       _repository.observeMatchById(matchId);
 
+  Stream<List<Like>> observeSentLikes(String uid) =>
+      _repository.observeSentLikes(uid);
+
   Stream<List<Like>> observeReceivedLikes(String uid) =>
       _repository.observeReceivedLikes(uid);
 

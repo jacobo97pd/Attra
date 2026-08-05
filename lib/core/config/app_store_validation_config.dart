@@ -11,4 +11,6 @@
 /// This is a REAL user-facing experience — it is NOT reviewer-only, does not
 /// detect Apple reviewers, and hides no functionality. It only reorders and
 /// reframes what the user sees first, so Attra no longer reads as "swipe-first".
+/// The main navigation no longer reads this flag. It stays enabled to preserve
+/// the guided AI challenge/coach/date-planner affordances already in chats.
 const bool kAppStoreValidationExperience = true;

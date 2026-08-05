@@ -34,6 +34,7 @@ import 'src/features/monetization/data/boost_service.dart';
 import 'src/features/monetization/data/entitlement_service.dart';
 import 'src/features/monetization/data/feature_flag_service.dart';
 import 'src/features/onboarding/data/onboarding_repository.dart';
+import 'src/features/onboarding/data/voice_profile_service.dart';
 import 'src/features/feed/data/ranking_signals_repository.dart';
 import 'src/features/profile/data/profile_summary_repository.dart';
 import 'src/features/settings/data/settings_repository.dart';
@@ -59,6 +60,9 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
   static const String _firestoreDatabaseId = String.fromEnvironment(
     'FIREBASE_FIRESTORE_DATABASE_ID',
     defaultValue: 'attra-database',
+  );
+  static const String _voiceStorageBucket = String.fromEnvironment(
+    'VOICE_PROFILE_STORAGE_BUCKET',
   );
 
   @override
@@ -97,6 +101,14 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
     // Las Cloud Functions estan desplegadas en europe-west1 (ver functions/).
     final FirebaseFunctions functions =
         FirebaseFunctions.instanceFor(region: 'europe-west1');
+    // El audio de onboarding puede vivir en un bucket efímero europeo
+    // independiente del almacenamiento histórico de la app.
+    final FirebaseStorage voiceStorage = _voiceStorageBucket.isEmpty
+        ? FirebaseStorage.instance
+        : FirebaseStorage.instanceFor(
+            app: Firebase.app(),
+            bucket: _voiceStorageBucket,
+          );
 
     _sessionController = SessionController(
       authService: AuthService(
@@ -116,6 +128,10 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
           databaseId: _firestoreDatabaseId,
         ),
         storage: FirebaseStorage.instance,
+      ),
+      voiceProfileService: VoiceProfileService(
+        storage: voiceStorage,
+        functions: functions,
       ),
       settingsRepository: SettingsRepository(
         firestore: FirebaseFirestore.instanceFor(

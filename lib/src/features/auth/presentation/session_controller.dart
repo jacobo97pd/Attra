@@ -7,7 +7,9 @@ import 'package:flutter/material.dart' show ThemeMode;
 import '../../../theme/theme_controller.dart';
 import '../../onboarding/data/onboarding_error_messages.dart';
 import '../../onboarding/data/onboarding_repository.dart';
+import '../../onboarding/data/voice_profile_service.dart';
 import '../../onboarding/domain/onboarding_draft.dart';
+import '../../onboarding/domain/voice_profile_suggestion.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../chat/data/chat_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
@@ -31,6 +33,7 @@ import '../../profile/domain/profile_trait.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../notifications/data/notification_service.dart';
 import '../../settings/data/settings_repository.dart';
+import '../../settings/domain/setting_definition.dart';
 import '../../spark/data/spark_service.dart';
 import '../data/auth_service.dart';
 import '../data/user_repository.dart';
@@ -42,6 +45,7 @@ class SessionController extends ChangeNotifier {
     required AuthService authService,
     required UserRepository userRepository,
     required OnboardingRepository onboardingRepository,
+    required VoiceProfileService voiceProfileService,
     required SettingsRepository settingsRepository,
     required EntitlementService entitlementService,
     required FeatureFlagService featureFlagService,
@@ -76,6 +80,7 @@ class SessionController extends ChangeNotifier {
         _aiVisualService = aiVisualService,
         _userRepository = userRepository,
         _onboardingRepository = onboardingRepository,
+        _voiceProfileService = voiceProfileService,
         _settingsRepository = settingsRepository,
         _entitlementService = entitlementService,
         _featureFlagService = featureFlagService,
@@ -92,6 +97,7 @@ class SessionController extends ChangeNotifier {
   final AuthService _authService;
   final UserRepository _userRepository;
   final OnboardingRepository _onboardingRepository;
+  final VoiceProfileService _voiceProfileService;
   final SettingsRepository _settingsRepository;
   final EntitlementService _entitlementService;
   final FeatureFlagService _featureFlagService;
@@ -437,6 +443,9 @@ class SessionController extends ChangeNotifier {
           errorMessage: onboardingSaveErrorMessage(error),
         ),
       );
+      // Callers such as the pre-AI age gate must fail closed when Firestore did
+      // not persist the draft; emitting UI state alone is not an acknowledgement.
+      rethrow;
     }
   }
 
@@ -456,6 +465,75 @@ class SessionController extends ChangeNotifier {
       bytes: liveSelfieBytes,
       fileExtension: liveSelfieFileExtension,
     );
+  }
+
+  static const SettingDefinition _voiceProfileConsent = SettingDefinition(
+    key: 'onboarding.voiceProfileAi',
+    sectionKey: 'data',
+    type: SettingType.boolean,
+    label: 'Perfil rápido por voz',
+    description:
+        'Procesamiento puntual de un audio para proponer un borrador editable.',
+    defaultValue: false,
+    legalBasis: LegalBasis.consent,
+    consentPurpose: 'voice_profile_generation_once',
+    userVisible: false,
+    editable: false,
+    auditLevel: AuditLevel.high,
+  );
+
+  Future<VoiceProfileSuggestion> generateOnboardingVoiceProfile({
+    required Uint8List bytes,
+    required String contentType,
+    required String extension,
+    required int durationMs,
+    required String intentMode,
+  }) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) {
+      throw const VoiceProfileServiceException(
+        'No hay sesión activa para crear el perfil.',
+        code: 'unauthenticated',
+      );
+    }
+    try {
+      await _settingsRepository.recordConsent(
+        uid: uid,
+        definition: _voiceProfileConsent,
+        granted: true,
+      );
+    } catch (_) {
+      throw const VoiceProfileServiceException(
+        'No hemos podido registrar tu permiso. El audio no se ha enviado.',
+        code: 'consent-not-recorded',
+      );
+    }
+    return _voiceProfileService.generate(
+      uid: uid,
+      bytes: bytes,
+      contentType: contentType,
+      extension: extension,
+      durationMs: durationMs,
+      intentMode: intentMode,
+    );
+  }
+
+  /// La voz es opt-in de despliegue: no se ofrece hasta que el bucket efímero
+  /// europeo y el flag remoto estén configurados de forma explícita.
+  Future<bool> isOnboardingVoiceProfileAvailable() async {
+    const String voiceStorageBucket = String.fromEnvironment(
+      'VOICE_PROFILE_STORAGE_BUCKET',
+    );
+    if (voiceStorageBucket.trim().isEmpty) return false;
+    try {
+      final flags = await _featureFlagService.fetchFlags();
+      final Map<String, dynamic> raw = flags.rawConfig;
+      final bool enabled = raw['voiceProfileEnabled'] == true ||
+          raw['voice_profile_enabled'] == true;
+      return enabled && flags.aiProcessingEnabled && !flags.aiKillSwitch;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> submitOnboarding({
@@ -765,7 +843,8 @@ class SessionController extends ChangeNotifier {
   Future<void> setIntentMode(IntentMode mode) async {
     final String? uid = _state.user?.uid;
     if (uid == null) return;
-    await _userRepository.setIntentMode(uid: uid, intentModeWire: mode.wireName);
+    await _userRepository.setIntentMode(
+        uid: uid, intentModeWire: mode.wireName);
     await _refreshAuthenticatedUser(uid);
   }
 

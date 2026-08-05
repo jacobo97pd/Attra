@@ -40,12 +40,12 @@ class StoryRing extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: hasLiveStory
-                    ? const LinearGradient(
+                    ? LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: <Color>[
-                          Color(0xFFB8860B),
-                          Color(0xFF1D6A96),
+                          theme.colorScheme.primary,
+                          theme.colorScheme.outline,
                         ],
                       )
                     : null,
@@ -71,8 +71,11 @@ class StoryRing extends StatelessWidget {
                       child: CircleAvatar(
                         radius: 11,
                         backgroundColor: theme.colorScheme.primary,
-                        child: const Icon(Icons.add,
-                            size: 15, color: Colors.white),
+                        child: Icon(
+                          Icons.add,
+                          size: 15,
+                          color: theme.colorScheme.onPrimary,
+                        ),
                       ),
                     ),
                 ],

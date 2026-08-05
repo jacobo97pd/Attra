@@ -835,7 +835,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       return;
     }
     nav.push(MaterialPageRoute<void>(
-      builder: (_) => ProfileViewScreen(profile: profile!),
+      builder: (_) => ProfileViewScreen(
+        profile: profile!,
+        matchService: widget.matchService,
+      ),
     ));
   }
 
@@ -1037,7 +1040,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _openSafetyCheck() async {
     final SafeDateService? service = widget.safeDateService;
     if (service == null) return;
-    await SafetyCheckSheet.run(context, service: service, chatId: widget.chatId);
+    await SafetyCheckSheet.run(context,
+        service: service, chatId: widget.chatId);
   }
 
   /// Attra SafeDate: crea un plan de cita segura para este match. Plan PRIVADO
@@ -1146,8 +1150,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (_nudgeShownKey != key) {
       _nudgeShownKey = key;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _antiGhostingAnalytics
-            .logNudgeShown(tier: tier.name, hoursWaiting: waited.inHours);
+        _antiGhostingAnalytics.logNudgeShown(
+            tier: tier.name, hoursWaiting: waited.inHours);
       });
     }
 
@@ -1156,14 +1160,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       tier: tier,
       canProposePlan: canPropose,
       canClose: widget.closeGracefullyEnabled,
-      onAction: (NudgeAction action) =>
-          _onNudgeAction(action, tier, canSend),
+      onAction: (NudgeAction action) => _onNudgeAction(action, tier, canSend),
     );
   }
 
   void _onNudgeAction(NudgeAction action, NudgeTier tier, bool canSend) {
-    _antiGhostingAnalytics
-        .logNudgeAction(tier: tier.name, action: action.name);
+    _antiGhostingAnalytics.logNudgeAction(tier: tier.name, action: action.name);
     switch (action) {
       case NudgeAction.reply:
         setState(() => _nudgeDismissed = true);
@@ -1200,8 +1202,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _input.text =
         'Hey$who, quick one. What’s a small, ordinary thing that reliably '
         'makes your day better? 🙂';
-    _input.selection =
-        TextSelection.collapsed(offset: _input.text.length);
+    _input.selection = TextSelection.collapsed(offset: _input.text.length);
     _inputFocus.requestFocus();
   }
 
@@ -1394,12 +1395,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ],
               if (widget.safeDatePlanEnabled && widget.safeDateService != null)
                 const PopupMenuItem<String>(
-                    value: 'safedate_plan',
-                    child: Text('Planear cita segura')),
-              if (widget.safeDateAiRiskEnabled && widget.safeDateService != null)
+                    value: 'safedate_plan', child: Text('Planear cita segura')),
+              if (widget.safeDateAiRiskEnabled &&
+                  widget.safeDateService != null)
                 const PopupMenuItem<String>(
-                    value: 'safedate_check',
-                    child: Text('Revisar seguridad')),
+                    value: 'safedate_check', child: Text('Revisar seguridad')),
               if (widget.closeGracefullyEnabled)
                 const PopupMenuItem<String>(
                     value: 'close', child: Text('Cerrar conversación')),

@@ -58,8 +58,7 @@ class HomeLandingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String name = (displayName ?? '').trim();
-    final String firstBits =
-        name.isEmpty ? 'Hola' : 'Hola, $name';
+    final String firstBits = name.isEmpty ? 'Hola' : 'Hola, $name';
     return Scaffold(
       backgroundColor: AppColors.black,
       body: Stack(
@@ -73,7 +72,7 @@ class HomeLandingScreen extends StatelessWidget {
                   center: Alignment(1.0, -1.0),
                   radius: 1.15,
                   colors: <Color>[
-                    Color(0x80FF4F68),
+                    Color(0x66707070),
                     Color(0x33D71945),
                     Color(0x000E0E10),
                   ],
@@ -107,8 +106,7 @@ class HomeLandingScreen extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 10,
                   children: _categories
-                      .map((({String label, IconData icon}) c) =>
-                          _CategoryChip(
+                      .map((({String label, IconData icon}) c) => _CategoryChip(
                             label: c.label,
                             icon: c.icon,
                             onTap: onGoToPlans,
@@ -179,8 +177,8 @@ class HomeLandingScreen extends StatelessWidget {
           IconButton(
             tooltip: 'SafeDate',
             onPressed: onOpenSafeDate,
-            icon: const Icon(Icons.shield_outlined,
-                color: AppColors.textPrimary),
+            icon:
+                const Icon(Icons.shield_outlined, color: AppColors.textPrimary),
           ),
         ...topBarActions,
       ],
@@ -314,8 +312,7 @@ class _NextPlanSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<List<FriendGroup>>(
       stream: service.observeMyGroups(uid),
-      builder:
-          (BuildContext context, AsyncSnapshot<List<FriendGroup>> snap) {
+      builder: (BuildContext context, AsyncSnapshot<List<FriendGroup>> snap) {
         final List<FriendGroup> groups = snap.data ?? const <FriendGroup>[];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -470,8 +467,7 @@ class _AvatarStack extends StatelessWidget {
                   gradient: const LinearGradient(colors: AppColors.action),
                   border: Border.all(color: AppColors.surface, width: 2),
                 ),
-                child: const Icon(Icons.person,
-                    size: 17, color: Colors.white),
+                child: const Icon(Icons.person, size: 17, color: Colors.white),
               ),
             ),
           if (extra > 0)
@@ -583,8 +579,8 @@ class _RecommendationsSection extends StatelessWidget {
     return FutureBuilder<List<RecommendedGroup>>(
       future: service.recommendedGroups(
           uid: uid, city: city, myInterests: interests),
-      builder: (BuildContext context,
-          AsyncSnapshot<List<RecommendedGroup>> snap) {
+      builder:
+          (BuildContext context, AsyncSnapshot<List<RecommendedGroup>> snap) {
         final List<RecommendedGroup> recs =
             snap.data ?? const <RecommendedGroup>[];
         if (recs.isEmpty) return const SizedBox.shrink();
@@ -704,8 +700,7 @@ class _PlanImageCard extends StatelessWidget {
                         child: Image.asset(
                           assetPathOf(group.photoUrl),
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const SizedBox.shrink(),
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                         ),
                       )
                     else if (group.hasPhoto)
@@ -764,33 +759,33 @@ class _PlanImageCard extends StatelessWidget {
                               height: 1.15,
                               fontWeight: FontWeight.w700)),
                       const SizedBox(height: 6),
-                    Row(
-                      children: <Widget>[
-                        const Icon(Icons.place_outlined,
-                            size: 13, color: AppColors.textSecondary),
-                        const SizedBox(width: 3),
-                        Flexible(
-                          child: Text(group.city,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.place_outlined,
+                              size: 13, color: AppColors.textSecondary),
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(group.city,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12.5)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: <Widget>[
+                          const Icon(Icons.group_outlined,
+                              size: 14, color: AppColors.attraRed),
+                          const SizedBox(width: 4),
+                          Text(free > 0 ? '$free plazas' : 'Completo',
                               style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 12.5)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: <Widget>[
-                        const Icon(Icons.group_outlined,
-                            size: 14, color: AppColors.attraRed),
-                        const SizedBox(width: 4),
-                        Text(free > 0 ? '$free plazas' : 'Completo',
-                            style: const TextStyle(
-                                color: AppColors.attraRed,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600)),
-                      ],
+                                  color: AppColors.attraRed,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                        ],
                       ),
                     ],
                   ),
@@ -857,8 +852,7 @@ class _InfoCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
-                  color: AppColors.textSecondary),
+              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
             ],
           ),
         ),

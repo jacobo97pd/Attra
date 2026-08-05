@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/config/legal_links.dart';
 import '../../profile/data/discovery_publisher.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_completion.dart';
@@ -76,6 +77,10 @@ class UserRepository {
         'pendingProfileTasks': <String>[],
         'profileCompletionRewardsClaimed': <String>[],
         'availableProfileRewards': <String>[],
+        // Guideline 1.2: en el login NO se puede continuar sin marcar la
+        // aceptacion del EULA, asi que dejamos constancia de la version.
+        'termsAcceptedVersion': LegalLinks.termsVersion,
+        'termsAcceptedAt': FieldValue.serverTimestamp(),
       };
       await userDoc.set(baseData);
 
@@ -109,6 +114,12 @@ class UserRepository {
     }
     if (currentData['profileCompleted'] is! bool) {
       updateData['profileCompleted'] = false;
+    }
+    // Guideline 1.2: cada inicio de sesion exige marcar la aceptacion del EULA
+    // en el login, asi que registramos la version aceptada si ha cambiado.
+    if (currentData['termsAcceptedVersion'] != LegalLinks.termsVersion) {
+      updateData['termsAcceptedVersion'] = LegalLinks.termsVersion;
+      updateData['termsAcceptedAt'] = FieldValue.serverTimestamp();
     }
 
     // El email SI se sincroniza desde el proveedor (auth es la fuente de

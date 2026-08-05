@@ -3,6 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../widgets/attra_image.dart';
+import '../../match/data/match_service.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../social/presentation/intent_badge.dart';
 import '../domain/profile_state.dart';
 import 'intro_media_view.dart';
@@ -10,9 +12,21 @@ import 'intro_media_view.dart';
 /// Visor de SOLO LECTURA del perfil de otra persona (fotos, datos, bio,
 /// intereses). Se abre al pinchar el perfil de un usuario en chats/matches.
 class ProfileViewScreen extends StatelessWidget {
-  const ProfileViewScreen({super.key, required this.profile});
+  const ProfileViewScreen({
+    super.key,
+    required this.profile,
+    this.matchService,
+    this.onBlocked,
+  });
 
   final SeedProfile profile;
+
+  /// Guideline 1.2: si se pasa, la barra superior ofrece Reportar y Bloquear.
+  /// Es nulo cuando la pantalla muestra el perfil PROPIO.
+  final MatchService? matchService;
+
+  /// Se llama tras bloquear, para que el llamante refresque su listado.
+  final VoidCallback? onBlocked;
 
   /// Galería del perfil: la foto PRINCIPAL (photoUrl) primero y luego las
   /// adicionales (sin duplicar si coincide la URL).
@@ -190,8 +204,24 @@ class ProfileViewScreen extends StatelessWidget {
 
     items.add(const SizedBox(height: 24));
 
+    final MatchService? safetyService = matchService;
     return Scaffold(
-      appBar: AppBar(title: Text('${profile.displayName}$ageText')),
+      appBar: AppBar(
+        title: Text('${profile.displayName}$ageText'),
+        actions: <Widget>[
+          if (safetyService != null)
+            SafetyMenuButton(
+              matchService: safetyService,
+              uid: profile.id,
+              displayName: profile.displayName,
+              onResult: (SafetyActionResult result) {
+                if (result != SafetyActionResult.blocked) return;
+                onBlocked?.call();
+                if (context.mounted) Navigator.of(context).maybePop();
+              },
+            ),
+        ],
+      ),
       body: ListView(padding: EdgeInsets.zero, children: items),
     );
   }

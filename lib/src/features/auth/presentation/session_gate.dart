@@ -46,6 +46,9 @@ class SessionGate extends StatelessWidget {
               onSaveDraft: controller.saveOnboardingDraft,
               onUploadLiveSelfieDraft:
                   controller.uploadOnboardingLiveSelfieDraft,
+              onCheckVoiceProfileAvailability:
+                  controller.isOnboardingVoiceProfileAvailable,
+              onGenerateVoiceProfile: controller.generateOnboardingVoiceProfile,
               onSubmitOnboarding: controller.submitOnboarding,
               onLogout: controller.signOut,
             );
@@ -111,6 +114,16 @@ class SessionGate extends StatelessWidget {
             break;
         }
 
+        // Mantiene vivo el formulario mientras Firebase alterna
+        // unauthenticated ↔ authenticating. Así no se pierde el número ni el
+        // paso actual al enviar o verificar el SMS.
+        final Object screenKey = switch (state.status) {
+          SessionStatus.unauthenticated ||
+          SessionStatus.authenticating =>
+            'login',
+          _ => state.status,
+        };
+
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           switchInCurve: Curves.easeOutCubic,
@@ -122,7 +135,7 @@ class SessionGate extends StatelessWidget {
             );
           },
           child: KeyedSubtree(
-            key: ValueKey<SessionStatus>(state.status),
+            key: ValueKey<Object>(screenKey),
             child: screen,
           ),
         );

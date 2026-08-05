@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
 
@@ -14,7 +13,7 @@ class AttraPrimaryButton extends StatelessWidget {
     this.icon,
     this.loading = false,
     this.expand = true,
-    this.gradient = AppColors.action,
+    this.gradient,
     this.foregroundColor,
   });
 
@@ -23,7 +22,7 @@ class AttraPrimaryButton extends StatelessWidget {
   final IconData? icon;
   final bool loading;
   final bool expand;
-  final List<Color> gradient;
+  final List<Color>? gradient;
 
   /// Color del texto/icono. Por defecto blanco cálido; útil para botones claros
   /// (p. ej. champagne en Plus) donde conviene texto oscuro para legibilidad.
@@ -32,29 +31,29 @@ class AttraPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool enabled = onPressed != null && !loading;
-    // Texto/icono SOBRE el gradiente de marca → blanco en ambos modos (salvo
-    // override, p.ej. champagne con texto oscuro).
-    final Color fg = foregroundColor ?? Colors.white;
+    final List<Color> fill = gradient ??
+        <Color>[
+          context.colors.accent,
+          context.colors.accent,
+        ];
+    final Color fg = foregroundColor ??
+        (gradient == null ? context.colors.onAccent : Colors.white);
     final Widget content = AnimatedContainer(
       duration: const Duration(milliseconds: 150),
-      height: 54,
+      height: 52,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: enabled
-              ? gradient
+              ? fill
               : <Color>[context.colors.surfaceHigh, context.colors.surfaceHigh],
         ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        boxShadow: enabled
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: AppColors.attraRed.withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(
+          color: enabled
+              ? context.colors.accent.withValues(alpha: 0.32)
+              : context.colors.surfaceLine,
+        ),
       ),
       child: Row(
         mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
@@ -64,7 +63,10 @@ class AttraPrimaryButton extends StatelessWidget {
             SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2.4, color: fg),
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: context.colors.textSecondary,
+              ),
             )
           else ...<Widget>[
             if (icon != null) ...<Widget>[
@@ -96,7 +98,7 @@ class AttraPrimaryButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           child: content,
         ),
       ),

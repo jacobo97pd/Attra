@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -23,13 +22,13 @@ import '../domain/match_flow_result.dart';
 import '../domain/user_match.dart';
 import 'match_created_dialog.dart';
 
-/// Bandeja de likes en GRID de fotos grandes (estilo Hinge/Bumble) con dos
-/// pestañas: "Quién te gusta" (likes recibidos) y "Me gustas mutuamente"
-/// (matches). Reglas premium:
-///  - Free (sin Plus/Pro) NO puede ver quién le dio like: las tarjetas salen
-///    difuminadas con "Desliza para ver" y un muro de upgrade.
-///  - El porcentaje de compatibilidad SOLO se muestra a quien tiene la IA Pro
-///    ([showCompatibility]); para el resto no aparece.
+/// Centro de conexiones con tres bandejas inequívocas:
+///  - Recibidos: personas que han dado like al usuario.
+///  - Enviados: likes del usuario que siguen pendientes de respuesta.
+///  - Matches: conexiones mutuas con acceso al chat y Attra Spark.
+///
+/// Ver quién ha dado like es funcionalidad base. El porcentaje de
+/// compatibilidad sigue siendo una mejora Pro ([showCompatibility]).
 class LikesReceivedScreen extends StatefulWidget {
   const LikesReceivedScreen({
     super.key,
@@ -37,10 +36,8 @@ class LikesReceivedScreen extends StatefulWidget {
     required this.matchService,
     required this.chatService,
     required this.summaries,
-    this.canSeeAll = false,
     this.showCompatibility = false,
     this.currentUserInterests = const <String>[],
-    this.onUpgrade,
     this.onImproveProfile,
     this.loadProfile,
     this.sparkService,
@@ -53,20 +50,15 @@ class LikesReceivedScreen extends StatefulWidget {
   final ChatService chatService;
   final ProfileSummaryRepository summaries;
 
-  /// Plus/Pro ven todos los likes; Free solo una preview difuminada.
-  final bool canSeeAll;
-
   /// Solo la IA Pro muestra el % de compatibilidad en las tarjetas.
   final bool showCompatibility;
 
   /// Intereses del usuario actual (para estimar afinidad real).
   final List<String> currentUserInterests;
 
-  final VoidCallback? onUpgrade;
   final VoidCallback? onImproveProfile;
 
-  /// Carga el perfil completo por uid para abrir el visor de SOLO LECTURA al
-  /// pinchar una tarjeta (solo Plus/Pro, que sí pueden ver quién les dio like).
+  /// Carga el perfil completo por uid para abrir el visor de solo lectura.
   final Future<SeedProfile?> Function(String uid)? loadProfile;
 
   /// Attra Spark (opcional). Si está habilitado, el diálogo de match ofrece
@@ -75,21 +67,21 @@ class LikesReceivedScreen extends StatefulWidget {
   final bool sparkEnabled;
   final String? currentUserPhotoUrl;
 
-  /// Cuántos likes ve un usuario Free antes del muro.
-  static const int freePreview = 1;
-
   @override
   State<LikesReceivedScreen> createState() => _LikesReceivedScreenState();
 }
 
 class _LikesReceivedScreenState extends State<LikesReceivedScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
-  StreamSubscription<List<Like>>? _likesSub;
+  late final TabController _tabs = TabController(length: 3, vsync: this);
+  StreamSubscription<List<Like>>? _receivedLikesSub;
+  StreamSubscription<List<Like>>? _sentLikesSub;
   StreamSubscription<List<UserMatch>>? _matchesSub;
-  List<Like>? _likes;
+  List<Like>? _receivedLikes;
+  List<Like>? _sentLikes;
   List<UserMatch>? _matches;
-  Object? _likesError;
+  Object? _receivedLikesError;
+  Object? _sentLikesError;
   Object? _matchesError;
 
   @override
@@ -108,33 +100,52 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
   }
 
   void _bindStreams({bool reset = false}) {
-    unawaited(_likesSub?.cancel() ?? Future<void>.value());
+    unawaited(_receivedLikesSub?.cancel() ?? Future<void>.value());
+    unawaited(_sentLikesSub?.cancel() ?? Future<void>.value());
     unawaited(_matchesSub?.cancel() ?? Future<void>.value());
     if (reset && mounted) {
       setState(() {
-        _likes = null;
+        _receivedLikes = null;
+        _sentLikes = null;
         _matches = null;
-        _likesError = null;
+        _receivedLikesError = null;
+        _sentLikesError = null;
         _matchesError = null;
       });
     } else {
-      _likes = null;
+      _receivedLikes = null;
+      _sentLikes = null;
       _matches = null;
-      _likesError = null;
+      _receivedLikesError = null;
+      _sentLikesError = null;
       _matchesError = null;
     }
-    _likesSub =
+    _receivedLikesSub =
         widget.matchService.observeReceivedLikes(widget.currentUid).listen(
       (List<Like> likes) {
         if (!mounted) return;
         setState(() {
-          _likes = likes;
-          _likesError = null;
+          _receivedLikes = likes;
+          _receivedLikesError = null;
         });
       },
       onError: (Object error) {
         if (!mounted) return;
-        setState(() => _likesError = error);
+        setState(() => _receivedLikesError = error);
+      },
+    );
+    _sentLikesSub =
+        widget.matchService.observeSentLikes(widget.currentUid).listen(
+      (List<Like> likes) {
+        if (!mounted) return;
+        setState(() {
+          _sentLikes = likes;
+          _sentLikesError = null;
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() => _sentLikesError = error);
       },
     );
     _matchesSub = widget.matchService.observeMatches(widget.currentUid).listen(
@@ -154,7 +165,8 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
 
   @override
   void dispose() {
-    unawaited(_likesSub?.cancel() ?? Future<void>.value());
+    unawaited(_receivedLikesSub?.cancel() ?? Future<void>.value());
+    unawaited(_sentLikesSub?.cancel() ?? Future<void>.value());
     unawaited(_matchesSub?.cancel() ?? Future<void>.value());
     _tabs.dispose();
     super.dispose();
@@ -165,48 +177,72 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
       final MatchFlowResult result =
           await widget.matchService.sendLike(like.fromUid);
       if (!context.mounted) return;
-      if (result.isMatch) {
-        final ProfileSummary other = await widget.summaries.fetch(like.fromUid);
-        if (!context.mounted) return;
-        final String chatId = result.chatId ?? '';
-        // Si respondió con un COMENTARIO, abrimos directamente la conversación
-        // para contestarle (allí ya aparece su comentario + la foto comentada).
-        if (like.hasComment && chatId.isNotEmpty) {
-          _openChat(context, chatId, other);
+      switch (result.outcome) {
+        case MatchOutcome.matched:
+          final ProfileSummary other =
+              await widget.summaries.fetch(like.fromUid);
+          if (!context.mounted) return;
+          final String chatId = result.chatId ?? '';
+          // Si respondió con un comentario, abrimos directamente la
+          // conversación: allí ya aparece su contexto original.
+          if (like.hasComment && chatId.isNotEmpty) {
+            _openChat(context, chatId, other);
+            return;
+          }
+          await showMatchCreatedDialog(
+            context,
+            name: other.displayName,
+            photoUrl: other.photoUrl,
+            hasAttra: like.type.isAttra,
+            currentUserPhotoUrl: widget.currentUserPhotoUrl,
+            sharedInterests: _sharedInterests(other.interests),
+            originComment: like.commentText,
+            originPhotoUrl: like.targetPhotoUrlSnapshot,
+            originType: like.targetType,
+            onOpenChat: () => _openChat(context, chatId, other),
+            onSendFirstMessage: chatId.isEmpty
+                ? null
+                : (String text) =>
+                    widget.chatService.sendMessage(chatId: chatId, text: text),
+            onPlaySpark: (widget.sparkEnabled &&
+                    widget.sparkService != null &&
+                    chatId.isNotEmpty)
+                ? () => _playSpark(context, chatId, like.fromUid, other)
+                : null,
+          );
           return;
-        }
-        await showMatchCreatedDialog(
-          context,
-          name: other.displayName,
-          photoUrl: other.photoUrl,
-          hasAttra: like.type.isAttra,
-          currentUserPhotoUrl: widget.currentUserPhotoUrl,
-          sharedInterests: _sharedInterests(other.interests),
-          originComment: like.commentText,
-          originPhotoUrl: like.targetPhotoUrlSnapshot,
-          originType: like.targetType,
-          onOpenChat: () => _openChat(context, chatId, other),
-          onSendFirstMessage: chatId.isEmpty
-              ? null
-              : (String text) =>
-                  widget.chatService.sendMessage(chatId: chatId, text: text),
-          onPlaySpark: (widget.sparkEnabled &&
-                  widget.sparkService != null &&
-                  chatId.isNotEmpty)
-              ? () => _playSpark(context, chatId, like.fromUid, other)
-              : null,
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('¡Like enviado!')),
-        );
+        case MatchOutcome.liked:
+          _showFeedback(context, 'Like enviado.');
+          return;
+        case MatchOutcome.alreadyLiked:
+          _showFeedback(context, 'Ya habías enviado un like a esta persona.');
+          return;
+        case MatchOutcome.limitReached:
+          _showFeedback(context, 'Has alcanzado tu límite de likes de hoy.');
+          return;
+        case MatchOutcome.blocked:
+          _showFeedback(context, 'No puedes interactuar con este perfil.');
+          return;
+        case MatchOutcome.insufficientAttras:
+          _showFeedback(context, 'No tienes Attras suficientes.');
+          return;
+        case MatchOutcome.error:
+          _showFeedback(context, 'No se pudo enviar el like.');
+          return;
       }
     } on MatchServiceException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
-      }
+      if (!context.mounted) return;
+      _showFeedback(context, e.message);
+    } on Exception {
+      if (!context.mounted) return;
+      _showFeedback(context, 'No se pudo enviar el like.');
     }
+  }
+
+  void _showFeedback(BuildContext context, String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Invita a Attra Spark y abre la sala. Al terminar/salir, ofrece el chat.
@@ -253,8 +289,7 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
     ));
   }
 
-  /// Abre el perfil (solo lectura) de quien dio like. Solo Plus/Pro: el muro de
-  /// Free no llega aquí (sus tarjetas van al paywall).
+  /// Abre en solo lectura el perfil asociado a una conexión.
   Future<void> _openProfile(String uid) async {
     final Future<SeedProfile?> Function(String uid)? loader =
         widget.loadProfile;
@@ -274,15 +309,24 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
       return;
     }
     nav.push(MaterialPageRoute<void>(
-      builder: (_) => ProfileViewScreen(profile: profile!),
+      builder: (_) => ProfileViewScreen(
+        profile: profile!,
+        matchService: widget.matchService,
+      ),
     ));
   }
 
   Future<void> _discard(BuildContext context, Like like) async {
     try {
       await widget.matchService.passProfile(like.fromUid);
-    } catch (_) {
-      // silencioso
+      if (!context.mounted) return;
+      _showFeedback(context, 'Like descartado.');
+    } on MatchServiceException catch (error) {
+      if (!context.mounted) return;
+      _showFeedback(context, error.message);
+    } on Exception {
+      if (!context.mounted) return;
+      _showFeedback(context, 'No se pudo descartar este like.');
     }
   }
 
@@ -333,23 +377,20 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
 
   @override
   Widget build(BuildContext context) {
-    final bool gated = !widget.canSeeAll;
     return Column(
       children: <Widget>[
-        // Banner "Recibe likes en secreto" (solo Free).
-        if (gated)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
-            child: _SecretLikesBanner(onUpgrade: widget.onUpgrade),
-          ),
-        // Pestañas.
-        _LikesTabBar(controller: _tabs, mutualCount: _matches?.length ?? 0),
+        _LikesTabBar(
+          controller: _tabs,
+          receivedCount: _receivedLikes?.length ?? 0,
+          sentCount: _sentLikes?.length ?? 0,
+          mutualCount: _matches?.length ?? 0,
+        ),
         Expanded(
           child: TabBarView(
             controller: _tabs,
             children: <Widget>[
-              _likesTab(gated),
+              _receivedTab(),
+              _sentTab(),
               _mutualTab(),
             ],
           ),
@@ -358,13 +399,13 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
     );
   }
 
-  // ── Pestaña 1: quién te gusta ────────────────────────────────────────────
-  Widget _likesTab(bool gated) {
-    final Object? error = _likesError;
+  // ── Pestaña 1: likes recibidos ───────────────────────────────────────────
+  Widget _receivedTab() {
+    final Object? error = _receivedLikesError;
     if (error != null) {
       return _LikesLoadError(onRetry: () => _bindStreams(reset: true));
     }
-    final List<Like>? currentLikes = _likes;
+    final List<Like>? currentLikes = _receivedLikes;
     if (currentLikes == null) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.attraRed));
@@ -377,8 +418,6 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
         subtitle: 'Cuando alguien te dé like, aparecerá aquí en grande.',
       );
     }
-    // Free: todas las tarjetas salen difuminadas (no puede ver quién es).
-    final int hidden = gated ? likes.length : 0;
 
     return CustomScrollView(
       slivers: <Widget>[
@@ -387,9 +426,7 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
               AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
           sliver: SliverToBoxAdapter(
             child: Text(
-              widget.canSeeAll
-                  ? '${likes.length} ${likes.length == 1 ? "persona te ha" : "personas te han"} dado like'
-                  : 'Tienes ${likes.length} ${likes.length == 1 ? "like esperando" : "likes esperando"}',
+              '${likes.length} ${likes.length == 1 ? "persona quiere" : "personas quieren"} conocerte',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: context.colors.textSecondary,
                   ),
@@ -409,18 +446,14 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
                     return _LikeGridCard(
                       like: like,
                       summaries: widget.summaries,
-                      blurred: gated,
                       showCompatibility: widget.showCompatibility,
                       compatibilityOf: (ProfileSummary s) =>
                           _compatibilityPct(s, score: like.compatibilityScore),
                       onRespond: () => _respond(context, like),
                       onDiscard: () => _discard(context, like),
-                      // Free → paywall. Plus/Pro → abre el perfil (si hay loader).
-                      onTap: gated
-                          ? widget.onUpgrade
-                          : (widget.loadProfile == null
-                              ? null
-                              : () => _openProfile(like.fromUid)),
+                      onTap: widget.loadProfile == null
+                          ? null
+                          : () => _openProfile(like.fromUid),
                     );
                   },
                   childCount: likes.length,
@@ -429,15 +462,6 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
             },
           ),
         ),
-        if (gated)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
-            sliver: SliverToBoxAdapter(
-              child: _LikesPaywall(hidden: hidden, onUpgrade: widget.onUpgrade),
-            ),
-          ),
-        // Promo "Aumenta tus posibilidades".
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
@@ -449,7 +473,70 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
     );
   }
 
-  // ── Pestaña 2: me gustas mutuamente (matches) ────────────────────────────
+  // ── Pestaña 2: likes enviados pendientes ─────────────────────────────────
+  Widget _sentTab() {
+    final Object? error = _sentLikesError;
+    if (error != null) {
+      return _LikesLoadError(onRetry: () => _bindStreams(reset: true));
+    }
+    final List<Like>? currentLikes = _sentLikes;
+    if (currentLikes == null) {
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.attraRed));
+    }
+    final List<Like> likes = currentLikes;
+    if (likes.isEmpty) {
+      return const _LikesEmpty(
+        icon: Icons.favorite_border_rounded,
+        title: 'No tienes likes pendientes',
+        subtitle:
+            'Los perfiles a los que des like aparecerán aquí hasta que haya match.',
+      );
+    }
+
+    return CustomScrollView(
+      slivers: <Widget>[
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
+          sliver: SliverToBoxAdapter(
+            child: Text(
+              '${likes.length} ${likes.length == 1 ? "like enviado" : "likes enviados"} esperando respuesta',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: context.colors.textSecondary,
+                  ),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
+          sliver: SliverLayoutBuilder(
+            builder: (BuildContext context, SliverConstraints constraints) {
+              return SliverGrid(
+                gridDelegate: _gridDelegateFor(constraints.crossAxisExtent),
+                delegate: SliverChildBuilderDelegate(
+                  (BuildContext context, int i) {
+                    final Like like = likes[i];
+                    return _SentLikeGridCard(
+                      like: like,
+                      summaries: widget.summaries,
+                      onTap: widget.loadProfile == null
+                          ? null
+                          : () => _openProfile(like.toUid),
+                    );
+                  },
+                  childCount: likes.length,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Pestaña 3: matches ────────────────────────────────────────────────────
   Widget _mutualTab() {
     final Object? error = _matchesError;
     if (error != null) {
@@ -509,11 +596,18 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
   }
 }
 
-/// Pestañas "Quién te gusta" / "Me gustas mutuamente (N)".
+/// Navegación inequívoca del centro de conexiones.
 class _LikesTabBar extends StatelessWidget {
-  const _LikesTabBar({required this.controller, required this.mutualCount});
+  const _LikesTabBar({
+    required this.controller,
+    required this.receivedCount,
+    required this.sentCount,
+    required this.mutualCount,
+  });
 
   final TabController controller;
+  final int receivedCount;
+  final int sentCount;
   final int mutualCount;
 
   @override
@@ -532,18 +626,29 @@ class _LikesTabBar extends StatelessWidget {
           unselectedLabelColor: context.colors.textSecondary,
           labelStyle: TextStyle(
             fontWeight: FontWeight.w800,
-            fontSize: compact ? 13 : 14.5,
+            fontSize: compact ? 12 : 14,
           ),
           unselectedLabelStyle: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: compact ? 13 : 14.5,
+            fontSize: compact ? 12 : 14,
           ),
           dividerColor: context.colors.surfaceLine,
           tabs: <Widget>[
-            const Tab(child: _TabTitle(label: 'Quién te gusta')),
             Tab(
               child: _TabTitle(
-                label: compact ? 'Mutuos' : 'Me gustas mutuamente',
+                label: 'Recibidos',
+                count: receivedCount,
+              ),
+            ),
+            Tab(
+              child: _TabTitle(
+                label: 'Enviados',
+                count: sentCount,
+              ),
+            ),
+            Tab(
+              child: _TabTitle(
+                label: 'Matches',
                 count: mutualCount,
               ),
             ),
@@ -599,113 +704,6 @@ class _TabTitle extends StatelessWidget {
   }
 }
 
-/// Banner superior "Recibe likes en secreto" (CTA a planes), solo Free.
-class _SecretLikesBanner extends StatelessWidget {
-  const _SecretLikesBanner({required this.onUpgrade});
-
-  final VoidCallback? onUpgrade;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: <Color>[AppColors.wine, context.colors.surface],
-        ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(colors: <Color>[
-                AppColors.attraRed.withValues(alpha: 0.55),
-                AppColors.wine.withValues(alpha: 0.2),
-              ]),
-            ),
-            child: const Icon(Icons.favorite_rounded,
-                color: Colors.white, size: 26),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text('Recibe likes en secreto',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                        color: context.colors.textPrimary,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                Text(
-                  'Activa Likes ilimitados para descubrir a quién le gustas sin límites.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      color: context.colors.textSecondary, height: 1.3),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          _GradientPill(label: 'Ver opciones', onTap: onUpgrade),
-        ],
-      ),
-    );
-  }
-}
-
-class _GradientPill extends StatelessWidget {
-  const _GradientPill({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: AppColors.action),
-            borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: AppColors.attraRed.withValues(alpha: 0.4),
-                blurRadius: 14,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.auto_awesome, color: Colors.white, size: 15),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Tarjeta grande de like (foto a sangre, estilo Hinge/Bumble).
 class _LikeGridCard extends StatelessWidget {
   const _LikeGridCard({
@@ -714,7 +712,6 @@ class _LikeGridCard extends StatelessWidget {
     required this.onRespond,
     required this.onDiscard,
     required this.compatibilityOf,
-    this.blurred = false,
     this.showCompatibility = false,
     this.onTap,
   });
@@ -724,7 +721,6 @@ class _LikeGridCard extends StatelessWidget {
   final VoidCallback onRespond;
   final VoidCallback onDiscard;
   final int? Function(ProfileSummary) compatibilityOf;
-  final bool blurred;
   final bool showCompatibility;
   final VoidCallback? onTap;
 
@@ -783,26 +779,97 @@ class _LikeGridCard extends StatelessWidget {
       initialData: summaries.peek(like.fromUid),
       builder: (BuildContext context, AsyncSnapshot<ProfileSummary> snap) {
         final ProfileSummary s = snap.data ?? ProfileSummary.unknown;
-        final int? pct =
-            (showCompatibility && !blurred) ? compatibilityOf(s) : null;
+        final int? pct = showCompatibility ? compatibilityOf(s) : null;
         return _ProfileCardShell(
           photoUrl: photoTargetUrl ?? s.photoUrl,
           name: s.displayName,
-          blurred: blurred,
           verified: s.verified,
           age: s.age,
           headline: s.headline,
           location: s.location,
           compatibility: pct,
-          // El comentario solo se enseña a quien puede ver el like (Plus/Pro).
-          comment: blurred ? null : like.commentText,
+          comment: like.commentText,
           topBadge: (action.icon, action.text, action.color),
           premiumBadge: premiumBadge,
           onTap: onTap,
-          // Acciones: Free muestra "Desliza para ver"; Plus/Pro responde.
-          footer: blurred
-              ? const _LockedFooter()
-              : _RespondFooter(onRespond: onRespond, onDiscard: onDiscard),
+          footer: _RespondFooter(onRespond: onRespond, onDiscard: onDiscard),
+        );
+      },
+    );
+  }
+}
+
+/// Like enviado que aún espera respuesta.
+class _SentLikeGridCard extends StatelessWidget {
+  const _SentLikeGridCard({
+    required this.like,
+    required this.summaries,
+    this.onTap,
+  });
+
+  final Like like;
+  final ProfileSummaryRepository summaries;
+  final VoidCallback? onTap;
+
+  ({IconData icon, String text, Color color}) get _action {
+    if (like.type.isAttra) {
+      return (
+        icon: Icons.star_rounded,
+        text: 'Attra enviado',
+        color: AppColors.gold,
+      );
+    }
+    if (like.isStoryTarget) {
+      return (
+        icon: Icons.auto_stories_rounded,
+        text: 'Like a su story',
+        color: AppColors.coral,
+      );
+    }
+    if (like.isPromptTarget) {
+      return (
+        icon: Icons.chat_bubble_rounded,
+        text: 'Respuesta enviada',
+        color: AppColors.coral,
+      );
+    }
+    if (like.isPhotoTarget) {
+      return (
+        icon: Icons.photo_rounded,
+        text: 'Like a su foto',
+        color: AppColors.coral,
+      );
+    }
+    return (
+      icon: Icons.favorite_rounded,
+      text: 'Like enviado',
+      color: AppColors.attraRed,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ({IconData icon, String text, Color color}) action = _action;
+    final String? photoTargetUrl =
+        like.isPhotoTarget ? like.targetPhotoUrlSnapshot : null;
+    return FutureBuilder<ProfileSummary>(
+      future: summaries.fetch(like.toUid),
+      initialData: summaries.peek(like.toUid),
+      builder: (BuildContext context, AsyncSnapshot<ProfileSummary> snap) {
+        final ProfileSummary summary = snap.data ?? ProfileSummary.unknown;
+        return _ProfileCardShell(
+          photoUrl: photoTargetUrl ?? summary.photoUrl,
+          name: summary.displayName,
+          verified: summary.verified,
+          age: summary.age,
+          headline: summary.headline,
+          location: summary.location,
+          compatibility: null,
+          comment: like.commentText,
+          topBadge: (action.icon, action.text, action.color),
+          premiumBadge: null,
+          onTap: onTap,
+          footer: const _PendingFooter(),
         );
       },
     );
@@ -838,7 +905,6 @@ class _MatchGridCard extends StatelessWidget {
         return _ProfileCardShell(
           photoUrl: s.photoUrl,
           name: s.displayName,
-          blurred: false,
           verified: s.verified,
           age: s.age,
           headline: s.headline,
@@ -856,12 +922,11 @@ class _MatchGridCard extends StatelessWidget {
   }
 }
 
-/// Carcasa visual compartida por las tarjetas de like y de match.
+/// Carcasa visual compartida por las tarjetas de conexiones.
 class _ProfileCardShell extends StatelessWidget {
   const _ProfileCardShell({
     required this.photoUrl,
     required this.name,
-    required this.blurred,
     required this.verified,
     required this.age,
     required this.headline,
@@ -876,7 +941,6 @@ class _ProfileCardShell extends StatelessWidget {
 
   final String photoUrl;
   final String name;
-  final bool blurred;
   final bool verified;
   final int? age;
   final String headline;
@@ -906,9 +970,7 @@ class _ProfileCardShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final String shownName = blurred ? 'Alguien' : name;
-    final String nameLine =
-        (!blurred && age != null) ? '$shownName, $age' : shownName;
+    final String nameLine = age != null ? '$name, $age' : name;
     final bool compactBadges = MediaQuery.sizeOf(context).width < 700;
     final String badgeText =
         compactBadges ? _compactBadgeText(topBadge.$2) : topBadge.$2;
@@ -926,13 +988,6 @@ class _ProfileCardShell extends StatelessWidget {
               Positioned.fill(
                 child: AttraImage(url: photoUrl, fallbackInitial: name),
               ),
-
-              // Difuminado para la preview gratuita.
-              if (blurred)
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                ),
 
               // Velo inferior para legibilidad.
               const DecoratedBox(
@@ -1038,14 +1093,14 @@ class _ProfileCardShell extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (!blurred && verified) ...<Widget>[
+                        if (verified) ...<Widget>[
                           const SizedBox(width: 5),
                           const Icon(Icons.verified_rounded,
                               size: 16, color: AppColors.attraRed),
                         ],
                       ],
                     ),
-                    if (!blurred && headline.isNotEmpty) ...<Widget>[
+                    if (headline.isNotEmpty) ...<Widget>[
                       const SizedBox(height: 2),
                       Text(headline,
                           maxLines: 1,
@@ -1053,7 +1108,7 @@ class _ProfileCardShell extends StatelessWidget {
                           style: theme.textTheme.bodySmall?.copyWith(
                               color: Colors.white.withValues(alpha: 0.85))),
                     ],
-                    if (!blurred && location.isNotEmpty) ...<Widget>[
+                    if (location.isNotEmpty) ...<Widget>[
                       const SizedBox(height: 3),
                       Row(
                         children: <Widget>[
@@ -1168,37 +1223,7 @@ class _CompatibilityChip extends StatelessWidget {
   }
 }
 
-/// Footer bloqueado para Free: "Desliza para ver" con candado.
-class _LockedFooter extends StatelessWidget {
-  const _LockedFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-      ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(Icons.lock_rounded, size: 14, color: Colors.white70),
-          SizedBox(width: 6),
-          Text('Desliza para ver',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Footer para Plus/Pro: botón "Responder" con degradado + descartar.
+/// Footer de un like recibido: responder o descartar.
 class _RespondFooter extends StatelessWidget {
   const _RespondFooter({required this.onRespond, required this.onDiscard});
 
@@ -1257,6 +1282,39 @@ class _RespondFooter extends StatelessWidget {
   }
 }
 
+/// Estado no accionable de un like enviado.
+class _PendingFooter extends StatelessWidget {
+  const _PendingFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(Icons.schedule_rounded, size: 14, color: Colors.white),
+          SizedBox(width: 6),
+          Text(
+            'Esperando respuesta',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Footer para matches: "Enviar mensaje".
 class _ChatFooter extends StatelessWidget {
   const _ChatFooter();
@@ -1280,56 +1338,6 @@ class _ChatFooter extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Muro para Free: hay más likes pero solo Plus/Pro los ven.
-class _LikesPaywall extends StatelessWidget {
-  const _LikesPaywall({required this.hidden, required this.onUpgrade});
-
-  final int hidden;
-  final VoidCallback? onUpgrade;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[AppColors.wine, context.colors.surface],
-        ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: context.colors.surfaceLine),
-      ),
-      child: Column(
-        children: <Widget>[
-          const Icon(Icons.lock_rounded, size: 38, color: AppColors.attraRed),
-          const SizedBox(height: 10),
-          Text(
-            '$hidden ${hidden == 1 ? 'persona ya te ha' : 'personas ya te han'} dado like',
-            style: theme.textTheme.titleMedium
-                ?.copyWith(color: context.colors.textPrimary),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Hazte Attra Plus o Pro para ver quién eres y empezar a hacer match.',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: context.colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: onUpgrade,
-            icon: const Icon(Icons.workspace_premium),
-            label: const Text('Ver planes'),
-          ),
         ],
       ),
     );

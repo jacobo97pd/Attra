@@ -1,7 +1,7 @@
 {
   "@@locale": "en",
-  "navFeed": "Feed",
-  "navLikes": "Likes",
+  "navFeed": "Discover",
+  "navLikes": "Connections",
   "navChats": "Chats",
   "navProfile": "Profile",
 
@@ -10,7 +10,7 @@
   "feedEmptyBody": "When new compatible profiles show up, they'll appear here. You won't see anyone you already liked or passed again.",
   "feedReload": "Reload",
 
-  "likesTitle": "Likes",
+  "likesTitle": "Connections",
   "chatsTitle": "Chats",
   "settingsTitle": "Settings",
 

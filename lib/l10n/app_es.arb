@@ -1,8 +1,8 @@
 {
   "@@locale": "es",
-  "navFeed": "Feed",
+  "navFeed": "Descubrir",
   "@navFeed": { "description": "Etiqueta de la pestaña de descubrimiento" },
-  "navLikes": "Likes",
+  "navLikes": "Conexiones",
   "navChats": "Chats",
   "navProfile": "Perfil",
 
@@ -11,7 +11,7 @@
   "feedEmptyBody": "Cuando entren nuevos perfiles compatibles aparecerán aquí. No volverás a ver a quien ya likeaste o pasaste.",
   "feedReload": "Recargar",
 
-  "likesTitle": "Likes",
+  "likesTitle": "Conexiones",
   "chatsTitle": "Chats",
   "settingsTitle": "Ajustes",
 

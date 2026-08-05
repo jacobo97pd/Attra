@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../widgets/attra_loader.dart';
@@ -394,7 +395,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     final ProfileCompletionState profile = _profile ??
@@ -410,7 +414,14 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        titleTextStyle: theme.appBarTheme.titleTextStyle?.copyWith(
+          color: Colors.white,
+        ),
         title: const _AttraTitleLogo(),
         actions: <Widget>[
           IconButton(
@@ -530,7 +541,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                       // Attra Clear §8: badge positivo (lo escribe el backend).
-                      if (widget.user?.hasReliabilityBadge ?? false) ...<Widget>[
+                      if (widget.user?.hasReliabilityBadge ??
+                          false) ...<Widget>[
                         const SizedBox(height: 6),
                         const ReliabilityBadge(compact: true),
                       ],
@@ -575,7 +587,7 @@ class _HomeScreenState extends State<HomeScreen> {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: <Color>[Color(0xFF1D6A96), Color(0xFFB8860B)],
+              colors: <Color>[Color(0xFF303030), Color(0xFF707070)],
             ),
           ),
           padding: const EdgeInsets.all(16),
@@ -641,7 +653,8 @@ class _HomeScreenState extends State<HomeScreen> {
         leading:
             Icon(Icons.shield_moon_outlined, color: theme.colorScheme.primary),
         title: const Text('SafeDate'),
-        subtitle: const Text('Queda con más tranquilidad y avisa a quien confías.'),
+        subtitle:
+            const Text('Queda con más tranquilidad y avisa a quien confías.'),
         trailing: const Icon(Icons.chevron_right),
         onTap: widget.onOpenSafeDate,
       ),
@@ -1039,9 +1052,8 @@ class _AttraTitleLogo extends StatelessWidget {
         height: 28,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
-        // El wordmark es blanco: tíntalo con el color de texto del tema para que
-        // sea legible también en el tema claro (Piedra).
-        color: Theme.of(context).colorScheme.onSurface,
+        // El wordmark conserva el blanco original sobre la cabecera oscura.
+        color: Colors.white,
       ),
     );
   }
@@ -1134,7 +1146,9 @@ class _ReorderablePhotosState extends State<_ReorderablePhotos> {
                   right: 2,
                   top: 2,
                   child: InkWell(
-                    onTap: widget.busy ? null : () => widget.onDelete(photo.storagePath),
+                    onTap: widget.busy
+                        ? null
+                        : () => widget.onDelete(photo.storagePath),
                     child: Container(
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,

@@ -386,6 +386,16 @@ class OnboardingRepository {
         'La fecha de nacimiento es obligatoria para completar onboarding.',
       );
     }
+    if (_ageAt(normalized.birthDate!, DateTime.now()) < 18) {
+      throw const OnboardingRepositoryException(
+        'Debes tener al menos 18 años para completar onboarding.',
+      );
+    }
+    if (normalized.visibleName.trim().length < 2) {
+      throw const OnboardingRepositoryException(
+        'El nombre visible debe tener al menos 2 caracteres.',
+      );
+    }
 
     final bool hasDraftSelfie =
         normalized.liveSelfiePublicPhotoUrl.isNotEmpty &&
@@ -795,6 +805,14 @@ class OnboardingRepository {
       return null;
     }
     return value.toInt();
+  }
+
+  int _ageAt(DateTime birthDate, DateTime now) {
+    int age = now.year - birthDate.year;
+    final bool birthdayPassed = now.month > birthDate.month ||
+        (now.month == birthDate.month && now.day >= birthDate.day);
+    if (!birthdayPassed) age -= 1;
+    return age;
   }
 
   Map<String, dynamic> _sanitizeFirestoreMap(Map<String, dynamic> input) {

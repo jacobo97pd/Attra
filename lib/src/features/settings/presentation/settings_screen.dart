@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/config/legal_links.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/theme_controller.dart';
+import '../../../widgets/legal_links_row.dart';
 import '../../anti_ghosting/presentation/busy_mode_sheet.dart';
 import '../../tutorial/presentation/tutorial_screen.dart';
 import '../domain/settings_catalog.dart';
@@ -124,6 +126,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
               ],
             ),
+            const SizedBox(height: 22),
+            // App Store Guidelines 1.2 y 3.1.2(c): el EULA y la política de
+            // privacidad deben ser accesibles desde dentro de la app.
+            const _SectionLabel('Legal y seguridad'),
+            _Group(
+              children: <Widget>[
+                _NavRow(
+                  icon: Icons.description_outlined,
+                  color: AppColors.gold,
+                  title: 'Condiciones de uso (EULA)',
+                  subtitle:
+                      'Normas de la comunidad, tolerancia cero y suscripciones',
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => AttraLegalLinksRow.openOrWarn(
+                      context, LegalLinks.termsUrl),
+                ),
+                _NavRow(
+                  icon: Icons.privacy_tip_outlined,
+                  color: AppColors.nightBlue,
+                  title: 'Política de privacidad',
+                  subtitle: 'Qué datos tratamos y con qué finalidad',
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => AttraLegalLinksRow.openOrWarn(
+                      context, LegalLinks.privacyUrl),
+                ),
+                _NavRow(
+                  icon: Icons.shield_outlined,
+                  color: AppColors.success,
+                  title: 'Seguridad infantil',
+                  subtitle: 'Nuestros estándares y cómo denunciar',
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => AttraLegalLinksRow.openOrWarn(
+                      context, LegalLinks.childSafetyUrl),
+                ),
+                _NavRow(
+                  icon: Icons.support_agent_outlined,
+                  color: AppColors.coral,
+                  title: 'Soporte',
+                  subtitle: 'Contacto para incidencias y denuncias',
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => AttraLegalLinksRow.openOrWarn(
+                      context, LegalLinks.supportUrl),
+                ),
+              ],
+            ),
             if (lifecycle != null) ...<Widget>[
               const SizedBox(height: 22),
               const _SectionLabel('Cuenta y datos'),
@@ -193,7 +240,8 @@ class _Group extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+        border:
+            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(children: rows),

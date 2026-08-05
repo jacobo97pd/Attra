@@ -162,6 +162,46 @@ void main() {
       );
     });
 
+    test('rechaza un alta de una persona menor de edad', () async {
+      final FakeOnboardingUserStore store = FakeOnboardingUserStore();
+      final OnboardingRepository repository =
+          OnboardingRepository.withStore(userStore: store);
+      final DateTime now = DateTime.now();
+      final OnboardingDraft underage = _minimalCompletedDraft().copyWith(
+        birthDate: DateTime(now.year - 17, now.month, now.day),
+      );
+
+      expect(
+        () => repository.submitOnboarding(
+          uid: 'user-123',
+          draft: underage,
+        ),
+        throwsA(
+          isA<OnboardingRepositoryException>().having(
+            (OnboardingRepositoryException error) => error.message,
+            'message',
+            contains('18'),
+          ),
+        ),
+      );
+      expect(store.writes, isEmpty);
+    });
+
+    test('rechaza un nombre visible vacío antes de publicar', () async {
+      final FakeOnboardingUserStore store = FakeOnboardingUserStore();
+      final OnboardingRepository repository =
+          OnboardingRepository.withStore(userStore: store);
+
+      expect(
+        () => repository.submitOnboarding(
+          uid: 'user-123',
+          draft: _minimalCompletedDraft().copyWith(visibleName: ' '),
+        ),
+        throwsA(isA<OnboardingRepositoryException>()),
+      );
+      expect(store.writes, isEmpty);
+    });
+
     test('payload de draft contiene solo claves top-level admitidas', () async {
       final FakeOnboardingUserStore store = FakeOnboardingUserStore();
       final OnboardingRepository repository =

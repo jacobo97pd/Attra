@@ -5,11 +5,10 @@ import 'app_colors.dart';
 import 'app_spacing.dart';
 import 'attra_colors.dart';
 
-/// Tema premium de Attra (claro y oscuro). Los NEUTROS (fondo/superficie/texto)
-/// salen de [AttraColors] (cambian con el modo) y se registran como
-/// ThemeExtension; los colores de MARCA (attraRed, coral, gold…) viven en
-/// [AppColors] y son iguales en ambos modos. Las pantallas que usan
-/// `Theme.of(context)` o `context.colors` se adaptan solas.
+/// Tema editorial de Attra.
+///
+/// Blanco editorial en claro, tinta sobria en oscuro y un acento acromático.
+/// El rojo queda reservado a errores y acciones destructivas.
 class AppTheme {
   const AppTheme._();
 
@@ -20,14 +19,18 @@ class AppTheme {
       _build(AttraColors.light, Brightness.light, Typography.blackMountainView);
 
   static ThemeData _build(
-      AttraColors c, Brightness brightness, TextTheme base) {
-    final ColorScheme scheme = ColorScheme(
+    AttraColors c,
+    Brightness brightness,
+    TextTheme base,
+  ) {
+    final ColorScheme scheme = ColorScheme.fromSeed(
+      seedColor: c.accent,
       brightness: brightness,
+    ).copyWith(
       primary: c.accent,
       onPrimary: c.onAccent,
-      secondary: AppColors.coral,
-      onSecondary:
-          brightness == Brightness.dark ? AppColors.black : Colors.white,
+      secondary: c.accentDeep,
+      onSecondary: Colors.white,
       surface: c.surface,
       onSurface: c.textPrimary,
       surfaceContainerHighest: c.surfaceHigh,
@@ -38,6 +41,8 @@ class AppTheme {
     );
 
     final TextTheme text = _textTheme(base, c);
+    final BorderRadius controlRadius =
+        BorderRadius.circular(AppSpacing.radiusMd);
 
     return ThemeData(
       useMaterial3: true,
@@ -49,14 +54,16 @@ class AppTheme {
       primaryColor: c.accent,
       dividerColor: c.surfaceLine,
       splashFactory: InkRipple.splashFactory,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
       extensions: <ThemeExtension<dynamic>>[c],
+      focusColor: c.accentSoft,
+      hoverColor: c.accentSoft.withValues(alpha: 0.7),
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
+        backgroundColor: c.bg,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
-        // Iconos de la barra de estado según el tema: en claro (Piedra) iconos
-        // oscuros; en oscuro, claros. Si no, en claro quedan invisibles.
         systemOverlayStyle: brightness == Brightness.dark
             ? SystemUiOverlayStyle.light
                 .copyWith(statusBarColor: Colors.transparent)
@@ -65,9 +72,10 @@ class AppTheme {
         foregroundColor: c.textPrimary,
         titleTextStyle: TextStyle(
           color: c.textPrimary,
-          fontSize: 20,
+          fontSize: 21,
+          height: 1.15,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.2,
+          letterSpacing: -0.35,
         ),
       ),
       cardTheme: CardThemeData(
@@ -84,77 +92,109 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: c.accent,
           foregroundColor: c.onAccent,
+          disabledBackgroundColor: c.surfaceHigh,
+          disabledForegroundColor: c.textMuted,
           minimumSize: const Size(64, 52),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: controlRadius),
           textStyle: const TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.2),
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.1,
+          ),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: c.surfaceHigh,
           foregroundColor: c.textPrimary,
+          disabledBackgroundColor: c.surfaceHigh.withValues(alpha: 0.6),
+          disabledForegroundColor: c.textMuted,
           elevation: 0,
           minimumSize: const Size(64, 52),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+          side: BorderSide(color: c.surfaceLine),
+          shape: RoundedRectangleBorder(borderRadius: controlRadius),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: c.textPrimary,
           minimumSize: const Size(64, 52),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           side: BorderSide(color: c.surfaceLine),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: controlRadius),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: c.accent,
-          textStyle:
-              const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.2),
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(borderRadius: controlRadius),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: c.textSecondary,
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(borderRadius: controlRadius),
         ),
       ),
       iconTheme: IconThemeData(color: c.textSecondary),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: c.surfaceHigh,
+        fillColor: c.surface,
         contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
         hintStyle: TextStyle(color: c.textMuted),
         labelStyle: TextStyle(color: c.textSecondary),
+        floatingLabelStyle:
+            TextStyle(color: c.accent, fontWeight: FontWeight.w600),
         border: _inputBorder(c.surfaceLine),
         enabledBorder: _inputBorder(c.surfaceLine),
-        focusedBorder: _inputBorder(c.accent, width: 1.6),
+        focusedBorder: _inputBorder(c.accent, width: 1.8),
         errorBorder: _inputBorder(AppColors.danger),
-        focusedErrorBorder: _inputBorder(AppColors.danger, width: 1.6),
+        focusedErrorBorder: _inputBorder(AppColors.danger, width: 1.8),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: c.surfaceHigh,
-        selectedColor: c.accent,
+        selectedColor: c.accentSoft,
         side: BorderSide(color: c.surfaceLine),
-        labelStyle: TextStyle(color: c.textPrimary, fontSize: 13),
-        secondaryLabelStyle: TextStyle(color: c.textPrimary),
+        labelStyle: TextStyle(
+          color: c.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+        secondaryLabelStyle: TextStyle(
+          color: brightness == Brightness.dark ? c.accent : c.accentDeep,
+          fontWeight: FontWeight.w700,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: c.accent.withValues(alpha: 0.16),
-        height: 66,
+        elevation: 0,
+        indicatorColor: c.accentSoft,
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        height: 70,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (Set<WidgetState> states) => TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            height: 1.1,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w700
+                : FontWeight.w600,
             color: states.contains(WidgetState.selected)
                 ? c.textPrimary
                 : c.textMuted,
@@ -162,9 +202,9 @@ class AppTheme {
         ),
         iconTheme: WidgetStateProperty.resolveWith(
           (Set<WidgetState> states) => IconThemeData(
-            color: states.contains(WidgetState.selected)
-                ? c.accent
-                : c.textMuted,
+            size: 24,
+            color:
+                states.contains(WidgetState.selected) ? c.accent : c.textMuted,
           ),
         ),
       ),
@@ -172,6 +212,7 @@ class AppTheme {
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
+        dragHandleColor: c.surfaceLine,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(AppSpacing.radiusXl),
@@ -181,14 +222,17 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          side: BorderSide(color: c.surfaceLine),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: c.surfaceHigh,
-        contentTextStyle: TextStyle(color: c.textPrimary),
+        backgroundColor: c.textPrimary,
+        contentTextStyle: TextStyle(color: c.bg),
         behavior: SnackBarBehavior.floating,
+        elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         ),
@@ -196,22 +240,35 @@ class AppTheme {
       listTileTheme: ListTileThemeData(
         iconColor: c.textSecondary,
         textColor: c.textPrimary,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
       ),
       switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) =>
-            s.contains(WidgetState.selected) ? c.accent : c.textSecondary),
-        trackColor: WidgetStateProperty.resolveWith((Set<WidgetState> s) =>
-            s.contains(WidgetState.selected)
-                ? c.accent.withValues(alpha: 0.35)
-                : c.surfaceHigh),
+        thumbColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> states) => states.contains(WidgetState.selected)
+              ? c.onAccent
+              : c.textSecondary,
+        ),
+        trackColor: WidgetStateProperty.resolveWith(
+          (Set<WidgetState> states) =>
+              states.contains(WidgetState.selected) ? c.accent : c.surfaceHigh,
+        ),
+        trackOutlineColor: WidgetStatePropertyAll<Color>(c.surfaceLine),
       ),
-      progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: c.accent,
-      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent),
       dividerTheme: DividerThemeData(
         color: c.surfaceLine,
         thickness: 1,
         space: 1,
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: c.textPrimary,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        ),
+        textStyle: TextStyle(color: c.bg, fontSize: 12),
       ),
     );
   }
@@ -224,24 +281,60 @@ class AppTheme {
   }
 
   static TextTheme _textTheme(TextTheme base, AttraColors c) {
-    TextStyle p(TextStyle? s, {Color? color}) =>
-        (s ?? const TextStyle()).copyWith(color: color ?? c.textPrimary);
+    TextStyle withColor(TextStyle? style, Color color) =>
+        (style ?? const TextStyle()).copyWith(color: color);
+
     return base.copyWith(
-      displayLarge: p(base.displayLarge),
-      displayMedium: p(base.displayMedium),
-      headlineLarge:
-          p(base.headlineLarge).copyWith(fontWeight: FontWeight.w800),
-      headlineMedium:
-          p(base.headlineMedium).copyWith(fontWeight: FontWeight.w800),
-      headlineSmall:
-          p(base.headlineSmall).copyWith(fontWeight: FontWeight.w700),
-      titleLarge: p(base.titleLarge).copyWith(fontWeight: FontWeight.w700),
-      titleMedium: p(base.titleMedium).copyWith(fontWeight: FontWeight.w600),
-      titleSmall: p(base.titleSmall),
-      bodyLarge: p(base.bodyLarge),
-      bodyMedium: p(base.bodyMedium, color: c.textSecondary),
-      bodySmall: p(base.bodySmall, color: c.textMuted),
-      labelLarge: p(base.labelLarge).copyWith(fontWeight: FontWeight.w700),
+      displayLarge: withColor(base.displayLarge, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -1.1,
+        height: 1.05,
+      ),
+      displayMedium: withColor(base.displayMedium, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.9,
+        height: 1.08,
+      ),
+      headlineLarge: withColor(base.headlineLarge, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.7,
+        height: 1.12,
+      ),
+      headlineMedium: withColor(base.headlineMedium, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.55,
+        height: 1.16,
+      ),
+      headlineSmall: withColor(base.headlineSmall, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.35,
+        height: 1.2,
+      ),
+      titleLarge: withColor(base.titleLarge, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
+      ),
+      titleMedium: withColor(base.titleMedium, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      titleSmall: withColor(base.titleSmall, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      bodyLarge:
+          withColor(base.bodyLarge, c.textPrimary).copyWith(height: 1.45),
+      bodyMedium:
+          withColor(base.bodyMedium, c.textSecondary).copyWith(height: 1.42),
+      bodySmall: withColor(base.bodySmall, c.textMuted).copyWith(height: 1.35),
+      labelLarge: withColor(base.labelLarge, c.textPrimary).copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.1,
+      ),
+      labelMedium: withColor(base.labelMedium, c.textSecondary).copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      labelSmall: withColor(base.labelSmall, c.textMuted).copyWith(
+        fontWeight: FontWeight.w600,
+      ),
     );
   }
 }

@@ -8,6 +8,7 @@ import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_badges.dart';
 import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/legal_links_row.dart';
 import '../data/iap_service.dart';
 import '../domain/subscription_tier.dart';
 
@@ -208,6 +209,25 @@ class _PaywallScreenState extends State<PaywallScreen> {
     return _yearly ? '${offer.price} / año' : '${offer.price} / mes';
   }
 
+  /// Guideline 3.1.2(c): duración de la suscripción, visible en cada plan.
+  String get _lengthLabel => _yearly
+      ? 'Suscripción de 1 año · se renueva automáticamente cada año'
+      : 'Suscripción de 1 mes · se renueva automáticamente cada mes';
+
+  /// Precio por unidad (por mes) en el plan anual, cuando aplica.
+  String? _unitPriceFor(ProductDetails? offer, String fallback) {
+    if (!_yearly) return null;
+    if (offer == null) return fallback;
+    final double monthly = offer.rawPrice / 12;
+    if (monthly <= 0) return fallback;
+    return 'Equivale a ${_formatAmount(monthly, offer.currencySymbol)} / mes';
+  }
+
+  static String _formatAmount(double value, String symbol) {
+    final String amount = value.toStringAsFixed(2).replaceAll('.', ',');
+    return '$amount $symbol'.trim();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -279,6 +299,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         monthlyFallback: '9,99 € / mes',
                         yearlyFallback: '99,99 € / año',
                       ),
+                      lengthLabel: _lengthLabel,
+                      unitPrice:
+                          _unitPriceFor(plusOffer, 'Equivale a 8,33 € / mes'),
                       tagline: 'Ventajas sociales y más alcance',
                       highlightLabel: 'Más popular',
                       features: const <String>[
@@ -314,6 +337,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         monthlyFallback: '19,99 € / mes',
                         yearlyFallback: '199,99 € / año',
                       ),
+                      lengthLabel: _lengthLabel,
+                      unitPrice:
+                          _unitPriceFor(proOffer, 'Equivale a 16,67 € / mes'),
                       tagline: 'Todo Plus + IA visual flagship',
                       highlightLabel: 'IA avanzada',
                       features: const <String>[
@@ -339,12 +365,47 @@ class _PaywallScreenState extends State<PaywallScreen> {
                               ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      'La compra se verifica en el servidor. Los Attras son un '
-                      'consumible aparte y no dependen de la suscripción. '
-                      'Cancela cuando quieras.',
-                      style: theme.textTheme.bodySmall,
-                      textAlign: TextAlign.center,
+                    // Guideline 3.1.2(c): condiciones de la renovación
+                    // automática + enlaces FUNCIONALES al EULA y a la política
+                    // de privacidad, dentro del propio flujo de compra.
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceHigh,
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusLg),
+                        border: Border.all(color: context.colors.surfaceLine),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text('Condiciones de la suscripción',
+                              style: theme.textTheme.titleSmall),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Attra Plus y Attra Pro son suscripciones de '
+                            'renovación automática (1 mes o 1 año según el '
+                            'plan elegido). El pago se carga en tu cuenta de '
+                            'App Store o Google Play al confirmar la compra. '
+                            'La suscripción se renueva automáticamente por el '
+                            'mismo periodo y precio salvo que la canceles al '
+                            'menos 24 horas antes del final del periodo en '
+                            'curso; el importe de la renovación se cobra en '
+                            'las 24 horas previas. Puedes gestionarla o '
+                            'cancelarla desde los ajustes de tu cuenta de la '
+                            'tienda. Eliminar la app no cancela la '
+                            'suscripción. Los Attras son un consumible aparte '
+                            'y no dependen de la suscripción. El precio final '
+                            'e impuestos se muestran en la pantalla de pago '
+                            'de la tienda.',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          const AttraLegalLinksRow(
+                            alignment: WrapAlignment.start,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -416,11 +477,13 @@ class _PlanCard extends StatelessWidget {
     required this.kind,
     required this.title,
     required this.price,
+    required this.lengthLabel,
     required this.tagline,
     required this.features,
     required this.gradient,
     required this.ctaLabel,
     required this.owned,
+    this.unitPrice,
     this.highlightLabel,
     this.onTap,
   });
@@ -428,6 +491,12 @@ class _PlanCard extends StatelessWidget {
   final AttraBadgeKind kind;
   final String title;
   final String price;
+
+  /// Guideline 3.1.2(c): duración de la suscripción de renovación automática.
+  final String lengthLabel;
+
+  /// Precio por unidad (por mes) cuando el plan es anual.
+  final String? unitPrice;
   final String tagline;
   final List<String> features;
   final List<Color> gradient;
@@ -478,6 +547,13 @@ class _PlanCard extends StatelessWidget {
               style: theme.textTheme.titleLarge?.copyWith(
                   color: context.colors.textPrimary,
                   fontWeight: FontWeight.w800)),
+          if (unitPrice != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(unitPrice!, style: theme.textTheme.bodySmall),
+            ),
+          const SizedBox(height: 4),
+          Text(lengthLabel, style: theme.textTheme.bodySmall),
           const SizedBox(height: AppSpacing.md),
           ...features.map((String f) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),

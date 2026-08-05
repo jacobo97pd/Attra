@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -12,23 +10,92 @@ class AttraGradientBackground extends StatelessWidget {
   const AttraGradientBackground({
     super.key,
     required this.child,
-    this.colors = AppColors.brandBackground,
+    this.colors,
     this.begin = Alignment.topLeft,
     this.end = Alignment.bottomRight,
   });
 
   final Widget child;
-  final List<Color> colors;
+  final List<Color>? colors;
   final Alignment begin;
   final Alignment end;
 
   @override
   Widget build(BuildContext context) {
+    final List<Color> resolvedColors = colors ??
+        <Color>[
+          context.colors.bg,
+          Color.lerp(
+            context.colors.bg,
+            context.colors.accentDeep,
+            Theme.of(context).brightness == Brightness.dark ? 0.10 : 0.05,
+          )!,
+          context.colors.bg,
+        ];
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: LinearGradient(begin: begin, end: end, colors: colors),
+        gradient:
+            LinearGradient(begin: begin, end: end, colors: resolvedColors),
       ),
       child: child,
+    );
+  }
+}
+
+/// Fondo del shell principal: conserva la tinta de marca en la cabecera y
+/// transiciona enseguida a blanco para que el contenido respire sobre una base
+/// predominantemente clara.
+///
+/// Los cortes se calculan en píxeles lógicos para que el tramo oscuro termine
+/// bajo el wordmark de la AppBar tanto en móviles compactos como altos.
+class AttraAppShellBackground extends StatelessWidget {
+  const AttraAppShellBackground({
+    super.key,
+    required this.child,
+  });
+
+  final Widget child;
+
+  static const Color _headerInk = AppColors.black;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color contentColor = isDark ? context.colors.bg : Colors.white;
+    final double topInset = MediaQuery.paddingOf(context).top;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double height = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : MediaQuery.sizeOf(context).height;
+        final double safeHeight = height <= 0 ? 1 : height;
+
+        // La tinta se mantiene hasta el borde inferior del logo (28 px) y el
+        // fundido termina poco después de la AppBar. El resto queda en blanco.
+        final double darkStop =
+            ((topInset + (kToolbarHeight * 0.76)) / safeHeight)
+                .clamp(0.0, 0.28);
+        final double whiteStop = ((topInset + kToolbarHeight + 36) / safeHeight)
+            .clamp(darkStop + 0.04, 0.38);
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[
+                _headerInk,
+                _headerInk,
+                contentColor,
+                contentColor,
+              ],
+              stops: <double>[0, darkStop, whiteStop, 1],
+            ),
+          ),
+          child: child,
+        );
+      },
     );
   }
 }
@@ -55,17 +122,14 @@ class AttraGlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget card = ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-          ),
-          child: child,
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: context.colors.surface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: context.colors.surfaceLine),
         ),
+        child: child,
       ),
     );
     if (onTap == null) return card;
@@ -98,6 +162,7 @@ class AttraCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final Widget content = Container(
       padding: padding,
       decoration: BoxDecoration(
@@ -112,9 +177,9 @@ class AttraCard extends StatelessWidget {
         border: Border.all(color: borderColor ?? context.colors.surfaceLine),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: isDark ? 0.14 : 0.07),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
           ),
         ],
       ),

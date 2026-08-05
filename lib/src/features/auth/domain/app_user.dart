@@ -30,7 +30,7 @@ class AppUser {
     this.screenshotProtectionEnabled = false,
     this.analyticsConsent = true,
     this.aiPersonalization = true,
-    this.themeModeWire = 'dark',
+    this.themeModeWire = 'system',
     this.relationshipIntent = '',
     this.interests = const <String>[],
     this.intentMode = IntentMode.dating,
@@ -95,7 +95,7 @@ class AppUser {
   final bool aiPersonalization;
 
   /// Modo de tema elegido: 'system' | 'light' | 'dark'. De
-  /// `settings['appearance.themeMode']`. Default 'dark'.
+  /// `settings['appearance.themeMode']`. Default 'system'.
   final String themeModeWire;
 
   /// Qué busca (relationshipIntent) — para afinidad intencional en Slow Dating.
@@ -223,7 +223,7 @@ class AppUser {
           (settings['appearance.themeMode'] as String?)?.trim().isNotEmpty ==
                   true
               ? settings['appearance.themeMode'] as String
-              : 'dark',
+              : 'system',
       relationshipIntent: (profile['relationshipIntent'] as String?) ??
           (preferences['relationshipIntent'] as String?) ??
           '',

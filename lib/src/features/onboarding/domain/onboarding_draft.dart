@@ -4,6 +4,9 @@ import '../../profile/domain/profile_prompt.dart';
 class OnboardingDraft {
   const OnboardingDraft({
     this.currentStep = 0,
+    this.setupMode = '',
+    this.voiceProfileGenerated = false,
+    this.quickRemainingSteps = const <int>[],
     this.prompts = const <ProfilePrompt>[],
     this.visibleName = '',
     this.birthDate,
@@ -70,6 +73,19 @@ class OnboardingDraft {
   });
 
   final int currentStep;
+
+  /// Método elegido para crear el perfil: `quick` (voz + IA), `manual`
+  /// (paso a paso) o vacío si todavía no se ha preguntado.
+  final String setupMode;
+
+  /// La sugerencia de voz ya fue revisada y aplicada. No implica que el perfil
+  /// esté publicado: el alta sigue ocurriendo únicamente al enviar onboarding.
+  final bool voiceProfileGenerated;
+
+  /// Índices de los bloques aún necesarios tras revisar el borrador por voz.
+  /// Se congela al aceptar la revisión para que el flujo no cambie mientras la
+  /// persona edita un paso.
+  final List<int> quickRemainingSteps;
 
   /// Prompts de perfil elegidos en el onboarding (paso opcional). Se guardan en
   /// `users/{uid}.profilePrompts` al finalizar. Vacío = no se rellenó (saltado).
@@ -167,6 +183,9 @@ class OnboardingDraft {
 
     return OnboardingDraft(
       currentStep: _asInt(map['currentStep']) ?? 0,
+      setupMode: _asSetupMode(map['setupMode']),
+      voiceProfileGenerated: (map['voiceProfileGenerated'] as bool?) ?? false,
+      quickRemainingSteps: _asStepList(map['quickRemainingSteps']),
       prompts: _asPromptList(map['prompts']),
       visibleName: (map['visibleName'] as String?) ?? '',
       birthDate: _asDate(map['birthDate']),
@@ -252,6 +271,9 @@ class OnboardingDraft {
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
       'currentStep': currentStep,
+      'setupMode': setupMode,
+      'voiceProfileGenerated': voiceProfileGenerated,
+      'quickRemainingSteps': quickRemainingSteps,
       'prompts': prompts.map((ProfilePrompt p) => p.toMap()).toList(),
       'visibleName': visibleName,
       'birthDate': birthDate?.toIso8601String(),
@@ -320,6 +342,9 @@ class OnboardingDraft {
 
   OnboardingDraft copyWith({
     int? currentStep,
+    String? setupMode,
+    bool? voiceProfileGenerated,
+    List<int>? quickRemainingSteps,
     List<ProfilePrompt>? prompts,
     String? visibleName,
     DateTime? birthDate,
@@ -393,6 +418,10 @@ class OnboardingDraft {
   }) {
     return OnboardingDraft(
       currentStep: currentStep ?? this.currentStep,
+      setupMode: setupMode ?? this.setupMode,
+      voiceProfileGenerated:
+          voiceProfileGenerated ?? this.voiceProfileGenerated,
+      quickRemainingSteps: quickRemainingSteps ?? this.quickRemainingSteps,
       prompts: prompts ?? this.prompts,
       visibleName: visibleName ?? this.visibleName,
       birthDate: clearBirthDate ? null : (birthDate ?? this.birthDate),
@@ -483,6 +512,23 @@ class OnboardingDraft {
       return value.whereType<String>().toList(growable: false);
     }
     return const <String>[];
+  }
+
+  static String _asSetupMode(dynamic value) {
+    final String mode = (value ?? '').toString().trim().toLowerCase();
+    return mode == 'quick' || mode == 'manual' ? mode : '';
+  }
+
+  static List<int> _asStepList(dynamic value) {
+    if (value is! List) return const <int>[];
+    final List<int> output = <int>[];
+    for (final dynamic item in value) {
+      final int? step = _asInt(item);
+      if (step != null && step >= 0 && step <= 6 && !output.contains(step)) {
+        output.add(step);
+      }
+    }
+    return output;
   }
 
   static List<ProfilePrompt> _asPromptList(dynamic value) {

@@ -113,7 +113,7 @@ class _LoginVideoBackgroundState extends State<LoginVideoBackground> {
               center: const Alignment(0, -0.35),
               radius: 1.1,
               colors: <Color>[
-                AppColors.attraRed.withValues(alpha: 0.10),
+                AppColors.loginVideoTint.withValues(alpha: 0.10),
                 Colors.transparent,
               ],
             ),

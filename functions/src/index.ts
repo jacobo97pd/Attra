@@ -48,6 +48,10 @@ export {
   clearAiData,
 } from "./ai";
 export {
+  generateProfileFromVoice,
+  sweepExpiredVoiceProfileAudio,
+} from "./voiceProfile";
+export {
   createStory,
   viewStory,
   replyToStory,

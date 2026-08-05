@@ -311,9 +311,33 @@ export const passProfile = onCall({ region: REGION }, async (request) => {
     throw new HttpsError("invalid-argument", "Parametro invalido.");
   }
 
-  await col.dislikes.doc(directedId(fromUid, toUid)).set(
-    { fromUid, toUid, createdAt: FieldValue.serverTimestamp() },
-    { merge: true }
-  );
+  const dislikeRef = col.dislikes.doc(directedId(fromUid, toUid));
+  const receivedLikeRef = col.likes.doc(directedId(toUid, fromUid));
+  await db.runTransaction(async (tx) => {
+    const receivedLike = await tx.get(receivedLikeRef);
+    tx.set(
+      dislikeRef,
+      { fromUid, toUid, createdAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    // Passing from the received-likes inbox is an explicit decline. Marking
+    // the inbound intent as cancelled removes it from both users' pending
+    // lists while preserving an audit-safe lifecycle record.
+    if (
+      receivedLike.exists &&
+      (receivedLike.data()?.status ?? "active") === "active"
+    ) {
+      tx.set(
+        receivedLikeRef,
+        {
+          status: "cancelled",
+          cancelledAt: FieldValue.serverTimestamp(),
+          cancelledBy: fromUid,
+          cancelReason: "passed_by_recipient",
+        },
+        { merge: true }
+      );
+    }
+  });
   return { outcome: "passed" };
 });
