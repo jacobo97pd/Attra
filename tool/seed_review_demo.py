@@ -79,46 +79,62 @@ MATCHED = [
     ]),
 ]
 
+# OJO con la FORMA del documento: AppUser.fromDocument NO lee estos datos de la
+# raiz, sino de los mapas `profile`, `preferences`, `location` y `settings`
+# (lib/src/features/auth/domain/app_user.dart:200-245). Sembrarlos en la raiz
+# deja el perfil vacio en la app aunque en Firestore "se vean".
+_PHOTO_MAIN = "https://randomuser.me/api/portraits/men/32.jpg"
+_PHOTO_ALT = "https://randomuser.me/api/portraits/men/33.jpg"
+
 DEMO_PROFILE = {
     "uid": DEMO_UID,
     "displayName": "Alex Demo",
     "email": "review.demo@attra.app",
-    "age": 30,
-    "gender": "male",
-    "interestedIn": ["female"],
-    "orientation": ["straight"],
-    "bio": (
-        "Cuenta de demostracion para la revision de la App Store. "
-        "Perfil completo con matches, chats y likes recibidos."
-    ),
-    "currentCity": "Madrid",
-    "currentCountryName": "España",
-    "jobTitle": "Product designer",
-    "company": "Attra",
-    "interests": ["padel", "musica", "viajes"],
-    "photoUrl": "https://randomuser.me/api/portraits/men/32.jpg",
-    "profilePhotoUrl": "https://randomuser.me/api/portraits/men/32.jpg",
+    "photoUrl": _PHOTO_MAIN,
+    "profilePhotoUrl": _PHOTO_MAIN,
     "photos": [
-        {
-            "url": "https://randomuser.me/api/portraits/men/32.jpg",
-            "storagePath": "",
-            "source": "demo",
-            "order": 0,
-        },
-        {
-            "url": "https://randomuser.me/api/portraits/men/33.jpg",
-            "storagePath": "",
-            "source": "demo",
-            "order": 1,
-        },
+        {"url": _PHOTO_MAIN, "storagePath": "", "source": "demo", "order": 0},
+        {"url": _PHOTO_ALT, "storagePath": "", "source": "demo", "order": 1},
     ],
     "onboardingCompleted": True,
     "profileCompleted": True,
-    "tutorialCompleted": True,
     "isBot": False,
-    "profileCompletionPercent": 100,
-    "geo": {"lat": 40.4168, "lng": -3.7038},
+    # profile.* -> identidad publica que lee la app.
+    "profile": {
+        "visibleName": "Alex Demo",
+        "gender": "male",
+        "pronouns": "he",
+        "orientation": ["straight"],
+        "birthDate": "1995-05-20T00:00:00Z",
+        "bio": (
+            "Cuenta de demostracion para la revision de la App Store. "
+            "Perfil completo con matches, chats y likes recibidos."
+        ),
+        "currentCity": "Madrid",
+        "currentCountryName": "España",
+        "currentCountryCode": "ES",
+        "jobTitle": "Product designer",
+        "company": "Attra",
+        "interests": ["padel", "musica", "viajes"],
+        "relationshipIntent": "long_term",
+        "intentMode": "dating",
+    },
+    # preferences.* -> a quien quiere ver.
+    "preferences": {
+        "interestedIn": ["female"],
+        "maxDistanceKm": 100,
+        "preferredAgeMin": 24,
+        "preferredAgeMax": 40,
+    },
     "location": {"latitude": 40.4168, "longitude": -3.7038},
+    "geo": {"lat": 40.4168, "lng": -3.7038},
+    # settings.* -> el tutorial OBLIGATORIO se marca aqui, no en la raiz:
+    # AppUser lee settings['tutorial.completed'] (app_user.dart:217). Si se
+    # escribe en la raiz, al revisor le salta el tutorial y el tour guiado.
+    "settings": {
+        "tutorial.completed": True,
+        "appearance.themeMode": "system",
+    },
 }
 
 
@@ -188,18 +204,29 @@ def seed_profile():
 
 
 def seed_entitlement():
-    """Pro activo para que el revisor vea TODAS las funciones sin comprar."""
+    """Pro activo para que el revisor vea TODAS las funciones sin comprar.
+
+    OJO con la coleccion: el cliente lee `userEntitlements/{uid}`
+    (lib/src/features/monetization/data/entitlement_service.dart) y las reglas
+    la declaran en firestore.rules. Sembrar en `entitlements/` no tiene ningun
+    efecto: la app sigue viendo Free.
+
+    Los campos son los que escribe verifyPurchase (functions/src/subscriptions.ts)
+    y los que parsea UserEntitlements.fromMap: tier, source, expiresAt,
+    isLifetime. `source` debe ser uno de EntitlementSource (app_store,
+    play_store, admin, promo); usamos "admin" porque es una concesion manual.
+    """
     patch(
-        f"entitlements/{DEMO_UID}",
+        f"userEntitlements/{DEMO_UID}",
         {
-            "uid": DEMO_UID,
             "tier": "pro",
-            "source": "app_review_demo",
-            "status": "active",
-            "period": "yearly",
+            "source": "admin",
+            "isLifetime": True,
+            "productId": "app_review_demo",
+            "note": "Cuenta de revision de App Store. Concesion manual.",
         },
     )
-    print(f"OK entitlement Pro: entitlements/{DEMO_UID}")
+    print(f"OK entitlement Pro: userEntitlements/{DEMO_UID}")
 
 
 def seed_received_likes():

@@ -19,7 +19,7 @@ class LegalLinks {
 
   /// Versión del EULA aceptada en el login. Se guarda en `users/{uid}` para
   /// dejar constancia de la aceptación. Súbela al publicar un EULA nuevo.
-  static const String termsVersion = '2026-08-04';
+  static const String termsVersion = '2026-08-05';
 
   /// Condiciones de uso / contrato de licencia de usuario final (EULA).
   /// Incluye la cláusula de tolerancia cero con contenido ofensivo y usuarios

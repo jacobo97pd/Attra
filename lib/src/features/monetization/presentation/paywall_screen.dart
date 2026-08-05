@@ -10,6 +10,7 @@ import '../../../widgets/attra_badges.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/legal_links_row.dart';
 import '../data/iap_service.dart';
+import '../domain/price_format.dart';
 import '../domain/subscription_tier.dart';
 
 /// Verifica una suscripción comprada por IAP en el backend. Devuelve true si se
@@ -200,12 +201,13 @@ class _PaywallScreenState extends State<PaywallScreen> {
     }
   }
 
-  String _priceFor({
-    required ProductDetails? offer,
-    required String monthlyFallback,
-    required String yearlyFallback,
-  }) {
-    if (offer == null) return _yearly ? yearlyFallback : monthlyFallback;
+  /// Precio REAL de la tienda. Devuelve null si aún no se conoce.
+  ///
+  /// Nunca se inventa un precio: mostrar uno hardcodeado que no coincide con el
+  /// del escaparate del usuario (los precios cambian por país y por moneda) es
+  /// justo lo que penaliza la Guideline 3.1.2(c).
+  String? _priceFor(ProductDetails? offer) {
+    if (offer == null) return null;
     return _yearly ? '${offer.price} / año' : '${offer.price} / mes';
   }
 
@@ -214,18 +216,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
       ? 'Suscripción de 1 año · se renueva automáticamente cada año'
       : 'Suscripción de 1 mes · se renueva automáticamente cada mes';
 
-  /// Precio por unidad (por mes) en el plan anual, cuando aplica.
-  String? _unitPriceFor(ProductDetails? offer, String fallback) {
-    if (!_yearly) return null;
-    if (offer == null) return fallback;
-    final double monthly = offer.rawPrice / 12;
-    if (monthly <= 0) return fallback;
-    return 'Equivale a ${_formatAmount(monthly, offer.currencySymbol)} / mes';
-  }
-
-  static String _formatAmount(double value, String symbol) {
-    final String amount = value.toStringAsFixed(2).replaceAll('.', ',');
-    return '$amount $symbol'.trim();
+  /// Precio por unidad (por mes) del plan anual, con el MISMO formato que el
+  /// precio de la tienda. Ver price_format.dart.
+  String? _unitPriceFor(ProductDetails? offer) {
+    if (!_yearly || offer == null) return null;
+    final String? monthly = monthlyEquivalentOf(offer.price, offer.rawPrice);
+    return monthly == null ? null : 'Equivale a $monthly / mes';
   }
 
   @override
@@ -294,14 +290,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     _PlanCard(
                       kind: AttraBadgeKind.plus,
                       title: 'Attra Plus',
-                      price: _priceFor(
-                        offer: plusOffer,
-                        monthlyFallback: '9,99 € / mes',
-                        yearlyFallback: '99,99 € / año',
-                      ),
+                      price: _priceFor(plusOffer),
                       lengthLabel: _lengthLabel,
-                      unitPrice:
-                          _unitPriceFor(plusOffer, 'Equivale a 8,33 € / mes'),
+                      unitPrice: _unitPriceFor(plusOffer),
                       tagline: 'Ventajas sociales y más alcance',
                       highlightLabel: 'Más popular',
                       features: const <String>[
@@ -315,31 +306,34 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       // Plus = negro → champagne (acceso prioritario premium).
                       gradient: AppColors.plus,
                       owned: currentTier.atLeast(SubscriptionTier.plus),
-                      ctaLabel: currentTier.atLeast(SubscriptionTier.plus)
+                      // Un usuario Pro tiene Plus incluido, pero su plan
+                      // actual NO es Plus: decirlo confunde y sugiere una
+                      // bajada de plan que aquí no existe.
+                      ctaLabel: currentTier == SubscriptionTier.plus
                           ? 'Plan actual'
-                          : 'Hazte Plus',
-                      onTap:
-                          (currentTier.atLeast(SubscriptionTier.plus) || _busy)
-                              ? null
-                              : () => _buyPlan(
-                                    offer: plusOffer,
-                                    fallbackProductId: _yearly
-                                        ? widget.plusYearlyProductId
-                                        : widget.plusMonthlyProductId,
-                                  ),
+                          : currentTier.atLeast(SubscriptionTier.plus)
+                              ? 'Incluido en tu plan'
+                              : 'Hazte Plus',
+                      // Sin precio de la tienda no se puede comprar: dejar el
+                      // botón activo solo lleva a un error (Guideline 3.1.2(c)).
+                      onTap: (currentTier.atLeast(SubscriptionTier.plus) ||
+                              _busy ||
+                              plusOffer == null)
+                          ? null
+                          : () => _buyPlan(
+                                offer: plusOffer,
+                                fallbackProductId: _yearly
+                                    ? widget.plusYearlyProductId
+                                    : widget.plusMonthlyProductId,
+                              ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     _PlanCard(
                       kind: AttraBadgeKind.pro,
                       title: 'Attra Pro',
-                      price: _priceFor(
-                        offer: proOffer,
-                        monthlyFallback: '19,99 € / mes',
-                        yearlyFallback: '199,99 € / año',
-                      ),
+                      price: _priceFor(proOffer),
                       lengthLabel: _lengthLabel,
-                      unitPrice:
-                          _unitPriceFor(proOffer, 'Equivale a 16,67 € / mes'),
+                      unitPrice: _unitPriceFor(proOffer),
                       tagline: 'Todo Plus + IA visual flagship',
                       highlightLabel: 'IA avanzada',
                       features: const <String>[
@@ -355,7 +349,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       ctaLabel: currentTier == SubscriptionTier.pro
                           ? 'Plan actual'
                           : 'Hazte Pro',
-                      onTap: (currentTier == SubscriptionTier.pro || _busy)
+                      onTap: (currentTier == SubscriptionTier.pro ||
+                              _busy ||
+                              proOffer == null)
                           ? null
                           : () => _buyPlan(
                                 offer: proOffer,
@@ -388,7 +384,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                             'plan elegido). El pago se carga en tu cuenta de '
                             'App Store o Google Play al confirmar la compra. '
                             'La suscripción se renueva automáticamente por el '
-                            'mismo periodo y precio salvo que la canceles al '
+                            'mismo periodo salvo que la canceles al '
                             'menos 24 horas antes del final del periodo en '
                             'curso; el importe de la renovación se cobra en '
                             'las 24 horas previas. Puedes gestionarla o '
@@ -490,7 +486,10 @@ class _PlanCard extends StatelessWidget {
 
   final AttraBadgeKind kind;
   final String title;
-  final String price;
+
+  /// Precio REAL de la tienda. Null mientras no se conozca: nunca se sustituye
+  /// por uno inventado (Guideline 3.1.2(c)).
+  final String? price;
 
   /// Guideline 3.1.2(c): duración de la suscripción de renovación automática.
   final String lengthLabel;
@@ -543,10 +542,15 @@ class _PlanCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(tagline, style: theme.textTheme.bodyMedium),
           const SizedBox(height: AppSpacing.sm),
-          Text(price,
+          // Sin datos de la tienda no se muestra importe alguno.
+          Text(price ?? 'Precio no disponible ahora mismo',
               style: theme.textTheme.titleLarge?.copyWith(
-                  color: context.colors.textPrimary,
-                  fontWeight: FontWeight.w800)),
+                  color: price == null
+                      ? context.colors.textSecondary
+                      : context.colors.textPrimary,
+                  fontSize: price == null ? 15 : null,
+                  fontWeight:
+                      price == null ? FontWeight.w600 : FontWeight.w800)),
           if (unitPrice != null)
             Padding(
               padding: const EdgeInsets.only(top: 2),

@@ -23,13 +23,18 @@ void main() {
     expect(find.text('Attra Plus'), findsOneWidget);
     expect(find.text('Attra Pro'), findsOneWidget);
 
-    // Duración (mensual por defecto) y precio.
+    // Duración (mensual por defecto), siempre visible.
     expect(
       find.textContaining('se renueva automáticamente cada mes'),
       findsNWidgets(2),
     );
-    expect(find.text('9,99 € / mes'), findsOneWidget);
-    expect(find.text('19,99 € / mes'), findsOneWidget);
+
+    // Sin datos de StoreKit NO se inventa ningún precio: enseñar uno
+    // hardcodeado que no coincide con el del escaparate del usuario es lo que
+    // penaliza la Guideline 3.1.2(c).
+    expect(find.text('Precio no disponible ahora mismo'), findsNWidgets(2));
+    expect(find.textContaining('€'), findsNothing);
+    expect(find.textContaining(r'$'), findsNothing);
 
     // Enlaces legales funcionales dentro del flujo de compra.
     expect(
@@ -43,7 +48,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('el plan anual muestra la duración y el precio por mes',
+  testWidgets('el plan anual cambia la duración mostrada',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(430, 1600);
     tester.view.devicePixelRatio = 1;
@@ -62,10 +67,9 @@ void main() {
       find.textContaining('se renueva automáticamente cada año'),
       findsNWidgets(2),
     );
-    expect(find.text('99,99 € / año'), findsOneWidget);
-    expect(find.text('Equivale a 8,33 € / mes'), findsOneWidget);
-    expect(find.text('199,99 € / año'), findsOneWidget);
-    expect(find.text('Equivale a 16,67 € / mes'), findsOneWidget);
+    // Tampoco aquí se inventa precio ni equivalencia mensual.
+    expect(find.text('Precio no disponible ahora mismo'), findsNWidgets(2));
+    expect(find.textContaining('Equivale a'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

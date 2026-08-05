@@ -18,8 +18,8 @@ o cualquier función de pago) muestra ahora, para cada plan:
 | --- | --- |
 | Título de la suscripción | Título de la tarjeta: **Attra Plus** / **Attra Pro** |
 | Duración | Bajo el precio: *«Suscripción de 1 mes · se renueva automáticamente cada mes»* (o *1 año*) |
-| Precio | Precio del producto real de StoreKit (`9,99 € / mes`, `99,99 € / año`) |
-| Precio por unidad | En el plan anual: *«Equivale a 8,33 € / mes»* (calculado desde el precio real) |
+| Precio | Tomado de StoreKit (`ProductDetails.price`), ya localizado para el escaparate del revisor. La app nunca muestra un precio propio: si StoreKit aún no ha respondido, no se enseña importe alguno |
+| Precio por unidad | En el plan anual: *«Equivale a … / mes»*, calculado desde el precio real y con el mismo formato de moneda que la tienda |
 | Enlace funcional al EULA | Bloque **«Condiciones de la suscripción»** → *Condiciones de uso (EULA)* |
 | Enlace funcional a la privacidad | Mismo bloque → *Política de privacidad* |
 
