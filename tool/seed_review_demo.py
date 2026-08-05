@@ -26,6 +26,10 @@ Uso:
   set DEMO_UID=<uid del usuario demo>
   python tool/seed_review_demo.py
 
+Si la cuenta demo YA completo el onboarding en la app (perfil real, fotos
+propias), siembra solo el contenido y no pises el perfil:
+  set DEMO_KEEP_PROFILE=1
+
 Idempotente: usa PATCH con ids deterministas, se puede re-ejecutar.
 IMPORTANTE: los ids de like/match/chat replican los del backend
 (functions/src/ids.ts y lib/src/features/match/domain/pair_id.dart):
@@ -298,7 +302,14 @@ def seed_match(other_uid, messages):
 
 
 def main():
-    seed_profile()
+    # Si la cuenta ya completo el onboarding en la app, su perfil es real y
+    # NO hay que pisarlo: bastaria con sembrar el contenido. Ademas, el
+    # repositorio restaura displayName/photoUrl desde profile.* en cada login,
+    # asi que sobrescribirlos aqui dejaria el perfil a medias.
+    if os.environ.get("DEMO_KEEP_PROFILE", "").strip() in ("1", "true", "yes"):
+        print("DEMO_KEEP_PROFILE activo: no se toca el perfil existente.")
+    else:
+        seed_profile()
     seed_entitlement()
     seed_received_likes()
     for other_uid, messages in MATCHED:
