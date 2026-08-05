@@ -40,6 +40,10 @@ def to_value(v):
         return {"booleanValue": v}
     if isinstance(v, int):
         return {"integerValue": str(v)}
+    # Antes de float: las coordenadas de geo/location lo son y hacian fallar
+    # la siembra entera con "tipo no soportado".
+    if isinstance(v, float):
+        return {"doubleValue": v}
     if isinstance(v, str):
         return {"stringValue": v}
     if isinstance(v, list):
