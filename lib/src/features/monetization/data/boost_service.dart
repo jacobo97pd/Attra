@@ -70,6 +70,33 @@ class BoostService {
     return data['ok'] == true;
   }
 
+  /// Igual que [verifySubscription] pero conservando si el rechazo es
+  /// DEFINITIVO. Importa: ante un fallo permanente (el recibo ya lo canjeó otra
+  /// cuenta) hay que cerrar la transacción en la tienda; si no, StoreKit la
+  /// reencola en cada arranque y bloquea las compras siguientes.
+  Future<({bool ok, bool permanent, String? message})>
+      verifySubscriptionDetailed({
+    required String productId,
+    required String platform,
+    required String verificationData,
+    String? purchaseId,
+    String? period,
+  }) async {
+    final Map<String, dynamic> data =
+        await _call('verifyPurchase', <String, dynamic>{
+      'productId': productId,
+      'platform': platform,
+      'verificationData': verificationData,
+      if (purchaseId != null) 'purchaseId': purchaseId,
+      if (period != null) 'period': period,
+    });
+    return (
+      ok: data['ok'] == true,
+      permanent: data['permanent'] == true,
+      message: data['message'] as String?,
+    );
+  }
+
   Future<BoostActivationResult> activateBoost({
     BoostType type = BoostType.boostNormal,
   }) async {

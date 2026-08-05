@@ -179,4 +179,13 @@ class PremiumProductCatalog {
   static List<PremiumProductDefinition> get swipePacks => products
       .where((PremiumProductDefinition product) => product.isSwipePack)
       .toList(growable: false);
+
+  /// IDs de los productos CONSUMIBLES (Attras, Boosts, Swipes). En Android hay
+  /// que consumirlos tras entregarlos para poder recomprarlos, y el enrutador de
+  /// compras los usa para saber a qué backend va cada recibo.
+  static Set<String> get consumableIds => products
+      .where((PremiumProductDefinition product) =>
+          (product.consumableKind ?? '').isNotEmpty)
+      .map((PremiumProductDefinition product) => product.id)
+      .toSet();
 }

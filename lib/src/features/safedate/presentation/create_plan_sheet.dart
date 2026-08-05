@@ -128,9 +128,8 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
         chatId: widget.chatId,
         placeName: place,
         scheduledAt: when,
-        placeAddress: _addressCtrl.text.trim().isEmpty
-            ? null
-            : _addressCtrl.text.trim(),
+        placeAddress:
+            _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
         expectedDurationMinutes: _durationMinutes,
         trustedContactIds: _selectedContactIds.toList(growable: false),
       );
@@ -220,7 +219,8 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
                   child: OutlinedButton.icon(
                     onPressed: _pickTime,
                     icon: const Icon(Icons.schedule, size: 18),
-                    label: Text(_time == null ? 'Hora' : _time!.format(context)),
+                    label:
+                        Text(_time == null ? 'Hora' : _time!.format(context)),
                   ),
                 ),
               ],
@@ -298,8 +298,7 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
             ),
             if (_error != null) ...<Widget>[
               const SizedBox(height: 12),
-              Text(_error!,
-                  style: TextStyle(color: theme.colorScheme.error)),
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
             const SizedBox(height: 20),
             SizedBox(

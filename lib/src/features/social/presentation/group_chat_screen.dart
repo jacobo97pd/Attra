@@ -49,9 +49,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       await widget.service.sendGroupMessage(
         widget.groupId,
         senderId: widget.currentUid,
-        senderName: widget.currentUserName.isEmpty
-            ? 'Alguien'
-            : widget.currentUserName,
+        senderName:
+            widget.currentUserName.isEmpty ? 'Alguien' : widget.currentUserName,
         text: text,
       );
     } catch (_) {
@@ -74,8 +73,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: <Widget>[
-            GroupAvatar(
-                photoUrl: widget.groupPhotoUrl, size: 36, circle: true),
+            GroupAvatar(photoUrl: widget.groupPhotoUrl, size: 36, circle: true),
             const SizedBox(width: 10),
             Expanded(
               child: Text(widget.groupName,
@@ -96,8 +94,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 }
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.attraRed));
+                      child:
+                          CircularProgressIndicator(color: AppColors.attraRed));
                 }
                 final List<GroupMessage> msgs =
                     snap.data ?? const <GroupMessage>[];
@@ -111,8 +109,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   itemBuilder: (BuildContext context, int i) {
                     final GroupMessage m = msgs[i];
                     final bool mine = m.senderId == widget.currentUid;
-                    final bool showName = !mine &&
-                        (i == 0 || msgs[i - 1].senderId != m.senderId);
+                    final bool showName =
+                        !mine && (i == 0 || msgs[i - 1].senderId != m.senderId);
                     return _Bubble(message: m, mine: mine, showName: showName);
                   },
                 );
@@ -157,8 +155,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   hintStyle: const TextStyle(color: AppColors.textSecondary),
                   filled: true,
                   fillColor: AppColors.black,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(22),
                     borderSide: BorderSide.none,
@@ -225,9 +223,8 @@ class _Bubble extends StatelessWidget {
                 maxWidth: MediaQuery.of(context).size.width * 0.75),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              gradient: mine
-                  ? const LinearGradient(colors: AppColors.action)
-                  : null,
+              gradient:
+                  mine ? const LinearGradient(colors: AppColors.action) : null,
               color: mine ? null : AppColors.surface,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
@@ -235,9 +232,7 @@ class _Bubble extends StatelessWidget {
                 bottomLeft: Radius.circular(mine ? 16 : 4),
                 bottomRight: Radius.circular(mine ? 4 : 16),
               ),
-              border: mine
-                  ? null
-                  : Border.all(color: AppColors.surfaceLine),
+              border: mine ? null : Border.all(color: AppColors.surfaceLine),
             ),
             child: Text(message.text,
                 style: TextStyle(

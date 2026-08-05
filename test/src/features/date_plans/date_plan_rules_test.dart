@@ -95,18 +95,15 @@ void main() {
 
   group('passesPlaceQuality', () {
     test('filtra rating bajo', () {
-      expect(
-          DatePlanRules.passesPlaceQuality(rating: 3.8, reviewCount: 500),
+      expect(DatePlanRules.passesPlaceQuality(rating: 3.8, reviewCount: 500),
           isFalse);
     });
     test('filtra pocas reseñas', () {
-      expect(
-          DatePlanRules.passesPlaceQuality(rating: 4.7, reviewCount: 5),
+      expect(DatePlanRules.passesPlaceQuality(rating: 4.7, reviewCount: 5),
           isFalse);
     });
     test('acepta buen sitio', () {
-      expect(
-          DatePlanRules.passesPlaceQuality(rating: 4.5, reviewCount: 820),
+      expect(DatePlanRules.passesPlaceQuality(rating: 4.5, reviewCount: 820),
           isTrue);
     });
     test('sin datos no bloquea (rating/reviews null)', () {

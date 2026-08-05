@@ -159,10 +159,8 @@ class FriendGroupService {
 
   /// Grupos donde el usuario es MIEMBRO.
   Stream<List<FriendGroup>> observeMyGroups(String uid) {
-    return _groups
-        .where('memberIds', arrayContains: uid)
-        .snapshots()
-        .map((QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
+    return _groups.where('memberIds', arrayContains: uid).snapshots().map(
+        (QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
             .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
                 FriendGroup.fromMap(d.id, d.data()))
             .toList(growable: false));

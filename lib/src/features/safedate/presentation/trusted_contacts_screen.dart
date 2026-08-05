@@ -16,7 +16,8 @@ class TrustedContactsScreen extends StatelessWidget {
   final String uid;
   final SafeDateService service;
 
-  Future<void> _addOrEdit(BuildContext context, [TrustedContact? existing]) async {
+  Future<void> _addOrEdit(BuildContext context,
+      [TrustedContact? existing]) async {
     final TrustedContactInput? input =
         await _TrustedContactForm.show(context, existing);
     if (input == null) return;

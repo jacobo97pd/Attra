@@ -612,122 +612,122 @@ class _CreateStoryScreenState extends State<CreateStoryScreen> {
       appBar: AppBar(title: const Text('Nueva story')),
       body: SafeArea(
         child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(
-              child: !hasMedia
-                  ? _Picker(
-                      onGallery: _pickGallery,
-                      onPhoto: _takePhoto,
-                      onVideo: _recordVideo,
-                    )
-                  : LayoutBuilder(
-                      builder:
-                          (BuildContext context, BoxConstraints constraints) {
-                        final Size canvasSize = Size(
-                          constraints.maxWidth,
-                          constraints.maxHeight,
-                        );
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: <Widget>[
-                            _MediaPreview(
-                              mediaType: _mediaType,
-                              imageBytes: _imagePreviewBytes,
-                              controller: _preview,
-                              imageFilter: _imageFilter,
-                              imageRotationTurns: _imageRotationTurns,
-                              imageCropZoom: _imageCropZoom,
-                            ),
-                            for (int i = 0; i < _overlays.length; i++)
-                              _EditableOverlayView(
-                                overlay: _overlays[i],
-                                selected: i == _selectedOverlayIndex,
-                                canvasSize: canvasSize,
-                                onScaleStart: (ScaleStartDetails details) =>
-                                    _onOverlayScaleStart(i, details),
-                                onScaleUpdate: (ScaleUpdateDetails details) =>
-                                    _onOverlayScaleUpdate(
-                                  i,
-                                  details,
-                                  canvasSize,
-                                ),
-                                onTap: () =>
-                                    setState(() => _selectedOverlayIndex = i),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-            ),
-            if (hasMedia) ...<Widget>[
-              const SizedBox(height: 10),
-              _MediaEditToolbar(
-                mediaType: _mediaType,
-                imageFilter: _imageFilter,
-                imageCropZoom: _imageCropZoom,
-                onRotateLeft: () => _rotateImage(-1),
-                onRotateRight: () => _rotateImage(1),
-                onImageFilter: _setImageFilter,
-                onImageCropZoom: _setImageCropZoom,
-                videoMuted: _videoMuted,
-                videoTrim: RangeValues(
-                  _videoTrimStartSeconds,
-                  _videoTrimEndSeconds,
-                ),
-                videoDurationSeconds: _videoSourceDurationSeconds,
-                videoCoverSeconds: _videoCoverSeconds,
-                onVideoMuted: _setVideoMuted,
-                onVideoTrim: _setVideoTrim,
-                onVideoCover: _setVideoCover,
-              ),
-              const SizedBox(height: 8),
-              _EditorToolbar(
-                selectedOverlay: _selectedOverlay,
-                palette: _palette,
-                onAddText: _addTextOverlay,
-                onAddSticker: _addStickerOverlay,
-                onEditText: _editSelectedText,
-                onDelete: _removeSelectedOverlay,
-                onColor: _selectOverlayColor,
-                onToggleBackground: _toggleOverlayBackground,
-                onCycleAlign: _cycleOverlayAlign,
-                onScale: _setOverlayScale,
-              ),
-              const SizedBox(height: 10),
-              SegmentedButton<StoryVisibility>(
-                segments: const <ButtonSegment<StoryVisibility>>[
-                  ButtonSegment<StoryVisibility>(
-                    value: StoryVisibility.discovery,
-                    label: Text('Descubrimiento'),
-                  ),
-                  ButtonSegment<StoryVisibility>(
-                    value: StoryVisibility.matches,
-                    label: Text('Solo matches'),
-                  ),
-                ],
-                selected: <StoryVisibility>{_visibility},
-                onSelectionChanged: (Set<StoryVisibility> s) =>
-                    setState(() => _visibility = s.first),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _publishing ? null : _publish,
-                icon: _publishing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: !hasMedia
+                    ? _Picker(
+                        onGallery: _pickGallery,
+                        onPhoto: _takePhoto,
+                        onVideo: _recordVideo,
                       )
-                    : const Icon(Icons.upload),
-                label: Text(_publishing ? 'Publicando...' : 'Publicar story'),
+                    : LayoutBuilder(
+                        builder:
+                            (BuildContext context, BoxConstraints constraints) {
+                          final Size canvasSize = Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          return Stack(
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              _MediaPreview(
+                                mediaType: _mediaType,
+                                imageBytes: _imagePreviewBytes,
+                                controller: _preview,
+                                imageFilter: _imageFilter,
+                                imageRotationTurns: _imageRotationTurns,
+                                imageCropZoom: _imageCropZoom,
+                              ),
+                              for (int i = 0; i < _overlays.length; i++)
+                                _EditableOverlayView(
+                                  overlay: _overlays[i],
+                                  selected: i == _selectedOverlayIndex,
+                                  canvasSize: canvasSize,
+                                  onScaleStart: (ScaleStartDetails details) =>
+                                      _onOverlayScaleStart(i, details),
+                                  onScaleUpdate: (ScaleUpdateDetails details) =>
+                                      _onOverlayScaleUpdate(
+                                    i,
+                                    details,
+                                    canvasSize,
+                                  ),
+                                  onTap: () =>
+                                      setState(() => _selectedOverlayIndex = i),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
               ),
+              if (hasMedia) ...<Widget>[
+                const SizedBox(height: 10),
+                _MediaEditToolbar(
+                  mediaType: _mediaType,
+                  imageFilter: _imageFilter,
+                  imageCropZoom: _imageCropZoom,
+                  onRotateLeft: () => _rotateImage(-1),
+                  onRotateRight: () => _rotateImage(1),
+                  onImageFilter: _setImageFilter,
+                  onImageCropZoom: _setImageCropZoom,
+                  videoMuted: _videoMuted,
+                  videoTrim: RangeValues(
+                    _videoTrimStartSeconds,
+                    _videoTrimEndSeconds,
+                  ),
+                  videoDurationSeconds: _videoSourceDurationSeconds,
+                  videoCoverSeconds: _videoCoverSeconds,
+                  onVideoMuted: _setVideoMuted,
+                  onVideoTrim: _setVideoTrim,
+                  onVideoCover: _setVideoCover,
+                ),
+                const SizedBox(height: 8),
+                _EditorToolbar(
+                  selectedOverlay: _selectedOverlay,
+                  palette: _palette,
+                  onAddText: _addTextOverlay,
+                  onAddSticker: _addStickerOverlay,
+                  onEditText: _editSelectedText,
+                  onDelete: _removeSelectedOverlay,
+                  onColor: _selectOverlayColor,
+                  onToggleBackground: _toggleOverlayBackground,
+                  onCycleAlign: _cycleOverlayAlign,
+                  onScale: _setOverlayScale,
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<StoryVisibility>(
+                  segments: const <ButtonSegment<StoryVisibility>>[
+                    ButtonSegment<StoryVisibility>(
+                      value: StoryVisibility.discovery,
+                      label: Text('Descubrimiento'),
+                    ),
+                    ButtonSegment<StoryVisibility>(
+                      value: StoryVisibility.matches,
+                      label: Text('Solo matches'),
+                    ),
+                  ],
+                  selected: <StoryVisibility>{_visibility},
+                  onSelectionChanged: (Set<StoryVisibility> s) =>
+                      setState(() => _visibility = s.first),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _publishing ? null : _publish,
+                  icon: _publishing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.upload),
+                  label: Text(_publishing ? 'Publicando...' : 'Publicar story'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
-      ),
       ),
     );
   }

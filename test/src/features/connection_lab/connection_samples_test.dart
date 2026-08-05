@@ -10,8 +10,10 @@ void main() {
       expect(a.prompt, isNotEmpty);
       expect(a.title, isNot(b.title));
       // Wraps around.
-      expect(ConnectionSamples.challengeAt(ConnectionSamples.challenges.length)
-          .title, a.title);
+      expect(
+          ConnectionSamples.challengeAt(ConnectionSamples.challenges.length)
+              .title,
+          a.title);
       // Handles negative seeds.
       expect(ConnectionSamples.challengeAt(-3).prompt, isNotEmpty);
     });
@@ -28,7 +30,13 @@ void main() {
     });
 
     test('filler answers like "Nada." do NOT get warm feedback', () {
-      for (final String filler in <String>['Nada.', 'no sé', 'meh', 'ns', 'x']) {
+      for (final String filler in <String>[
+        'Nada.',
+        'no sé',
+        'meh',
+        'ns',
+        'x'
+      ]) {
         final ChallengeInsight i = ConnectionSamples.analyzeAnswer(filler);
         expect(i.energyScore, lessThan(40),
             reason: 'filler "$filler" should score low');
@@ -106,7 +114,10 @@ void main() {
 
     test('long silence lowers momentum and suggests a restart', () {
       final GhostingCoachReport r = ConnectionSamples.coachReport(
-          myMessages: 6, theirMessages: 5, hoursSinceLast: 72, iSentLast: false);
+          myMessages: 6,
+          theirMessages: 5,
+          hoursSinceLast: 72,
+          iSentLast: false);
       expect(r.momentumScore, lessThan(40));
       expect(r.suggestedAction, isNotEmpty);
     });

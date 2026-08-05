@@ -21,8 +21,7 @@ void main() {
   group('IntentCompatibility.showsInFeed', () {
     test('dating ve dating y both, no friends-only', () {
       expect(
-          IntentCompatibility.showsInFeed(
-              IntentMode.dating, IntentMode.dating),
+          IntentCompatibility.showsInFeed(IntentMode.dating, IntentMode.dating),
           isTrue);
       expect(
           IntentCompatibility.showsInFeed(IntentMode.dating, IntentMode.both),
@@ -59,8 +58,7 @@ void main() {
     test('un perfil solo-groups no aparece en el feed de personas', () {
       for (final IntentMode viewer in IntentMode.values) {
         expect(
-            IntentCompatibility.showsInFeed(viewer, IntentMode.groups),
-            isFalse,
+            IntentCompatibility.showsInFeed(viewer, IntentMode.groups), isFalse,
             reason: 'groups no debe verse en el feed 1:1 (viewer=$viewer)');
       }
     });

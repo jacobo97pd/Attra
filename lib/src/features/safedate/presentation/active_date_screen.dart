@@ -64,8 +64,8 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
   void _startLocationTimer() {
     _locTimer?.cancel();
     _pushLocation(); // primer envío inmediato
-    _locTimer = Timer.periodic(
-        const Duration(seconds: 45), (_) => _pushLocation());
+    _locTimer =
+        Timer.periodic(const Duration(seconds: 45), (_) => _pushLocation());
   }
 
   Future<void> _pushLocation() async {
@@ -99,8 +99,7 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
       if (!ok) return;
       setState(() => _busy = true);
       try {
-        await widget.service
-            .startLiveLocation(widget.plan.id, consent: true);
+        await widget.service.startLiveLocation(widget.plan.id, consent: true);
         if (mounted) {
           setState(() => _sharing = true);
           _startLocationTimer();
@@ -232,8 +231,8 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
                                 fontWeight: FontWeight.w700, fontSize: 16)),
                         if ((widget.plan.placeAddress ?? '').isNotEmpty)
                           Text(widget.plan.placeAddress!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.outline)),
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: theme.colorScheme.outline)),
                       ],
                     ),
                   ),
@@ -285,8 +284,8 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
               subtitle: 'Marca esta cita como incómoda para tu seguimiento.',
               onTap: _busy
                   ? null
-                  : () => _sendAlert(
-                      'need_exit', 'Registrado. Cuídate; tú tienes el control.'),
+                  : () => _sendAlert('need_exit',
+                      'Registrado. Cuídate; tú tienes el control.'),
             ),
             const SizedBox(height: 8),
             _ActionTile(
@@ -296,7 +295,8 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
               danger: true,
               onTap: _busy
                   ? null
-                  : () => _sendAlert('silent_alert', 'Alerta silenciosa enviada.'),
+                  : () =>
+                      _sendAlert('silent_alert', 'Alerta silenciosa enviada.'),
             ),
             const SizedBox(height: 16),
           ],

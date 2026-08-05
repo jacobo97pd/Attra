@@ -25,8 +25,20 @@ class SafeDateEvents {
 
   /// Campos PROHIBIDOS en parámetros de evento (defensa en código).
   static const Set<String> forbiddenParamKeys = <String>{
-    'name', 'displayName', 'phone', 'email', 'address', 'lat', 'latitude',
-    'lng', 'longitude', 'message', 'text', 'notes', 'reason', 'externalId',
+    'name',
+    'displayName',
+    'phone',
+    'email',
+    'address',
+    'lat',
+    'latitude',
+    'lng',
+    'longitude',
+    'message',
+    'text',
+    'notes',
+    'reason',
+    'externalId',
   };
 
   /// Filtra parámetros para no enviar nunca datos sensibles.

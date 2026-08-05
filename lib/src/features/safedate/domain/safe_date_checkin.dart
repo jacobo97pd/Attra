@@ -76,16 +76,17 @@ class SafeDateCheckIn {
     return SafeDateCheckIn(
       id: id,
       // El backend escribe planId/ownerUserId/dueAt; toleramos nombres antiguos.
-      safeDatePlanId:
-          (map['planId'] ?? map['safeDatePlanId'] ?? '').toString(),
+      safeDatePlanId: (map['planId'] ?? map['safeDatePlanId'] ?? '').toString(),
       userId: (map['ownerUserId'] ?? map['userId'] ?? '').toString(),
       type: CheckInType.fromValue(map['type']),
-      scheduledAt:
-          _asDate(map['dueAt']) ?? _asDate(map['scheduledAt']) ?? DateTime.now(),
+      scheduledAt: _asDate(map['dueAt']) ??
+          _asDate(map['scheduledAt']) ??
+          DateTime.now(),
       respondedAt: _asDate(map['respondedAt']),
       status: CheckInStatus.fromValue(map['status']),
-      reminderCount:
-          map['reminderCount'] is num ? (map['reminderCount'] as num).toInt() : 0,
+      reminderCount: map['reminderCount'] is num
+          ? (map['reminderCount'] as num).toInt()
+          : 0,
       createdAt: _asDate(map['createdAt']),
     );
   }

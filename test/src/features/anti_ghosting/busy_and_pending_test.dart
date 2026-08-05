@@ -31,7 +31,8 @@ void main() {
       expect(u.busyModeUntilOrNull, isNotNull);
     });
 
-    test('expiración defensiva: fecha pasada => inactivo aunque enabled=true', () {
+    test('expiración defensiva: fecha pasada => inactivo aunque enabled=true',
+        () {
       final AppUser u = buildUser(
         busyEnabled: true,
         busyUntil: DateTime.now().subtract(const Duration(hours: 1)),
@@ -83,8 +84,8 @@ void main() {
 
     test('lista vacía => 0', () {
       expect(
-        PendingConversationsController.countOlderThan(
-            const <DateTime>[], 24, now: now),
+        PendingConversationsController.countOlderThan(const <DateTime>[], 24,
+            now: now),
         0,
       );
     });

@@ -5,7 +5,8 @@ import '../../../theme/attra_colors.dart';
 
 /// Small "AI" pill used across the Connection Lab.
 class LabAiChip extends StatelessWidget {
-  const LabAiChip({super.key, required this.label, this.icon = Icons.auto_awesome});
+  const LabAiChip(
+      {super.key, required this.label, this.icon = Icons.auto_awesome});
   final String label;
   final IconData icon;
 

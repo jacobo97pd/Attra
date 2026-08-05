@@ -26,7 +26,8 @@ class DatePlannerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final List<DateIdea> ideas = ConnectionSamples.dateIdeas();
-    final String message = ConnectionSamples.dateProposalMessage(otherName ?? '');
+    final String message =
+        ConnectionSamples.dateProposalMessage(otherName ?? '');
 
     return Scaffold(
       backgroundColor: context.colors.bg,
@@ -34,7 +35,8 @@ class DatePlannerScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: <Widget>[
-          const LabAiChip(label: 'From match to date', icon: Icons.event_available_rounded),
+          const LabAiChip(
+              label: 'From match to date', icon: Icons.event_available_rounded),
           const SizedBox(height: 12),
           Text('Easy first-date ideas',
               style: theme.textTheme.titleMedium

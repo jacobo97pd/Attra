@@ -59,7 +59,8 @@ extension ConversationTurnX on Chat {
   }
 
   /// Atajo: ¿es mi turno de responder en este chat?
-  bool isMyTurn(String currentUid) => turnFor(currentUid).isWaitingOn(currentUid);
+  bool isMyTurn(String currentUid) =>
+      turnFor(currentUid).isWaitingOn(currentUid);
 }
 
 /// Formato humano de la espera para la UI ("hace 18 h", "hace 2 días").

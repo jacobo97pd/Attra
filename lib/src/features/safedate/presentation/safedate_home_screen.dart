@@ -85,7 +85,8 @@ class SafeDateHomeScreen extends StatelessWidget {
             _SafeDateTile(
               icon: Icons.group_outlined,
               title: 'Contactos de confianza',
-              subtitle: 'Personas a las que avisar. Privados: nadie más los ve.',
+              subtitle:
+                  'Personas a las que avisar. Privados: nadie más los ve.',
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) =>
                     TrustedContactsScreen(uid: uid, service: service),
@@ -124,7 +125,8 @@ class SafeDateHomeScreen extends StatelessWidget {
             _SafeDateTile(
               icon: Icons.verified_user_outlined,
               title: 'Ver solo perfiles verificados',
-              subtitle: 'Actívalo en los filtros del feed (opción "Verificados").',
+              subtitle:
+                  'Actívalo en los filtros del feed (opción "Verificados").',
               onTap: () => _showVerifiedInfo(context),
             ),
             const SizedBox(height: 10),
@@ -291,7 +293,8 @@ class _SafeDateTile extends StatelessWidget {
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(subtitle),
-        trailing: trailing ?? (onTap != null ? const Icon(Icons.chevron_right) : null),
+        trailing: trailing ??
+            (onTap != null ? const Icon(Icons.chevron_right) : null),
         onTap: onTap,
       ),
     );

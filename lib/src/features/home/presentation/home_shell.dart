@@ -39,6 +39,8 @@ import '../../match/data/match_service.dart';
 import '../../match/presentation/likes_received_screen.dart';
 import '../../stories/data/story_service.dart';
 import '../../monetization/data/boost_service.dart';
+import '../../monetization/data/purchase_delivery_router.dart';
+import '../../monetization/presentation/boost_store_sheet.dart';
 import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
 import '../../monetization/domain/premium_feature.dart';
@@ -274,6 +276,7 @@ class _HomeShellState extends State<HomeShell> {
   ];
   SettingsController? _settingsController;
   EntitlementController? _entitlementController;
+  PurchaseDeliveryRouter? _purchases;
   PendingConversationsController? _pendingController;
 
   /// Attra Clear: config remota (flags `anti_ghosting_*`) con fallback seguro.
@@ -382,7 +385,32 @@ class _HomeShellState extends State<HomeShell> {
       chatService: widget.chatService,
       uid: uid,
     )..addListener(_onEntitlementsChanged);
+
+    // Entrega de compras a nivel de SESIÓN. Antes la escucha del purchaseStream
+    // solo existía mientras el paywall estaba abierto, así que una compra que se
+    // resolvía después (pago diferido, red lenta, app reabierta) no se entregaba
+    // ni se completaba: el usuario pagaba y no recibía nada.
+    final BoostService? boosts = widget.boostService;
+    if (boosts != null) {
+      final PurchaseDeliveryRouter router =
+          PurchaseDeliveryRouter(boostService: boosts);
+      router.onSubscriptionDelivered = () => _entitlementController?.load();
+      router.onConsumableDelivered = (_, __) => _onEntitlementsChanged();
+      _purchases = router;
+      router.start(subscriptionIds: _subscriptionProductIds);
+    }
   }
+
+  /// IDs de suscripción que la sesión vigila. Deben coincidir con los que usa
+  /// PaywallScreen y con PRODUCT_TIER del backend.
+  static const Set<String> _subscriptionProductIds = <String>{
+    'attra_plus',
+    'attra_plus_monthly',
+    'attra_plus_yearly',
+    'attra_pro',
+    'attra_pro_monthly',
+    'attra_pro_yearly',
+  };
 
   void _onEntitlementsChanged() {
     if (mounted) setState(() {});
@@ -397,6 +425,8 @@ class _HomeShellState extends State<HomeShell> {
     _pendingController?.removeListener(_onEntitlementsChanged);
     _pendingController?.dispose();
     _pendingController = null;
+    _purchases?.dispose();
+    _purchases = null;
   }
 
   @override
@@ -636,6 +666,7 @@ class _HomeShellState extends State<HomeShell> {
       onOpenAiVisual: _openAiVisual,
       // SafeDate: entrada al centro solo si el master switch remoto está ON y
       // hay servicio inyectado. OFF por defecto → invisible.
+      onOpenBoostStore: widget.boostService == null ? null : _openBoostStore,
       onOpenSafeDate: (_safeDateFlags.enabled && widget.safeDateService != null)
           ? _openSafeDate
           : null,
@@ -805,12 +836,27 @@ class _HomeShellState extends State<HomeShell> {
     if (mounted) setState(() => _feedReloadToken++);
   }
 
+  /// Tienda de Boosts y Swipes. Usa el MISMO IapService de la sesión para que
+  /// no haya dos escuchas del stream compitiendo por la misma compra.
+  void _openBoostStore() {
+    final BoostService? service = widget.boostService;
+    if (service == null) return;
+    showBoostStoreSheet(
+      context,
+      service: service,
+      user: widget.user,
+      iapService: _purchases?.iap,
+      onChanged: () => _entitlementController?.load(),
+    );
+  }
+
   void _openPaywall() {
     final SubscriptionTier tier =
         _entitlementController?.tier ?? SubscriptionTier.free;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => PaywallScreen(
         currentTier: tier,
+        iapService: _purchases?.iap,
         verifySubscription: widget.boostService == null
             ? null
             : ({

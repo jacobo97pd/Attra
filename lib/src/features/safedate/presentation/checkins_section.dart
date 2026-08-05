@@ -31,8 +31,7 @@ class SafeDateCheckInsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<List<SafeDatePlan>>(
       stream: service.observeMyPlans(uid),
-      builder: (BuildContext context,
-          AsyncSnapshot<List<SafeDatePlan>> snap) {
+      builder: (BuildContext context, AsyncSnapshot<List<SafeDatePlan>> snap) {
         final List<SafeDatePlan> open = (snap.data ?? const <SafeDatePlan>[])
             .where((SafeDatePlan p) => p.status.isOpen)
             .toList(growable: false);
@@ -236,8 +235,8 @@ class _CheckInRowState extends State<_CheckInRow> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool missed = widget.checkIn.status == CheckInStatus.missed;
-    final String label =
-        _checkInLabels[widget.checkIn.type.wireName] ?? _checkInLabels['manual']!;
+    final String label = _checkInLabels[widget.checkIn.type.wireName] ??
+        _checkInLabels['manual']!;
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 4),
       child: Column(

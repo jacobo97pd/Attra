@@ -164,16 +164,16 @@ class MonetizationFeatureFlags {
           'date_builder_enabled', readBool('dateBuilderEnabled', false)),
       matchReactivationEnabled: readBool('match_reactivation_enabled',
           readBool('matchReactivationEnabled', false)),
-      datePlansEnabled: readBool(
-          'date_plans_enabled', readBool('datePlansEnabled', false)),
+      datePlansEnabled:
+          readBool('date_plans_enabled', readBool('datePlansEnabled', false)),
       datePlansAiEnabled: readBool(
           'date_plans_ai_enabled', readBool('datePlansAiEnabled', false)),
       datePlansPlacesEnabled: readBool('date_plans_places_enabled',
           readBool('datePlansPlacesEnabled', false)),
       datePlansAutoNudgeEnabled: readBool('date_plans_auto_nudge_enabled',
           readBool('datePlansAutoNudgeEnabled', false)),
-      datePlansKillSwitch: readBool('date_plans_kill_switch',
-          readBool('datePlansKillSwitch', false)),
+      datePlansKillSwitch: readBool(
+          'date_plans_kill_switch', readBool('datePlansKillSwitch', false)),
       datePlansFreeLimit:
           readInt('date_plans_free_limit', readInt('datePlansFreeLimit', 1)),
       adsEnabled: readBool('ads_enabled', readBool('adsEnabled', false)),

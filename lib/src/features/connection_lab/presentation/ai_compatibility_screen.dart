@@ -78,7 +78,9 @@ class AiCompatibilityScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            who.isEmpty ? 'Why you might click' : 'Why you and $who might click',
+            who.isEmpty
+                ? 'Why you might click'
+                : 'Why you and $who might click',
             style: theme.textTheme.titleMedium
                 ?.copyWith(fontWeight: FontWeight.w800),
           ),
@@ -86,8 +88,8 @@ class AiCompatibilityScreen extends StatelessWidget {
           ...r.reasons.map((String reason) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: LabCard(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   child: Row(
                     children: <Widget>[
                       const Icon(Icons.check_circle_rounded,

@@ -49,6 +49,7 @@ class FriendGroup {
   final int maxMembers;
   final String createdBy;
   final FriendGroupStatus status;
+
   /// Foto de perfil del grupo (opcional; la fija el creador). Vacío = sin foto.
   final String photoUrl;
   final DateTime? createdAt;
@@ -83,7 +84,8 @@ class FriendGroup {
       interests: strList(map['interests']),
       memberIds: strList(map['memberIds']),
       pendingIds: strList(map['pendingIds']),
-      maxMembers: map['maxMembers'] is num ? (map['maxMembers'] as num).toInt() : 8,
+      maxMembers:
+          map['maxMembers'] is num ? (map['maxMembers'] as num).toInt() : 8,
       createdBy: (map['createdBy'] ?? '').toString(),
       status: FriendGroupStatus.fromValue(map['status']),
       photoUrl: (map['photoUrl'] ?? '').toString(),

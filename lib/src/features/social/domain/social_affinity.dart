@@ -11,8 +11,7 @@ class SocialAffinity {
       xs.map(_norm).where((String s) => s.isNotEmpty).toSet();
 
   /// Intereses en común (normalizados) entre dos conjuntos.
-  static Set<String> commonInterests(
-      Iterable<String> a, Iterable<String> b) {
+  static Set<String> commonInterests(Iterable<String> a, Iterable<String> b) {
     return _normSet(a).intersection(_normSet(b));
   }
 

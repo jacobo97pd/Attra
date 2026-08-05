@@ -28,10 +28,8 @@ class SafeDateService {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
 
-  CollectionReference<Map<String, dynamic>> _contactsCol(String uid) => _firestore
-      .collection('users')
-      .doc(uid)
-      .collection('trustedContacts');
+  CollectionReference<Map<String, dynamic>> _contactsCol(String uid) =>
+      _firestore.collection('users').doc(uid).collection('trustedContacts');
 
   // ── Contactos de confianza ───────────────────────────────────────────────
 
@@ -148,11 +146,8 @@ class SafeDateService {
 
   /// Observa un plan concreto (para reflejar estado activo/alertado en la UI).
   Stream<SafeDatePlan?> observePlan(String planId) {
-    return _firestore
-        .collection('safeDatePlans')
-        .doc(planId)
-        .snapshots()
-        .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+    return _firestore.collection('safeDatePlans').doc(planId).snapshots().map(
+        (DocumentSnapshot<Map<String, dynamic>> d) =>
             d.exists ? SafeDatePlan.fromMap(d.id, d.data()!) : null);
   }
 
@@ -217,10 +212,8 @@ class SafeDateService {
   /// Lugares públicos recomendados (`safePlaces`). Lectura pública (reglas:
   /// isSignedIn). Nunca se etiqueta un lugar como "seguro al 100%".
   Stream<List<SafePlace>> observeSafePlaces() {
-    return _firestore
-        .collection('safePlaces')
-        .snapshots()
-        .map((QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
+    return _firestore.collection('safePlaces').snapshots().map(
+        (QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
             .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
                 SafePlace.fromMap(d.id, d.data()))
             .toList(growable: false)

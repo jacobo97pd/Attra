@@ -69,6 +69,7 @@ class HomeScreen extends StatefulWidget {
     this.onOpenFriendMode,
     this.onOpenGroups,
     this.onOpenSafeDate,
+    this.onOpenBoostStore,
     this.onSetSlowDating,
     this.currentPlanLabel = 'Free',
     this.isProUser = false,
@@ -133,6 +134,10 @@ class HomeScreen extends StatefulWidget {
 
   /// Attra SafeDate: abre el centro de seguridad. Null = oculto (flag OFF).
   final VoidCallback? onOpenSafeDate;
+
+  /// Tienda de consumibles (Boosts y Attra Swipes). Existía pero no era
+  /// alcanzable desde ninguna pantalla: nadie podía comprarlos.
+  final VoidCallback? onOpenBoostStore;
 
   /// Activa/desactiva Slow Dating (toggle destacado en el perfil).
   final Future<void> Function(bool value)? onSetSlowDating;
@@ -454,6 +459,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildGroupsCard(theme),
                     const SizedBox(height: 12),
                   ],
+                  if (widget.onOpenBoostStore != null) ...<Widget>[
+                    _buildBoostStoreCard(theme),
+                    const SizedBox(height: 12),
+                  ],
                   if (widget.onOpenSafeDate != null) ...<Widget>[
                     _buildSafeDateCard(theme),
                     const SizedBox(height: 12),
@@ -657,6 +666,26 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Queda con más tranquilidad y avisa a quien confías.'),
         trailing: const Icon(Icons.chevron_right),
         onTap: widget.onOpenSafeDate,
+      ),
+    );
+  }
+
+  /// Boosts y Attra Swipes: saldo y compra. La hoja existía desde hacía tiempo
+  /// pero no se abría desde ningún sitio, así que los consumibles del catálogo
+  /// no se podían comprar.
+  Widget _buildBoostStoreCard(ThemeData theme) {
+    final int boosts = widget.user?.boostBalance ?? 0;
+    final int swipes = widget.user?.swipeBalance ?? 0;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        key: const ValueKey<String>('profile-boost-store'),
+        leading: Icon(Icons.rocket_launch_outlined,
+            color: theme.colorScheme.primary),
+        title: const Text('Boosts y Swipes'),
+        subtitle: Text('Tienes $boosts boosts y $swipes swipes.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: widget.onOpenBoostStore,
       ),
     );
   }

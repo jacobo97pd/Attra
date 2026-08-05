@@ -54,9 +54,29 @@ class PromptMatchRules {
   };
 
   static const Map<String, List<String>> _bodySynonyms = <String, List<String>>{
-    'athletic': <String>['atletico', 'atletica', 'deportista', 'fit', 'athletic'],
-    'muscular': <String>['musculoso', 'musculado', 'fuerte', 'cachas', 'muscular'],
-    'slim': <String>['delgado', 'delgada', 'flaco', 'flaca', 'esbelto', 'slim', 'thin'],
+    'athletic': <String>[
+      'atletico',
+      'atletica',
+      'deportista',
+      'fit',
+      'athletic'
+    ],
+    'muscular': <String>[
+      'musculoso',
+      'musculado',
+      'fuerte',
+      'cachas',
+      'muscular'
+    ],
+    'slim': <String>[
+      'delgado',
+      'delgada',
+      'flaco',
+      'flaca',
+      'esbelto',
+      'slim',
+      'thin'
+    ],
     'curvy': <String>['con curvas', 'curvy'],
     'average': <String>['normal', 'media', 'medio', 'average'],
     'plus': <String>['grande', 'gordito', 'gordita', 'plus'],
@@ -66,30 +86,79 @@ class PromptMatchRules {
   /// morfológicas ("viaj" → viajar/viajes/viajero; "aventur" → aventura/
   /// aventurero). Se comparan por subcadena contra intereses/bio del perfil.
   static const List<String> _interestVocab = <String>[
-    'viaj', 'aventur', 'mochiler',
-    'gracios', 'divert', 'humor',
-    'carismat', 'extrovert', 'sociable',
-    'deport', 'gym', 'gimnasio', 'running', 'correr', 'sender',
-    'music', 'arte', 'cultur', 'lectur', 'libro', 'cine',
-    'cocin', 'gastronom', 'foodie', 'naturaleza', 'perro', 'gato',
-    'fotograf', 'bail', 'fiesta', 'tranquil', 'romant', 'intelect',
-    'espiritual', 'yoga', 'moto', 'coche', 'gamer', 'videojueg',
+    'viaj',
+    'aventur',
+    'mochiler',
+    'gracios',
+    'divert',
+    'humor',
+    'carismat',
+    'extrovert',
+    'sociable',
+    'deport',
+    'gym',
+    'gimnasio',
+    'running',
+    'correr',
+    'sender',
+    'music',
+    'arte',
+    'cultur',
+    'lectur',
+    'libro',
+    'cine',
+    'cocin',
+    'gastronom',
+    'foodie',
+    'naturaleza',
+    'perro',
+    'gato',
+    'fotograf',
+    'bail',
+    'fiesta',
+    'tranquil',
+    'romant',
+    'intelect',
+    'espiritual',
+    'yoga',
+    'moto',
+    'coche',
+    'gamer',
+    'videojueg',
   ];
 
   static const List<String> _tallWords = <String>['alto', 'alta', 'tall'];
   static const List<String> _shortWords = <String>[
-    'bajo', 'baja', 'bajit', 'short'
+    'bajo',
+    'baja',
+    'bajit',
+    'short'
   ];
 
   /// Normaliza: minúsculas + sin tildes.
   static String normalize(String s) {
     final String lower = s.toLowerCase();
     const Map<String, String> map = <String, String>{
-      'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a',
-      'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
-      'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
-      'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o',
-      'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
+      'á': 'a',
+      'à': 'a',
+      'ä': 'a',
+      'â': 'a',
+      'é': 'e',
+      'è': 'e',
+      'ë': 'e',
+      'ê': 'e',
+      'í': 'i',
+      'ì': 'i',
+      'ï': 'i',
+      'î': 'i',
+      'ó': 'o',
+      'ò': 'o',
+      'ö': 'o',
+      'ô': 'o',
+      'ú': 'u',
+      'ù': 'u',
+      'ü': 'u',
+      'û': 'u',
     };
     final StringBuffer b = StringBuffer();
     for (final int r in lower.runes) {

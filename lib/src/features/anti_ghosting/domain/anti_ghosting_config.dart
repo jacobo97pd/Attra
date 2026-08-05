@@ -78,14 +78,13 @@ class AntiGhostingConfig {
       pendingLimitPro: i('anti_ghosting_pending_limit_pro', d.pendingLimitPro),
       pendingMaxAgeHours:
           i('anti_ghosting_pending_max_age_hours', d.pendingMaxAgeHours),
-      softBlockLikesWhenPendingExceeded: b(
-          'anti_ghosting_soft_block_likes', d.softBlockLikesWhenPendingExceeded),
+      softBlockLikesWhenPendingExceeded: b('anti_ghosting_soft_block_likes',
+          d.softBlockLikesWhenPendingExceeded),
       softBlockAttrasWhenPendingExceeded: b('anti_ghosting_soft_block_attras',
           d.softBlockAttrasWhenPendingExceeded),
-      closeGracefullyEnabled: b(
-          'anti_ghosting_close_gracefully_enabled', d.closeGracefullyEnabled),
-      busyModeEnabled:
-          b('anti_ghosting_busy_mode_enabled', d.busyModeEnabled),
+      closeGracefullyEnabled:
+          b('anti_ghosting_close_gracefully_enabled', d.closeGracefullyEnabled),
+      busyModeEnabled: b('anti_ghosting_busy_mode_enabled', d.busyModeEnabled),
       nudgesEnabled: b('anti_ghosting_nudges_enabled', d.nudgesEnabled),
       dateFollowupEnabled:
           b('anti_ghosting_date_followup_enabled', d.dateFollowupEnabled),

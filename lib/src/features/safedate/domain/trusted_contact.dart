@@ -25,7 +25,8 @@ class TrustedContact {
   final DateTime? updatedAt;
 
   bool get hasChannel =>
-      (phone?.trim().isNotEmpty ?? false) || (email?.trim().isNotEmpty ?? false);
+      (phone?.trim().isNotEmpty ?? false) ||
+      (email?.trim().isNotEmpty ?? false);
 
   factory TrustedContact.fromMap(String id, Map<String, dynamic> map) {
     return TrustedContact(

@@ -88,8 +88,7 @@ class ConnectionSamples {
     ),
     ChallengePrompt(
       title: 'The soundtrack question',
-      prompt:
-          'If your week had a soundtrack, what would the first song be and '
+      prompt: 'If your week had a soundtrack, what would the first song be and '
           'why? Music says a lot about someone.',
     ),
     ChallengePrompt(
@@ -107,9 +106,26 @@ class ConnectionSamples {
   /// Answers that carry no real content (blank, "nada", "no sé", "meh"…). These
   /// should NOT get warm feedback: the demo has to feel honest.
   static const Set<String> _emptyAnswers = <String>{
-    '', 'nada', 'nose', 'nolose', 'nolo se', 'ns', 'na', 'meh', 'niidea',
-    'paso', 'nada de nada', 'idk', 'dunno', 'nothing', 'none', 'x', 'xd',
-    'no se', 'no lo se', 'ni idea',
+    '',
+    'nada',
+    'nose',
+    'nolose',
+    'nolo se',
+    'ns',
+    'na',
+    'meh',
+    'niidea',
+    'paso',
+    'nada de nada',
+    'idk',
+    'dunno',
+    'nothing',
+    'none',
+    'x',
+    'xd',
+    'no se',
+    'no lo se',
+    'ni idea',
   };
 
   /// Analyses a free-text answer and returns a deterministic insight. Low-effort
@@ -216,8 +232,7 @@ class ConnectionSamples {
 
     final List<String> reasons = <String>[];
     if (shared.isNotEmpty) {
-      reasons.add(
-          'Shared interests: ${shared.take(3).join(', ')}');
+      reasons.add('Shared interests: ${shared.take(3).join(', ')}');
     } else {
       reasons.add('Complementary interests that spark curiosity');
     }
@@ -282,7 +297,8 @@ class ConnectionSamples {
       return const GhostingCoachReport(
         balance: 'Still early. Exchange a few more messages to get a read.',
         momentum: 'Not enough back-and-forth yet to judge momentum.',
-        interestSignal: 'Give it a little more conversation before reading into it.',
+        interestSignal:
+            'Give it a little more conversation before reading into it.',
         suggestedAction: 'Ask an easy, open question to get things going.',
         balanceScore: 50,
         momentumScore: 50,

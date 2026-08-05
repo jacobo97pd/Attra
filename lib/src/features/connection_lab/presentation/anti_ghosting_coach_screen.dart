@@ -42,7 +42,8 @@ class AntiGhostingCoachScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: <Widget>[
-          const LabAiChip(label: 'Conversation health', icon: Icons.favorite_rounded),
+          const LabAiChip(
+              label: 'Conversation health', icon: Icons.favorite_rounded),
           const SizedBox(height: 12),
           Text(
             who.isEmpty
@@ -146,8 +147,8 @@ class _MeterCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(body,
-              style: TextStyle(
-                  color: context.colors.textSecondary, height: 1.35)),
+              style:
+                  TextStyle(color: context.colors.textSecondary, height: 1.35)),
         ],
       ),
     );

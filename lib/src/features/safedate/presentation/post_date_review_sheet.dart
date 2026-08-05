@@ -153,8 +153,8 @@ class _PostDateReviewSheetState extends State<PostDateReviewSheet> {
               Wrap(
                 spacing: 8,
                 runSpacing: 4,
-                children: _concernLabels.entries.map(
-                    (MapEntry<String, String> e) {
+                children:
+                    _concernLabels.entries.map((MapEntry<String, String> e) {
                   final bool sel = _concerns.contains(e.key);
                   return FilterChip(
                     label: Text(e.value),
@@ -176,7 +176,8 @@ class _PostDateReviewSheetState extends State<PostDateReviewSheet> {
               value: _wantsToReport,
               onChanged: (bool v) => setState(() => _wantsToReport = v),
               title: const Text('Reportar a esta persona'),
-              subtitle: const Text('Lo revisa nuestro equipo. Es confidencial.'),
+              subtitle:
+                  const Text('Lo revisa nuestro equipo. Es confidencial.'),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -193,7 +194,8 @@ class _PostDateReviewSheetState extends State<PostDateReviewSheet> {
             Row(
               children: <Widget>[
                 TextButton(
-                  onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+                  onPressed:
+                      _busy ? null : () => Navigator.of(context).pop(false),
                   child: const Text('Ahora no'),
                 ),
                 const Spacer(),

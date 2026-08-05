@@ -21,6 +21,7 @@ Future<void> showBoostStoreSheet(
   BuildContext context, {
   required BoostService service,
   required AppUser? user,
+  IapService? iapService,
   VoidCallback? onChanged,
 }) {
   return showModalBottomSheet<void>(
@@ -33,6 +34,7 @@ Future<void> showBoostStoreSheet(
     builder: (_) => _BoostStoreBody(
       service: service,
       user: user,
+      iapService: iapService,
       onChanged: onChanged,
     ),
   );
@@ -42,11 +44,19 @@ class _BoostStoreBody extends StatefulWidget {
   const _BoostStoreBody({
     required this.service,
     required this.user,
+    this.iapService,
     this.onChanged,
   });
 
   final BoostService service;
   final AppUser? user;
+
+  /// Servicio COMPARTIDO de la sesión. Se inyecta para no abrir una segunda
+  /// suscripción a `purchaseStream`: con dos escuchas vivas, la compra de un
+  /// pack la recibía también el paywall, que la mandaba a verifyPurchase, el
+  /// backend la rechazaba por producto desconocido y el usuario se quedaba sin
+  /// su saldo pese a haber pagado.
+  final IapService? iapService;
   final VoidCallback? onChanged;
 
   @override
@@ -68,11 +78,23 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
       };
   late final IapService _iap;
 
+  /// True si el servicio lo creó esta hoja (y por tanto le toca cerrarlo).
+  bool _ownsIap = false;
+
   @override
   void initState() {
     super.initState();
     _boosts = widget.user?.boostBalance ?? 0;
     _swipes = widget.user?.swipeBalance ?? 0;
+    final IapService? shared = widget.iapService;
+    if (shared != null) {
+      // El enrutador de sesión ya entrega estos productos y ya tiene sus
+      // precios cargados: aquí solo se escucha para reflejar busy/errores.
+      _iap = shared..addListener(_onIap);
+      _iap.clearError();
+      return;
+    }
+    _ownsIap = true;
     _iap = IapService(consumableIds: _consumableIds)
       ..deliver = _deliver
       ..addListener(_onIap);
@@ -82,7 +104,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
   @override
   void dispose() {
     _iap.removeListener(_onIap);
-    _iap.dispose();
+    if (_ownsIap) _iap.dispose();
     super.dispose();
   }
 

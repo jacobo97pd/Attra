@@ -30,6 +30,7 @@ class PaywallScreen extends StatefulWidget {
   const PaywallScreen({
     super.key,
     required this.currentTier,
+    this.iapService,
     this.verifySubscription,
     this.onPurchased,
     this.plusProductId = 'attra_plus',
@@ -42,7 +43,16 @@ class PaywallScreen extends StatefulWidget {
 
   final SubscriptionTier currentTier;
 
-  /// Verificación server-side (la inyecta home_shell con BoostService).
+  /// Servicio de compras COMPARTIDO por toda la sesión (lo inyecta home_shell
+  /// desde PurchaseDeliveryRouter). Se inyecta en lugar de crear uno propio
+  /// para que exista UNA sola suscripción a `purchaseStream`: la que vive
+  /// mientras dura la sesión y entrega también las compras que se resuelven con
+  /// esta pantalla ya cerrada. Si es null, la pantalla se comporta como un
+  /// escaparate sin compras (útil en tests).
+  final IapService? iapService;
+
+  /// Verificación server-side. Solo se usa cuando NO hay [iapService]; el
+  /// enrutador de sesión ya sabe a qué backend va cada producto.
   final VerifySubscription? verifySubscription;
 
   /// Se llama tras conceder el plan (para refrescar entitlements).
@@ -107,9 +117,20 @@ class _PaywallScreenState extends State<PaywallScreen> {
         yearlyProductId: widget.proYearlyProductId,
       );
 
+  /// True si el servicio lo creó esta pantalla (y por tanto le toca cerrarlo).
+  bool _ownsIap = false;
+
   @override
   void initState() {
     super.initState();
+    final IapService? shared = widget.iapService;
+    if (shared != null) {
+      _iap = shared..addListener(_onIap);
+      _iap.clearError();
+      return;
+    }
+    // Camino heredado: sin enrutador de sesión, la pantalla se apaña sola.
+    _ownsIap = true;
     _iap = IapService()
       ..deliver = _deliver
       ..onDelivered = (_) {
@@ -125,7 +146,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
   @override
   void dispose() {
     _iap.removeListener(_onIap);
-    _iap.dispose();
+    // El servicio compartido sobrevive a esta pantalla: cerrarlo aquí volvería a
+    // dejar las compras diferidas sin quien las entregue.
+    if (_ownsIap) _iap.dispose();
     super.dispose();
   }
 
@@ -179,12 +202,34 @@ class _PaywallScreenState extends State<PaywallScreen> {
     return _pendingPeriodsByProductId[productId] ?? _period;
   }
 
+  bool get _canPurchase =>
+      widget.iapService != null || widget.verifySubscription != null;
+
+  /// Restaurar con RESPUESTA. Antes el botón no decía nada: ni cuando restauraba
+  /// ni cuando no había nada que restaurar, así que parecía roto. Apple exige
+  /// que el restaurar sea funcional y verificable.
+  Future<void> _restore() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    _iap.onRestoreFinished = (int restored) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          restored > 0
+              ? 'Compras restauradas: $restored.'
+              : 'No hay compras anteriores que restaurar con esta cuenta.',
+        ),
+      ));
+      widget.onPurchased?.call();
+    };
+    await _iap.restore();
+  }
+
   Future<void> _buyPlan({
     required ProductDetails? offer,
     required String fallbackProductId,
   }) async {
     if (_busy) return;
-    if (widget.verifySubscription == null) {
+    if (!_canPurchase) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Compras disponibles próximamente.')));
       return;
@@ -195,6 +240,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
       return;
     }
     _pendingPeriodsByProductId[offer.id] = _period;
+    // También en el servicio de sesión: si esta pantalla se cierra antes de que
+    // la tienda resuelva, es el enrutador quien entrega la compra y necesita
+    // saber si el usuario eligió mensual o anual.
+    _iap.notePendingPeriod(offer.id, _period);
     final bool started = await _iap.buyProduct(offer);
     if (!started) {
       _pendingPeriodsByProductId.remove(offer.id);
@@ -245,9 +294,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       onPressed: () => Navigator.of(context).maybePop(),
                     ),
                     const Spacer(),
-                    if (widget.verifySubscription != null)
+                    if (_canPurchase)
                       TextButton(
-                          onPressed: _busy ? null : () => _iap.restore(),
+                          onPressed: _busy ? null : _restore,
                           child: const Text('Restaurar')),
                   ],
                 ),

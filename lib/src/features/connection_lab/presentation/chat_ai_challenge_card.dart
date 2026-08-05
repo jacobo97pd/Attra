@@ -41,7 +41,8 @@ class ChatAiChallengeCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.auto_awesome, size: 18, color: AppColors.aiViolet),
+              const Icon(Icons.auto_awesome,
+                  size: 18, color: AppColors.aiViolet),
               const SizedBox(width: 8),
               Expanded(
                 child: Text('AI Challenge',
@@ -55,7 +56,9 @@ class ChatAiChallengeCard extends StatelessWidget {
             'Start an AI-guided challenge to break the ice and keep the '
             'conversation flowing.',
             style: TextStyle(
-                color: context.colors.textSecondary, fontSize: 12.5, height: 1.3),
+                color: context.colors.textSecondary,
+                fontSize: 12.5,
+                height: 1.3),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -112,9 +115,8 @@ class _Btn extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: primary
-                ? null
-                : Border.all(color: context.colors.surfaceLine),
+            border:
+                primary ? null : Border.all(color: context.colors.surfaceLine),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

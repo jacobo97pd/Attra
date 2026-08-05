@@ -24,8 +24,7 @@ class GroupAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius br =
-        BorderRadius.circular(circle ? size / 2 : radius);
+    final BorderRadius br = BorderRadius.circular(circle ? size / 2 : radius);
     if (photoUrl.isEmpty) {
       return _fallback(br);
     }

@@ -41,28 +41,83 @@ enum PlanTier { safe, social, differential }
 /// categoría, en perfil o conversación. ES + algo de EN.
 const Map<PlanCategory, List<String>> _keywords = <PlanCategory, List<String>>{
   PlanCategory.cafe: <String>[
-    'cafe', 'cafeteria', 'coffee', 'te', 'chocolate', 'tomar algo', 'merendar'
+    'cafe',
+    'cafeteria',
+    'coffee',
+    'te',
+    'chocolate',
+    'tomar algo',
+    'merendar'
   ],
   PlanCategory.paseo: <String>[
-    'pasear', 'paseo', 'andar', 'caminar', 'parque', 'naturaleza', 'walk',
-    'senderismo', 'aire libre', 'playa', 'monte'
+    'pasear',
+    'paseo',
+    'andar',
+    'caminar',
+    'parque',
+    'naturaleza',
+    'walk',
+    'senderismo',
+    'aire libre',
+    'playa',
+    'monte'
   ],
   PlanCategory.helado: <String>['helado', 'heladeria', 'ice cream'],
   PlanCategory.comida: <String>[
-    'comer', 'comida', 'cena', 'cenar', 'restaurante', 'tapas', 'food',
-    'dinner', 'lunch', 'brunch', 'sushi', 'pizza', 'hamburguesa'
+    'comer',
+    'comida',
+    'cena',
+    'cenar',
+    'restaurante',
+    'tapas',
+    'food',
+    'dinner',
+    'lunch',
+    'brunch',
+    'sushi',
+    'pizza',
+    'hamburguesa'
   ],
   PlanCategory.copas: <String>[
-    'copa', 'copas', 'bar', 'cerveza', 'vino', 'cocktail', 'coctel', 'terraza',
-    'fiesta', 'drink', 'vermut'
+    'copa',
+    'copas',
+    'bar',
+    'cerveza',
+    'vino',
+    'cocktail',
+    'coctel',
+    'terraza',
+    'fiesta',
+    'drink',
+    'vermut'
   ],
   PlanCategory.cultura: <String>[
-    'museo', 'expo', 'exposicion', 'arte', 'cultura', 'teatro', 'cine', 'libro',
-    'lectura', 'museum', 'galeria', 'historia'
+    'museo',
+    'expo',
+    'exposicion',
+    'arte',
+    'cultura',
+    'teatro',
+    'cine',
+    'libro',
+    'lectura',
+    'museum',
+    'galeria',
+    'historia'
   ],
   PlanCategory.musica: <String>[
-    'musica', 'concierto', 'directo', 'banda', 'dj', 'festival', 'vinilo',
-    'guitarra', 'cantar', 'karaoke', 'music', 'gig'
+    'musica',
+    'concierto',
+    'directo',
+    'banda',
+    'dj',
+    'festival',
+    'vinilo',
+    'guitarra',
+    'cantar',
+    'karaoke',
+    'music',
+    'gig'
   ],
 };
 
@@ -70,11 +125,26 @@ const Map<PlanCategory, List<String>> _keywords = <PlanCategory, List<String>>{
 String _norm(String s) {
   final String lower = s.toLowerCase();
   const Map<String, String> map = <String, String>{
-    'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a',
-    'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
-    'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
-    'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o',
-    'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
+    'á': 'a',
+    'à': 'a',
+    'ä': 'a',
+    'â': 'a',
+    'é': 'e',
+    'è': 'e',
+    'ë': 'e',
+    'ê': 'e',
+    'í': 'i',
+    'ì': 'i',
+    'ï': 'i',
+    'î': 'i',
+    'ó': 'o',
+    'ò': 'o',
+    'ö': 'o',
+    'ô': 'o',
+    'ú': 'u',
+    'ù': 'u',
+    'ü': 'u',
+    'û': 'u',
   };
   final StringBuffer b = StringBuffer();
   for (final int r in lower.runes) {
@@ -128,15 +198,15 @@ class DatePlanRules {
       if (s > 0) score[cat] = s;
     }
     final List<PlanCategory> ordered = score.keys.toList()
-      ..sort((PlanCategory a, PlanCategory b) => score[b]!.compareTo(score[a]!));
+      ..sort(
+          (PlanCategory a, PlanCategory b) => score[b]!.compareTo(score[a]!));
     return ordered;
   }
 
   /// A partir de las categorías comunes, elige hasta 3 tipos de plan cubriendo
   /// carriles distintos (seguro → social → diferencial) para variedad. Si no hay
   /// señales, cae a un default seguro (café + paseo + cultura).
-  static List<PlanCategory> recommendedPlanTypes(
-      List<PlanCategory> common) {
+  static List<PlanCategory> recommendedPlanTypes(List<PlanCategory> common) {
     final List<PlanCategory> out = <PlanCategory>[];
     final Set<PlanTier> usedTiers = <PlanTier>{};
     for (final PlanCategory cat in common) {

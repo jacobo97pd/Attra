@@ -15,7 +15,8 @@ class AntiGhostingAnalytics {
   static const String closedRespectfully = 'conversation_closed_respectfully';
   static const String closeCancelled = 'conversation_close_cancelled';
   static const String pendingLimitReached = 'pending_reply_limit_reached';
-  static const String pendingLimitCtaClicked = 'pending_reply_limit_cta_clicked';
+  static const String pendingLimitCtaClicked =
+      'pending_reply_limit_cta_clicked';
   static const String busyModeEnabled = 'busy_mode_enabled';
   static const String busyModeDisabled = 'busy_mode_disabled';
   static const String dateFollowupShown = 'date_followup_shown';

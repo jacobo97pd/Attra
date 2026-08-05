@@ -21,11 +21,11 @@ class SafePlacesScreen extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-          title: Text(onPick != null ? 'Elegir lugar' : 'Lugares recomendados')),
+          title:
+              Text(onPick != null ? 'Elegir lugar' : 'Lugares recomendados')),
       body: StreamBuilder<List<SafePlace>>(
         stream: service.observeSafePlaces(),
-        builder:
-            (BuildContext context, AsyncSnapshot<List<SafePlace>> snap) {
+        builder: (BuildContext context, AsyncSnapshot<List<SafePlace>> snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -87,7 +87,8 @@ class _PlaceCard extends StatelessWidget {
             color: theme.colorScheme.primary.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(Icons.local_cafe_outlined, color: theme.colorScheme.primary),
+          child:
+              Icon(Icons.local_cafe_outlined, color: theme.colorScheme.primary),
         ),
         title: Text(place.name,
             style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -134,8 +135,7 @@ class _EmptyState extends StatelessWidget {
                 size: 48, color: theme.colorScheme.outline),
             const SizedBox(height: 12),
             Text('Todavía no hay lugares recomendados en tu zona',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleSmall),
+                textAlign: TextAlign.center, style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
             Text(
               'Mientras tanto, para una primera cita elige un sitio público y '

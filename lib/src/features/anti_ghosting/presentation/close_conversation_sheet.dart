@@ -173,9 +173,8 @@ class _CloseConversationSheetState extends State<CloseConversationSheet> {
                       ? Icons.radio_button_checked_rounded
                       : Icons.radio_button_unchecked_rounded,
                   size: 20,
-                  color: selected
-                      ? AppColors.attraRed
-                      : context.colors.textMuted,
+                  color:
+                      selected ? AppColors.attraRed : context.colors.textMuted,
                 ),
                 const SizedBox(width: 12),
                 Expanded(

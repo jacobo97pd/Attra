@@ -74,9 +74,8 @@ class _VotingCard extends StatefulWidget {
 class _VotingCardState extends State<_VotingCard> {
   bool _busy = false;
 
-  String get _otherUid =>
-      widget.plan.users.firstWhere((String u) => u != widget.currentUid,
-          orElse: () => '');
+  String get _otherUid => widget.plan.users
+      .firstWhere((String u) => u != widget.currentUid, orElse: () => '');
 
   Future<void> _vote(String optionId) async {
     if (_busy) return;
@@ -142,8 +141,8 @@ class _VotingCardState extends State<_VotingCard> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.35)),
+        border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,7 +323,8 @@ class _ConfirmedCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.celebration, size: 18, color: theme.colorScheme.primary),
+              Icon(Icons.celebration,
+                  size: 18, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
               Text('¡Plan confirmado!',
                   style: theme.textTheme.titleSmall

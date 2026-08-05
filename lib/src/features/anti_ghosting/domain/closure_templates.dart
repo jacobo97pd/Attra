@@ -33,8 +33,7 @@ const List<ClosureTemplate> kClosureTemplates = <ClosureTemplate>[
   ClosureTemplate(
     reason: 'no_connection',
     label: 'No siento conexión romántica',
-    message:
-        'Me ha gustado hablar contigo, pero no siento conexión romántica. '
+    message: 'Me ha gustado hablar contigo, pero no siento conexión romántica. '
         'Te deseo lo mejor.',
   ),
   ClosureTemplate(

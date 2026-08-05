@@ -281,8 +281,8 @@ class SeedProfile {
       relationshipGoal: pick('relationshipIntent').isNotEmpty
           ? pick('relationshipIntent')
           : pick('relationshipGoal'),
-      intentMode: IntentMode.fromValue(
-          data['intentMode'] ?? profile['intentMode']),
+      intentMode:
+          IntentMode.fromValue(data['intentMode'] ?? profile['intentMode']),
       socialInterests: (data['socialInterests'] as List<dynamic>?)
               ?.whereType<String>()
               .toList(growable: false) ??

@@ -5,7 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('DatePlanProposal.fromMap', () {
     test('parsea campos, opciones y estado', () {
-      final DatePlanProposal p = DatePlanProposal.fromMap('plan1', <String, dynamic>{
+      final DatePlanProposal p =
+          DatePlanProposal.fromMap('plan1', <String, dynamic>{
         'matchId': 'm1',
         'createdBy': 'a',
         'users': <String>['a', 'b'],
@@ -69,7 +70,11 @@ void main() {
         'votesByUser': <String, dynamic>{'a': 'opt_2', 'b': 'opt_2'},
         'options': <dynamic>[
           <String, dynamic>{'id': 'opt_1', 'title': 'Café'},
-          <String, dynamic>{'id': 'opt_2', 'title': 'Paseo', 'placeName': 'Retiro'},
+          <String, dynamic>{
+            'id': 'opt_2',
+            'title': 'Paseo',
+            'placeName': 'Retiro'
+          },
         ],
       });
       expect(p.status.isConfirmed, isTrue);
@@ -84,9 +89,8 @@ void main() {
       final DatePlanProposal p =
           DatePlanProposal.fromMap('x', <String, dynamic>{
         'status': 'pending',
-        'expiresAt': DateTime.now()
-            .subtract(const Duration(days: 1))
-            .toIso8601String(),
+        'expiresAt':
+            DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
       });
       expect(p.isExpired, isTrue);
       expect(p.isActionable, isFalse);

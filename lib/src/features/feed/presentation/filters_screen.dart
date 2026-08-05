@@ -154,8 +154,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
       maxHeight: widget.isPlus ? _height.end.round() : FeedFilters.heightCeil,
       dealbreakers: db,
       sortByVisualReference: widget.isPlus && _sortByRef,
-      promptQuery:
-          widget.canVisualMatch ? _promptController.text.trim() : '',
+      promptQuery: widget.canVisualMatch ? _promptController.text.trim() : '',
     ));
   }
 

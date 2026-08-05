@@ -1,21 +1,51 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onCall } from "firebase-functions/v2/https";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
-import { db } from "./firebase";
+import { REGION, db } from "./firebase";
 import { col, requireAuthUid } from "./common";
 
 /// Pack mensual de Attras incluido en los planes de pago (Plus/Premium/Pro).
 ///
 /// Backend-autoritativo: el cliente nunca acredita saldo. Un job programado
-/// concede, una vez por periodo natural (`YYYYMM`), los Attras incluidos al
-/// wallet de cada usuario con plan de pago ACTIVO. Idempotente: el wallet
-/// guarda `monthlyGrantPeriod`, asi que reejecutar el job no duplica.
+/// concede los Attras incluidos al wallet de cada usuario con plan de pago
+/// ACTIVO. Idempotente: el wallet guarda la fecha de la ultima concesion y no
+/// se vuelve a conceder hasta que pase la ventana, asi que reejecutar el job no
+/// duplica.
 
 const PAID_TIERS = ["plus", "premium", "pro"] as const;
 
-/// Periodo natural en UTC (YYYYMM) para la idempotencia del grant.
+/// Ventana minima entre packs. Antes la idempotencia usaba el mes natural en
+/// UTC (`YYYYMM`): el job diario concedia el dia 31 y otra vez el dia 1, dos
+/// packs en menos de 24h. Con una ventana desde la ultima concesion eso ya no
+/// puede pasar; 30 dias mantiene ~12 packs/ano aunque el mes sea corto.
+// Ventana entre packs. 30 dias exactos derivan: 365/30 = 12,17, asi que algunos
+// anos se conceden 13 packs en vez de 12. Con 31 dias el desplazamiento juega a
+// favor de la empresa (11,7 packs/ano como maximo) sin llegar nunca a saltarse
+// un mes para el usuario, porque el barrido corre a diario.
+const GRANT_WINDOW_MS = 31 * 24 * 60 * 60 * 1000;
+
+/// Periodo natural en UTC (YYYYMM). Ya no gobierna la idempotencia (ver
+/// GRANT_WINDOW_MS), se conserva como etiqueta del ledger y para respetar las
+/// concesiones que quedaron marcadas con el esquema anterior.
 function currentPeriod(date = new Date()): string {
   return date.toISOString().slice(0, 7).replace("-", "");
+}
+
+function millisFromDateLike(value: unknown): number | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "object" && "toMillis" in value) {
+    const maybeTimestamp = value as { toMillis?: unknown };
+    if (typeof maybeTimestamp.toMillis === "function") {
+      const ms = maybeTimestamp.toMillis();
+      return typeof ms === "number" ? ms : null;
+    }
+  }
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  return null;
 }
 
 /// True si el entitlement es de pago y sigue activo (no caducado).
@@ -52,7 +82,7 @@ function monthlyAttrasForTier(tier: string, flags: DocumentData): number {
 }
 
 /// Concede (idempotente) el pack mensual a un usuario. Devuelve los Attras
-/// acreditados (0 si ya estaba concedido este periodo o el plan no esta activo).
+/// acreditados (0 si aun no toca o el plan no esta activo).
 async function grantOne(
   uid: string,
   entData: DocumentData | undefined,
@@ -64,26 +94,56 @@ async function grantOne(
   if (amount <= 0) return 0;
 
   const walletRef = col.wallets.doc(uid);
+  const userRef = col.users.doc(uid);
   const ledgerRef = col.ledger.doc();
   return db.runTransaction(async (tx): Promise<number> => {
-    const wallet = await tx.get(walletRef);
-    if ((wallet.data()?.monthlyGrantPeriod ?? "") === period) return 0;
+    const [wallet, userSnap] = await Promise.all([
+      tx.get(walletRef),
+      tx.get(userRef),
+    ]);
+    const walletData = wallet.data();
+    const now = Date.now();
 
-    const balance = (wallet.data()?.balance ?? 0) as number;
-    const newBalance = balance + amount;
-    const now = FieldValue.serverTimestamp();
+    const lastGrantMs = millisFromDateLike(walletData?.lastMonthlyGrantAt);
+    if (lastGrantMs !== null && now - lastGrantMs < GRANT_WINDOW_MS) return 0;
+    // Wallets anteriores a la ventana solo tienen `monthlyGrantPeriod`: se
+    // respeta una vez para no regalar un pack extra en la migracion.
+    if (lastGrantMs === null && (walletData?.monthlyGrantPeriod ?? "") === period) {
+      return 0;
+    }
+
+    // La app lee el saldo de `users/{uid}.attrasBalance` y sendAttra lo gasta
+    // desde `attraWallets/{uid}.balance`: el pack se acreditaba solo en el
+    // wallet, asi que el usuario nunca lo veia. Ahora se escriben los dos. Si el
+    // wallet aun no existe se parte del espejo del usuario para no borrar saldo
+    // que ya tuviera.
+    const base = wallet.exists
+      ? Number(walletData?.balance ?? 0)
+      : Number(userSnap.data()?.attrasBalance ?? 0);
+    const newBalance = base + amount;
+    const serverNow = FieldValue.serverTimestamp();
     tx.set(
       walletRef,
-      { balance: newBalance, monthlyGrantPeriod: period, updatedAt: now },
+      {
+        balance: newBalance,
+        monthlyGrantPeriod: period,
+        lastMonthlyGrantAt: serverNow,
+        updatedAt: serverNow,
+      },
       { merge: true }
     );
+    // Espejo de solo-lectura para el cliente. Si el doc de usuario no existe no
+    // lo creamos a medias: el saldo sigue vivo en el wallet.
+    if (userSnap.exists) {
+      tx.set(userRef, { attrasBalance: newBalance, updatedAt: serverNow }, { merge: true });
+    }
     tx.set(ledgerRef, {
       uid,
       type: "monthly_grant",
       amount,
       balanceAfter: newBalance,
       period,
-      createdAt: now,
+      createdAt: serverNow,
     });
     return amount;
   });
@@ -130,9 +190,9 @@ async function runMonthlyGrant(): Promise<{
   return { period, granted, credited };
 }
 
-/// Job diario: concede el pack mensual a quien le toque este periodo. Se ejecuta
-/// a diario (no mensual) para que un alta nueva reciba su pack en <24h sin
-/// depender de la fecha exacta de renovacion; la idempotencia evita duplicar.
+/// Job diario: concede el pack mensual a quien le toque. Se ejecuta a diario
+/// (no mensual) para que un alta nueva reciba su pack en <24h sin depender de la
+/// fecha exacta de renovacion; la ventana de idempotencia evita duplicar.
 export const grantMonthlyAttras = onSchedule("every 24 hours", async () => {
   const result = await runMonthlyGrant();
   console.log(
@@ -140,9 +200,23 @@ export const grantMonthlyAttras = onSchedule("every 24 hours", async () => {
   );
 });
 
-/// Disparador manual (solo sesion valida) para forzar la concesion del periodo
-/// actual: util en testing o tras cambiar los importes en config/featureFlags.
-export const runMonthlyAttraGrant = onCall(async (request) => {
-  requireAuthUid(request.auth);
+/// Disparador manual (testing o tras cambiar los importes en
+/// config/featureFlags).
+///
+/// Antes bastaba con estar autenticado: CUALQUIER usuario podia lanzar un
+/// escaneo completo de `userEntitlements` (coste de lecturas + DoS trivial).
+/// Se mantiene como callable en vez de convertirla en tarea programada porque
+/// `grantMonthlyAttras` ya hace justo eso a diario y un segundo scheduler seria
+/// trabajo duplicado; lo que aporta esta es el disparo bajo demanda, asi que se
+/// restringe a admins (claim `admin` en el token, que solo se pone server-side).
+// Sin `region` se desplegaba en us-central1 mientras la app llama a
+// europe-west1 (lib/app.dart), asi que era inalcanzable: NOT_FOUND en vez de
+// permission-denied.
+export const runMonthlyAttraGrant = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  if (request.auth?.token?.admin !== true) {
+    throw new HttpsError("permission-denied", "Solo administradores.");
+  }
+  console.log(`[runMonthlyAttraGrant] disparo manual por uid=${uid}`);
   return runMonthlyGrant();
 });

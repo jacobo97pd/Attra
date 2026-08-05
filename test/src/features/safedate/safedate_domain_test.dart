@@ -69,7 +69,8 @@ void main() {
               .validate(),
           isNotNull);
       expect(
-          const TrustedContactInput(displayName: 'Ana', phone: '123').validate(),
+          const TrustedContactInput(displayName: 'Ana', phone: '123')
+              .validate(),
           isNotNull);
     });
   });
@@ -100,7 +101,8 @@ void main() {
       expect(SafeDateAlertType.fromValue('contact_me').isSilent, isFalse);
     });
 
-    test('CheckIn.fromMap lee las claves del backend (planId/ownerUserId/dueAt)',
+    test(
+        'CheckIn.fromMap lee las claves del backend (planId/ownerUserId/dueAt)',
         () {
       final DateTime due = DateTime.utc(2026, 7, 14, 20, 30);
       final SafeDateCheckIn c = SafeDateCheckIn.fromMap('c1', <String, dynamic>{
@@ -145,8 +147,7 @@ void main() {
       // Sin señales → hasSignals false.
       expect(
           ConversationRiskResult.fromMap(
-                  <String, dynamic>{'tier': 'info', 'tips': <String>[]})
-              .hasSignals,
+              <String, dynamic>{'tier': 'info', 'tips': <String>[]}).hasSignals,
           isFalse);
     });
   });
@@ -175,7 +176,8 @@ void main() {
 
   group('SafeDateEvents.safeParams', () {
     test('filtra claves sensibles', () {
-      final Map<String, Object> out = SafeDateEvents.safeParams(<String, Object>{
+      final Map<String, Object> out =
+          SafeDateEvents.safeParams(<String, Object>{
         'status': 'created',
         'phone': '600',
         'latitude': 40.4,

@@ -233,6 +233,25 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
     const nowMs = nowDate.getTime();
     const serverNow = FieldValue.serverTimestamp();
     const activeData = activeSnap.exists ? activeSnap.data() : undefined;
+    const hasLiveBoost = !!activeData && isLiveActiveBoost(activeData, nowMs);
+
+    // Con un boost vivo de OTRO tipo se cobraba 1 Boost del saldo y se aplicaba
+    // la duracion/prioridad del que ya estaba corriendo, no la del pedido: el
+    // usuario pagaba un Superboost (24h, prioridad 150) y recibia 30 min de
+    // Boost normal. Como el saldo es el mismo para ambos tipos no hay forma de
+    // "cambiar" de tipo sin regalar o quitar valor, asi que se rechaza SIN
+    // cobrar (la transaccion aborta antes del cargo) y decide el usuario.
+    if (hasLiveBoost) {
+      const liveType = boostTypeFromValue(activeData?.type, requestedType);
+      if (liveType !== requestedType) {
+        throw new HttpsError(
+          "failed-precondition",
+          liveType === "superboost"
+            ? "Ya tienes un Superboost activo. Espera a que termine para activar un Boost."
+            : "Ya tienes un Boost activo. Espera a que termine para activar un Superboost."
+        );
+      }
+    }
 
     tx.update(userRef, {
       "wallet.boosts": FieldValue.increment(-1),
@@ -240,11 +259,12 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
       updatedAt: serverNow,
     });
 
-    if (activeData && !isLiveActiveBoost(activeData, nowMs)) {
+    if (activeData && !hasLiveBoost) {
       expireActiveBoostTx(tx, uid, activeData);
     }
 
-    if (activeData && isLiveActiveBoost(activeData, nowMs)) {
+    if (activeData && hasLiveBoost) {
+      // Mismo tipo garantizado por la comprobacion de arriba.
       const activeType = boostTypeFromValue(activeData.type, requestedType);
       const spec = BOOST_SPECS[activeType];
       const boostId = (activeData.boostId ?? "").toString();

@@ -56,7 +56,8 @@ class SafePlace {
               .map((Object? e) => e.toString())
               .toList()
           : const <String>[],
-      verificationStatus: (map['verificationStatus'] ?? 'unverified').toString(),
+      verificationStatus:
+          (map['verificationStatus'] ?? 'unverified').toString(),
       updatedAt: _asDate(map['updatedAt']),
     );
   }

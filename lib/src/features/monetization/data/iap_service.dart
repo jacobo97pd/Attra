@@ -5,12 +5,25 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 
 /// Resultado de entregar (verificar + conceder) una compra en el backend.
 class IapDeliveryResult {
-  const IapDeliveryResult({required this.delivered, this.message});
+  const IapDeliveryResult({
+    required this.delivered,
+    this.message,
+    this.permanent = false,
+  });
 
   /// true = el backend validó y concedió → se puede completar la compra.
   /// false = no se pudo conceder (no completamos: la tienda reintentará).
   final bool delivered;
   final String? message;
+
+  /// Fallo DEFINITIVO: reintentar no va a cambiar nada (p. ej. el recibo ya lo
+  /// canjeó otra cuenta, o el producto no está en el catálogo del servidor).
+  ///
+  /// Importa mucho: si no se finaliza la transacción, StoreKit la reencola en
+  /// cada arranque, muestra el error una y otra vez y BLOQUEA las compras
+  /// siguientes; en Android el consumible no se consume y no se puede
+  /// recomprar. Con [permanent] se cierra la transacción y se avisa al usuario.
+  final bool permanent;
 }
 
 /// Fachada de COMPRAS DENTRO DE LA APP (IAP) sobre `in_app_purchase`.
@@ -40,9 +53,40 @@ class IapService extends ChangeNotifier {
   final Map<String, List<ProductDetails>> _offers =
       <String, List<ProductDetails>>{};
 
+  /// Periodo (mensual/anual) que el usuario eligió al lanzar cada compra.
+  ///
+  /// Hace falta porque en Google Play los planes básicos MENSUAL y ANUAL
+  /// comparten el mismo id de producto (`attra_plus`), así que el id no dice
+  /// cuál se compró. Vive en el servicio, no en el paywall, porque la compra
+  /// puede resolverse con esa pantalla ya cerrada y el backend necesita saber
+  /// si conceder 1 mes o 12: sin este dato, quien pagaba un año recibía un mes.
+  final Map<String, String> _pendingPeriods = <String, String>{};
+
+  void notePendingPeriod(String productId, String period) {
+    _pendingPeriods[productId] = period;
+  }
+
+  String? pendingPeriodFor(String productId) => _pendingPeriods[productId];
+
   bool _available = false;
   bool _busy = false;
   String? _error;
+  bool _disposed = false;
+
+  /// Notifica solo si el servicio sigue vivo. Cerrar la pantalla mientras el
+  /// backend verificaba lanzaba "notifyListeners after dispose".
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  /// Limpia el último error. El paywall reemitía en bucle el snackbar de un
+  /// fallo antiguo porque nadie lo borraba al reintentar.
+  void clearError() {
+    if (_error == null) return;
+    _error = null;
+    _notify();
+  }
 
   /// Backend que valida el recibo y concede el producto. Lo inyecta la capa
   /// superior (p. ej. llama a `grantConsumable` / `verifyPurchase`).
@@ -83,14 +127,14 @@ class IapService extends ChangeNotifier {
       _available = false;
     }
     if (!_available) {
-      notifyListeners();
+      _notify();
       return;
     }
     _sub ??= _iap.purchaseStream.listen(
       _onPurchases,
       onError: (Object e) {
         _error = e.toString();
-        notifyListeners();
+        _notify();
       },
     );
     await loadProducts(productIds);
@@ -115,7 +159,7 @@ class IapService extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
     }
-    notifyListeners();
+    _notify();
   }
 
   /// Lanza la compra NATIVA de [productId]. Devuelve false si no se pudo iniciar
@@ -127,7 +171,7 @@ class IapService extends ChangeNotifier {
       _error = !_available
           ? 'Las compras no están disponibles en este dispositivo.'
           : 'Producto no disponible en la tienda ($productId).';
-      notifyListeners();
+      _notify();
       return false;
     }
     return buyProduct(product);
@@ -138,17 +182,23 @@ class IapService extends ChangeNotifier {
   Future<bool> buyProduct(ProductDetails product) async {
     if (!_available) {
       _error = 'Las compras no están disponibles en este dispositivo.';
-      notifyListeners();
+      _notify();
       return false;
     }
     final PurchaseParam param = PurchaseParam(productDetails: product);
+    // Empezar limpio: si no, un error de un intento anterior se reemite como si
+    // fuera de esta compra.
+    _error = null;
     _setBusy(true);
     try {
-      if (_consumableIds.contains(product.id)) {
-        // En Android consume automáticamente para poder recomprar.
-        return await _iap.buyConsumable(purchaseParam: param);
-      }
-      return await _iap.buyNonConsumable(purchaseParam: param);
+      final bool started = _consumableIds.contains(product.id)
+          // En Android consume automáticamente para poder recomprar.
+          ? await _iap.buyConsumable(purchaseParam: param)
+          : await _iap.buyNonConsumable(purchaseParam: param);
+      // Si la tienda NO abrió el flujo no llegará nada por purchaseStream, así
+      // que hay que soltar el busy aquí o la pantalla se queda congelada.
+      if (!started) _setBusy(false);
+      return started;
     } catch (e) {
       _error = e.toString();
       _setBusy(false);
@@ -156,14 +206,36 @@ class IapService extends ChangeNotifier {
     }
   }
 
+  /// Se invoca al terminar de restaurar, con cuántas compras se recuperaron.
+  /// Sin esto el botón "Restaurar" no daba señal alguna al usuario.
+  void Function(int restored)? onRestoreFinished;
+
+  int _restoredDuringRestore = 0;
+  bool _restoring = false;
+
   /// Restaura compras (suscripciones / no consumibles). Necesario en iOS.
+  ///
+  /// `restorePurchases()` devuelve void y las compras llegan por el stream, así
+  /// que se cuenta lo recuperado durante una ventana corta y se informa. Antes
+  /// el usuario pulsaba y no pasaba nada visible, ni siquiera cuando no había
+  /// nada que restaurar.
   Future<void> restore() async {
-    if (!_available) return;
+    if (!_available || _restoring) return;
+    _restoring = true;
+    _restoredDuringRestore = 0;
+    _error = null;
+    _setBusy(true);
     try {
       await _iap.restorePurchases();
+      // Las compras restauradas llegan de forma asíncrona por purchaseStream.
+      await Future<void>.delayed(const Duration(seconds: 3));
     } catch (e) {
       _error = e.toString();
-      notifyListeners();
+    } finally {
+      _restoring = false;
+      _setBusy(false);
+      onRestoreFinished?.call(_restoredDuringRestore);
+      _notify();
     }
   }
 
@@ -182,8 +254,11 @@ class IapService extends ChangeNotifier {
           _setBusy(false);
           await _safeComplete(purchase);
           break;
-        case PurchaseStatus.purchased:
         case PurchaseStatus.restored:
+          if (_restoring) _restoredDuringRestore += 1;
+          await _handleVerified(purchase);
+          break;
+        case PurchaseStatus.purchased:
           await _handleVerified(purchase);
           break;
       }
@@ -206,8 +281,14 @@ class IapService extends ChangeNotifier {
       _error = null;
       onDelivered?.call(purchase);
       await _safeComplete(purchase);
+    } else if (result.permanent) {
+      // Reintentar no arregla nada: se cierra la transacción para no dejarla
+      // colgada en la cola de la tienda, y se explica al usuario qué pasó.
+      _error = result.message ?? 'Esta compra no se puede entregar.';
+      await _safeComplete(purchase);
     } else {
-      // No completamos: la tienda reintentará la entrega más tarde.
+      // Fallo temporal (red, backend caído): NO completamos, la tienda
+      // reintentará la entrega más tarde.
       _error = result.message ?? 'No se pudo entregar la compra.';
     }
     _setBusy(false);
@@ -223,12 +304,14 @@ class IapService extends ChangeNotifier {
   void _setBusy(bool value) {
     if (_busy == value) return;
     _busy = value;
-    notifyListeners();
+    _notify();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _sub?.cancel();
+    _sub = null;
     super.dispose();
   }
 }

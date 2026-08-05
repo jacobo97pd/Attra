@@ -75,8 +75,8 @@ class _DemoChallengeScreenState extends State<DemoChallengeScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(_prompt.prompt,
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(height: 1.35, color: context.colors.textSecondary)),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                        height: 1.35, color: context.colors.textSecondary)),
               ],
             ),
           ),
@@ -137,7 +137,8 @@ class _DemoChallengeScreenState extends State<DemoChallengeScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            AttraGhostButton(label: 'Try another challenge', onPressed: _another),
+            AttraGhostButton(
+                label: 'Try another challenge', onPressed: _another),
           ],
         ],
       ),
@@ -158,7 +159,8 @@ class _EnergyMeter extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.bolt_rounded, size: 18, color: AppColors.success),
+              const Icon(Icons.bolt_rounded,
+                  size: 18, color: AppColors.success),
               const SizedBox(width: 8),
               Text('Conversation energy',
                   style: Theme.of(context)

@@ -35,8 +35,7 @@ class ConnectionLabScreen extends StatelessWidget {
   final VoidCallback onOpenPlay;
 
   void _push(BuildContext context, Widget screen) {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => screen));
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
   @override
@@ -98,7 +97,8 @@ class ConnectionLabScreen extends StatelessWidget {
             LabBigCard(
               icon: Icons.insights_rounded,
               title: 'AI Compatibility',
-              subtitle: 'See why you might click, with reasons and not just a %.',
+              subtitle:
+                  'See why you might click, with reasons and not just a %.',
               accent: AppColors.gold,
               onTap: () => _push(
                 context,

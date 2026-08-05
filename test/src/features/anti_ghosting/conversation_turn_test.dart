@@ -31,8 +31,8 @@ void main() {
 
   group('ConversationTurn (Attra Clear §1)', () {
     test('caso 1: si el último lo envió A, le toca a B', () {
-      final Chat c = buildChat(
-          status: ChatStatus.active, lastSender: userA, lastAt: t);
+      final Chat c =
+          buildChat(status: ChatStatus.active, lastSender: userA, lastAt: t);
       final TurnInfo turn = c.turnFor(userA);
       expect(turn.waitingForUid, userB);
       expect(turn.isWaitingOn(userB), isTrue);
@@ -40,8 +40,8 @@ void main() {
     });
 
     test('caso 2: si el último lo envió B, le toca a A', () {
-      final Chat c = buildChat(
-          status: ChatStatus.active, lastSender: userB, lastAt: t);
+      final Chat c =
+          buildChat(status: ChatStatus.active, lastSender: userB, lastAt: t);
       final TurnInfo turn = c.turnFor(userA);
       expect(turn.waitingForUid, userA);
       expect(c.isMyTurn(userA), isTrue);
@@ -49,15 +49,15 @@ void main() {
     });
 
     test('caso 3: chat cerrado no cuenta como pendiente', () {
-      final Chat c = buildChat(
-          status: ChatStatus.closed, lastSender: userB, lastAt: t);
+      final Chat c =
+          buildChat(status: ChatStatus.closed, lastSender: userB, lastAt: t);
       expect(c.turnFor(userA).hasPendingTurn, isFalse);
       expect(c.isMyTurn(userA), isFalse);
     });
 
     test('caso 4: chat bloqueado no cuenta como ghosting', () {
-      final Chat c = buildChat(
-          status: ChatStatus.blocked, lastSender: userB, lastAt: t);
+      final Chat c =
+          buildChat(status: ChatStatus.blocked, lastSender: userB, lastAt: t);
       expect(c.turnFor(userA).hasPendingTurn, isFalse);
     });
 
@@ -85,8 +85,8 @@ void main() {
     });
 
     test('waitedFor calcula la espera respecto a now', () {
-      final Chat c = buildChat(
-          status: ChatStatus.active, lastSender: userB, lastAt: t);
+      final Chat c =
+          buildChat(status: ChatStatus.active, lastSender: userB, lastAt: t);
       final Duration? d =
           c.turnFor(userA).waitedFor(t.add(const Duration(hours: 18)));
       expect(d, const Duration(hours: 18));
