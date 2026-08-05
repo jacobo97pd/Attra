@@ -279,7 +279,21 @@ function publicIntroMedia(value: unknown): DocumentData | null {
   return asString(media.url).length > 0 ? media : null;
 }
 
-function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
+/// El viaje caduca: `settings.travel.until` (Timestamp o ISO). Sin fecha se
+/// considera vigente, para no romper los viajes creados antes de esta version.
+function travelExpired(travel: DocumentData): boolean {
+  const until = travel.until;
+  if (!until) return false;
+  if (typeof until?.toMillis === "function") return until.toMillis() < Date.now();
+  const parsed = Date.parse(String(until));
+  return Number.isFinite(parsed) ? parsed < Date.now() : false;
+}
+
+function buildDiscoveryDoc(
+  uid: string,
+  data: DocumentData,
+  isPaid: boolean
+): DocumentData {
   const profile = asMap(data.profile);
   const prefs = asMap(data.preferences);
   const settings = asMap(data.settings);
@@ -291,8 +305,15 @@ function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
   const nestedTravel = asMap(settings.travel);
   const travel =
     Object.keys(nestedTravel).length > 0 ? nestedTravel : asMap(data.travel);
+  // Modo viaje: funcion de PAGO y con caducidad. El cliente solo pide el
+  // cambio; aqui se decide. Sin plan activo o pasada la fecha, el viaje se
+  // ignora y la ficha vuelve a la ubicacion real (igual que incognito, que ya
+  // exigia plan). Antes bastaba con escribir settings.travel.active=true.
   const traveling =
-    travel.active === true && asString(travel.country).length > 0;
+    travel.active === true &&
+    asString(travel.country).length > 0 &&
+    isPaid &&
+    !travelExpired(travel);
   const realCity = asString(profile.currentCity ?? profile.city);
   const realCountry = asString(profile.currentCountryName);
   const publicCity = traveling ? asString(travel.city) : realCity;
@@ -362,9 +383,15 @@ function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
   }
 
   // Coordenadas aproximadas: nunca copiamos latitud/longitud exactas.
+  //
+  // MODO VIAJE: con el viaje activo NO se publican coordenadas. Publicar las
+  // reales junto al pais de destino dejaba al viajero invisible en TODOS los
+  // feeds: fuera del suyo por el filtro de pais y fuera del de destino por el
+  // filtro de radio contra sus coordenadas reales. Sin `geo`, el filtro de
+  // radio se salta (exige coordenadas en ambos lados) y manda el de pais.
   const location = asMap(data.location);
-  const latitude = asDouble(location.latitude);
-  const longitude = asDouble(location.longitude);
+  const latitude = traveling ? null : asDouble(location.latitude);
+  const longitude = traveling ? null : asDouble(location.longitude);
   if (latitude !== null && longitude !== null) {
     const approximate =
       asString(settings["location.precision"]).toLowerCase() === "approximate";
@@ -379,13 +406,23 @@ function buildDiscoveryDoc(uid: string, data: DocumentData): DocumentData {
   return out;
 }
 
+/// Hace falta consultar el tier cuando el usuario usa alguna funcion de PAGO
+/// que afecta a su ficha publica: modo incognito o modo viaje.
+function needsTier(data: DocumentData | undefined): boolean {
+  const settings = asMap(data?.settings);
+  if (settings["privacy.incognito"] === true) return true;
+  const nested = asMap(settings.travel);
+  const travel = Object.keys(nested).length > 0 ? nested : asMap(data?.travel);
+  return travel.active === true;
+}
+
 /// Espeja un user en discovery (o lo borra si no es descubrible). Idempotente.
-/// Lee el tier (userEntitlements) para resolver el modo incognito (Plus).
+/// Lee el tier (userEntitlements) para resolver las funciones de pago que
+/// afectan a la ficha publica: modo incognito y modo viaje.
 async function syncOne(uid: string, data: DocumentData | undefined): Promise<void> {
   const ref = discovery.doc(uid);
   let isPaid = false;
-  // Solo necesitamos el tier si el usuario activo el modo incognito.
-  if (asMap(data?.settings)["privacy.incognito"] === true) {
+  if (needsTier(data)) {
     const entSnap = await col.entitlements.doc(uid).get();
     isPaid = isPaidActive(entSnap.data());
   }
@@ -395,7 +432,7 @@ async function syncOne(uid: string, data: DocumentData | undefined): Promise<voi
   }
   // Reemplazo completo: al ocultar, revocar o borrar un campo no puede quedar
   // una copia antigua en el documento publico.
-  await ref.set(buildDiscoveryDoc(uid, data as DocumentData));
+  await ref.set(buildDiscoveryDoc(uid, data as DocumentData, isPaid));
 }
 
 /// Trigger: cada vez que cambia users/{uid}, sincroniza su espejo publico en
@@ -438,14 +475,14 @@ export const backfillDiscovery = onCall({ region: REGION }, async (request) => {
     const snap = await q.get();
     if (snap.empty) break;
 
-    // Resuelve el tier solo de quienes tienen incognito activo (lote).
-    const incognitoIds = snap.docs
-      .filter((d) => asMap(d.data().settings)["privacy.incognito"] === true)
+    // Resuelve el tier solo de quienes usan funciones de pago (lote).
+    const paidFeatureIds = snap.docs
+      .filter((d) => needsTier(d.data()))
       .map((d) => d.id);
     const paidById = new Map<string, boolean>();
-    if (incognitoIds.length > 0) {
+    if (paidFeatureIds.length > 0) {
       const entSnaps = await db.getAll(
-        ...incognitoIds.map((id) => col.entitlements.doc(id))
+        ...paidFeatureIds.map((id) => col.entitlements.doc(id))
       );
       for (const es of entSnaps) {
         paidById.set(es.id, isPaidActive(es.data()));
@@ -458,7 +495,10 @@ export const backfillDiscovery = onCall({ region: REGION }, async (request) => {
       lastId = doc.id;
       const data = doc.data();
       if (isDiscoverable(data, paidById.get(doc.id) ?? false)) {
-        batch.set(discovery.doc(doc.id), buildDiscoveryDoc(doc.id, data));
+        batch.set(
+          discovery.doc(doc.id),
+          buildDiscoveryDoc(doc.id, data, paidById.get(doc.id) ?? false)
+        );
         published += 1;
       } else {
         batch.delete(discovery.doc(doc.id));

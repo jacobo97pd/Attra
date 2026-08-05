@@ -137,9 +137,17 @@ class DiscoveryPublisher {
 
     // Ubicación APROXIMADA (coords redondeadas ~1.1km) para distancia. NUNCA
     // exacta. Solo si el usuario tiene ubicación.
+    //
+    // MODO VIAJE: con el viaje activo NO se publican coordenadas. Publicar las
+    // reales junto al país de destino dejaba al viajero invisible en TODOS los
+    // feeds: fuera del suyo por el filtro de país (su país publicado ya es el
+    // destino) y fuera del de destino por el filtro de radio (sus coordenadas
+    // seguían a miles de km). Sin `geo`, FeedFilter salta la regla de radio
+    // (necesita coordenadas en AMBOS lados) y manda la de país, que es
+    // exactamente la semántica del modo viaje.
     final Map<String, dynamic> location = _map(userData['location']);
-    final double? lat = _asDouble(location['latitude']);
-    final double? lng = _asDouble(location['longitude']);
+    final double? lat = traveling ? null : _asDouble(location['latitude']);
+    final double? lng = traveling ? null : _asDouble(location['longitude']);
     if (lat != null && lng != null) {
       // Precisión: 'precise' redondea ~1.1km (2 decimales); 'approximate'
       // difumina a ~11km (1 decimal) para no revelar la zona exacta.

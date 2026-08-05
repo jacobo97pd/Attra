@@ -522,6 +522,10 @@ class _HomeShellState extends State<HomeShell> {
               chatService: widget.chatService,
               summaries: widget.profileSummaryRepository,
               showCompatibility: _entitlementController?.isProActive ?? false,
+              // Ventaja nº1 que vende el paywall de Plus. Estaba prometida y
+              // cobrada, pero no se aplicaba: la tenía todo el mundo gratis.
+              canSeeAllLikes: _entitlementController?.canSeeAllLikes ?? false,
+              onUpgrade: _openPaywall,
               currentUserInterests: widget.user?.interests ?? const <String>[],
               onImproveProfile: () =>
                   setState(() => _destination = _HomeDestination.profile),

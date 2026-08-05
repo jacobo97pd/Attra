@@ -27,8 +27,11 @@ import 'match_created_dialog.dart';
 ///  - Enviados: likes del usuario que siguen pendientes de respuesta.
 ///  - Matches: conexiones mutuas con acceso al chat y Attra Spark.
 ///
-/// Ver quién ha dado like es funcionalidad base. El porcentaje de
-/// compatibilidad sigue siendo una mejora Pro ([showCompatibility]).
+/// Ver TODAS las personas que te han dado like es la ventaja nº1 de Attra Plus
+/// ([canSeeAllLikes]): el paywall la vende, así que aquí se aplica de verdad.
+/// Sin plan se muestra la primera como gancho y el resto difuminadas. El
+/// porcentaje de compatibilidad sigue siendo una mejora Pro
+/// ([showCompatibility]).
 class LikesReceivedScreen extends StatefulWidget {
   const LikesReceivedScreen({
     super.key,
@@ -37,6 +40,8 @@ class LikesReceivedScreen extends StatefulWidget {
     required this.chatService,
     required this.summaries,
     this.showCompatibility = false,
+    this.canSeeAllLikes = true,
+    this.onUpgrade,
     this.currentUserInterests = const <String>[],
     this.onImproveProfile,
     this.loadProfile,
@@ -52,6 +57,12 @@ class LikesReceivedScreen extends StatefulWidget {
 
   /// Solo la IA Pro muestra el % de compatibilidad en las tarjetas.
   final bool showCompatibility;
+
+  /// Ventaja de Attra Plus. Sin ella, solo se revela el primer like.
+  final bool canSeeAllLikes;
+
+  /// Abre el paywall desde el muro de likes bloqueados.
+  final VoidCallback? onUpgrade;
 
   /// Intereses del usuario actual (para estimar afinidad real).
   final List<String> currentUserInterests;
@@ -443,6 +454,11 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
                 delegate: SliverChildBuilderDelegate(
                   (BuildContext context, int i) {
                     final Like like = likes[i];
+                    // Ventaja Plus: sin plan solo se revela el primero.
+                    final bool locked = !widget.canSeeAllLikes && i > 0;
+                    if (locked) {
+                      return _LockedLikeCard(onUpgrade: widget.onUpgrade);
+                    }
                     return _LikeGridCard(
                       like: like,
                       summaries: widget.summaries,
@@ -462,6 +478,17 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
             },
           ),
         ),
+        if (!widget.canSeeAllLikes && likes.length > 1)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.md),
+            sliver: SliverToBoxAdapter(
+              child: _UnlockLikesBanner(
+                hiddenCount: likes.length - 1,
+                onUpgrade: widget.onUpgrade,
+              ),
+            ),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
@@ -1403,6 +1430,117 @@ class _ImproveProfileBanner extends StatelessWidget {
             ),
             child: const Text('Mejorar'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta de un like que existe pero no se revela sin Attra Plus. No carga el
+/// perfil ni la foto: lo bloqueado no llega siquiera al dispositivo.
+class _LockedLikeCard extends StatelessWidget {
+  const _LockedLikeCard({required this.onUpgrade});
+
+  final VoidCallback? onUpgrade;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: onUpgrade != null,
+      label: 'Like bloqueado. Hazte Plus para verlo.',
+      // Material propio: la tarjeta vive dentro de un SliverGrid que no
+      // garantiza un ancestro Material para el InkWell.
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey<String>('locked-like-card'),
+          onTap: onUpgrade,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+              border: Border.all(color: context.colors.surfaceLine),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  context.colors.surfaceHigh,
+                  context.colors.surfaceHigh.withValues(alpha: 0.55),
+                ],
+              ),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(Icons.favorite_rounded,
+                      size: 30, color: context.colors.accent),
+                  const SizedBox(height: 8),
+                  Icon(Icons.lock_outline_rounded,
+                      size: 18, color: context.colors.textSecondary),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Muro de conversión: dice CUÁNTOS likes hay ocultos (dato real, no promesa
+/// vaga) y lleva al paywall.
+class _UnlockLikesBanner extends StatelessWidget {
+  const _UnlockLikesBanner(
+      {required this.hiddenCount, required this.onUpgrade});
+
+  final int hiddenCount;
+  final VoidCallback? onUpgrade;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String people = hiddenCount == 1 ? 'persona más' : 'personas más';
+    return Container(
+      key: const ValueKey<String>('unlock-likes-banner'),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.45)),
+        color: context.colors.surfaceHigh,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.lock_open_rounded,
+                  color: AppColors.gold, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$hiddenCount $people te han dado like',
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Con Attra Plus ves quiénes son y puedes responderles.',
+            style: theme.textTheme.bodySmall,
+          ),
+          if (onUpgrade != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                key: const ValueKey<String>('unlock-likes-cta'),
+                onPressed: onUpgrade,
+                child: const Text('Ver quién me ha dado like'),
+              ),
+            ),
+          ],
         ],
       ),
     );

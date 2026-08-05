@@ -425,6 +425,11 @@ class UserRepository {
   /// MODO VIAJES (Plus/Pro): fija (o desactiva) el destino en
   /// `users/{uid}.travel` y re-sincroniza discovery para que el perfil aparezca
   /// allí "de viaje". El gate de tier se valida en la capa superior.
+  /// Duración de un viaje. Sin caducidad, un usuario que cancelara su plan se
+  /// quedaba "en Tokio" para siempre. El backend la respeta al publicar la
+  /// ficha (functions/src/discovery.ts -> travelExpired).
+  static const Duration travelDuration = Duration(days: 30);
+
   Future<void> setTravelLocation({
     required String uid,
     required bool active,
@@ -444,6 +449,9 @@ class UserRepository {
             'iso2': iso2.toUpperCase(),
             'city': city,
             'country': country,
+            'until': active
+                ? DateTime.now().toUtc().add(travelDuration).toIso8601String()
+                : null,
             'updatedAt': FieldValue.serverTimestamp(),
           },
         },

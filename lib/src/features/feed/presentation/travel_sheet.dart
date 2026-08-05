@@ -78,6 +78,10 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
   bool _busy = false;
   late bool _active;
 
+  /// La ciudad que llega guardada ya se validó al elegirla, así que se asume
+  /// buena hasta que el campo diga lo contrario.
+  bool _cityIsValid = true;
+
   @override
   void initState() {
     super.initState();
@@ -88,7 +92,12 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
   }
 
   bool get _hasDestination => (_country ?? '').trim().isNotEmpty;
-  bool get _canActivate => _hasDestination && !_busy;
+
+  /// La ciudad es opcional (se puede viajar a un país entero), pero si se
+  /// escribe tiene que existir: una ciudad inventada se publicaba tal cual en
+  /// la ficha pública y además no ordenaba nada en el feed.
+  bool get _cityIsUsable => (_city ?? '').trim().isEmpty || _cityIsValid;
+  bool get _canActivate => _hasDestination && _cityIsUsable && !_busy;
 
   /// Aplica el estado al backend. [close] cierra la hoja (botón); el toggle lo
   /// deja abierto para seguir ajustando el destino. Si falla, lo muestra y
@@ -220,6 +229,9 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
                     _iso2 = iso2;
                     _country = countryName;
                     _city = city;
+                    // Sin esto se podía viajar a una ciudad inventada: el texto
+                    // crudo acababa publicado como ciudad pública en el feed.
+                    _cityIsValid = cityIsValid;
                   });
                 },
               ),
