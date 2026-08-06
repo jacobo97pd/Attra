@@ -157,7 +157,17 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isOwner(uid)
         && request.resource.data.get('uid', null) == uid
-        && request.resource.data.get('isBot', true) == false;
+        && request.resource.data.get('isBot', true) == false
+        // El cliente NO puede concederse ventajas de pago ni sellos de
+        // confianza escribiendo su propio espejo:
+        //  - `traveling` es Modo Viaje, funcion de Plus/Pro. El backend lo
+        //    concede solo con plan ACTIVO y sin caducar (discovery.ts).
+        //  - `verified` sale de la verificacion con selfie.
+        // Ambos los pone el trigger onUserWrittenSyncDiscovery con Admin SDK,
+        // que ignora estas reglas. Sin esta restriccion, un cliente modificado
+        // se ponia el pais que quisiera y el sello de verificado gratis.
+        && request.resource.data.get('traveling', false) == false
+        && request.resource.data.get('verified', false) == false;
       allow delete: if isOwner(uid);
     }
 

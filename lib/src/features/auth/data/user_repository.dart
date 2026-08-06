@@ -422,6 +422,37 @@ class UserRepository {
         .toList(growable: false);
   }
 
+  /// Perfiles de `discovery` por UID concreto, en lotes de 10 (límite de
+  /// `whereIn`). Se usa para meter en el feed a gente que NO entró en el corte
+  /// general: hoy, los que tienen un Boost pagado activo.
+  Future<List<SeedProfile>> fetchDiscoveryProfilesByUids(
+    List<String> uids, {
+    required String excludeUid,
+  }) async {
+    final List<String> wanted =
+        uids.where((String id) => id.isNotEmpty && id != excludeUid).toList();
+    if (wanted.isEmpty) return const <SeedProfile>[];
+
+    final List<SeedProfile> out = <SeedProfile>[];
+    for (int i = 0; i < wanted.length; i += 10) {
+      final List<String> chunk =
+          wanted.sublist(i, i + 10 > wanted.length ? wanted.length : i + 10);
+      try {
+        final QuerySnapshot<Map<String, dynamic>> snap =
+            await _discoveryCollection
+                .where(FieldPath.documentId, whereIn: chunk)
+                .get();
+        out.addAll(snap.docs.map(
+            (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                SeedProfile.fromMap(d.id, d.data())));
+      } catch (error) {
+        // Un lote fallido no puede vaciar el feed.
+        debugPrint('[Attra][Discovery] lote por uid fallo: $error');
+      }
+    }
+    return out;
+  }
+
   /// MODO VIAJES (Plus/Pro): fija (o desactiva) el destino en
   /// `users/{uid}.travel` y re-sincroniza discovery para que el perfil aparezca
   /// allí "de viaje". El gate de tier se valida en la capa superior.

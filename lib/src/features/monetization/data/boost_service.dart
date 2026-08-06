@@ -191,6 +191,34 @@ class BoostService {
     return BoostSummary.fromMap(data);
   }
 
+  /// UIDs con un Boost ACTIVO ahora mismo, vengan o no en el corte general del
+  /// feed.
+  ///
+  /// Sin esto el Boost solo reordenaba a quien YA estaba en tu pool: el feed se
+  /// llena con `discovery.limit(50)` sin ordenar por nada, así que un perfil
+  /// impulsado que cayera fuera de ese corte no aparecía en el feed de nadie.
+  /// Se pagaba por "subir al frente del feed" y no se entraba siquiera.
+  ///
+  /// `activeBoosts` es autoritativo del backend (las reglas lo dejan en
+  /// `write: false`), así que un cliente no puede fingir un Boost.
+  Future<List<String>> fetchBoostedUids({int limit = 30}) async {
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snap = await _firestore
+          .collection('activeBoosts')
+          .where('expiresAt', isGreaterThan: Timestamp.now())
+          .limit(limit)
+          .get();
+      return snap.docs
+          .map((QueryDocumentSnapshot<Map<String, dynamic>> d) => d.id)
+          .toList(growable: false);
+    } catch (error) {
+      // Nunca puede romper la carga del feed.
+      debugPrint(
+          '[Attra][Boost] no se pudieron leer los boosts activos: $error');
+      return const <String>[];
+    }
+  }
+
   Future<Map<String, ActiveBoost>> fetchActiveBoostsForUsers(
     Iterable<String> uids,
   ) async {

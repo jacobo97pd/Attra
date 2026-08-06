@@ -897,7 +897,48 @@ class SessionController extends ChangeNotifier {
     } catch (_) {
       discovery = const <SeedProfile>[];
     }
-    return <SeedProfile>[...discovery, ...seeds];
+
+    // BOOST PAGADO: quien tiene un Boost activo entra al pool SIEMPRE, aunque
+    // caiga fuera del corte general.
+    //
+    // El corte es `discovery.limit(50)` sin ordenar por nada, así que un perfil
+    // impulsado que no estuviera entre esos 50 no aparecía en el feed de nadie:
+    // el Boost solo reordenaba a quien YA te iba a salir. Se vendía "sube al
+    // frente del feed" y ni siquiera se entraba en él. Ordenarlos después
+    // (BoostAwareRanker) no arregla eso; hay que meterlos en el pool.
+    final List<SeedProfile> boosted = await _loadBoostedProfiles(
+      uid: uid,
+      alreadyInPool: <String>{
+        ...discovery.map((SeedProfile p) => p.id),
+        ...seeds.map((SeedProfile p) => p.id),
+      },
+    );
+
+    return <SeedProfile>[...boosted, ...discovery, ...seeds];
+  }
+
+  /// Perfiles con Boost activo que NO estaban ya en el pool. Best-effort: si
+  /// falla, el feed se carga igual sin ellos.
+  Future<List<SeedProfile>> _loadBoostedProfiles({
+    required String uid,
+    required Set<String> alreadyInPool,
+  }) async {
+    final BoostService? boosts = _boostService;
+    if (boosts == null) return const <SeedProfile>[];
+    try {
+      final List<String> boostedUids = await boosts.fetchBoostedUids();
+      final List<String> missing = boostedUids
+          .where((String id) => id != uid && !alreadyInPool.contains(id))
+          .toList(growable: false);
+      if (missing.isEmpty) return const <SeedProfile>[];
+      return await _userRepository.fetchDiscoveryProfilesByUids(
+        missing,
+        excludeUid: uid,
+      );
+    } catch (error) {
+      debugPrint('[Attra][Boost] no se pudieron cargar los impulsados: $error');
+      return const <SeedProfile>[];
+    }
   }
 
   Future<void> _handleAuthStateChange(User? firebaseUser) async {
