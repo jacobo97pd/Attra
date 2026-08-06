@@ -120,12 +120,36 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// True si el servicio lo creó esta pantalla (y por tanto le toca cerrarlo).
   bool _ownsIap = false;
 
+  /// Callbacks que tuviera el servicio COMPARTIDO antes de que esta pantalla se
+  /// enganchase. Se restauran al salir: un callback de una pantalla ya destruida
+  /// que sobrevive el resto de la sesión dispara snackbars y `Navigator` sobre un
+  /// contexto muerto.
+  void Function(PurchaseDetails purchase)? _previousOnDelivered;
+  void Function(int restored)? _previousOnRestoreFinished;
+
+  /// Handler propio guardado en un campo: así en dispose se comprueba que sigue
+  /// siendo el nuestro antes de desinstalarlo (y no se pisa el de otra pantalla).
+  late final void Function(PurchaseDetails purchase) _deliveredHandler =
+      _onDelivered;
+
+  /// Restaurar en curso: el aviso de "compras restauradas" lo da
+  /// [onRestoreFinished], así que no se cierra la pantalla hasta entonces.
+  bool _restoring = false;
+  bool _closeAfterRestore = false;
+
   @override
   void initState() {
     super.initState();
     final IapService? shared = widget.iapService;
     if (shared != null) {
       _iap = shared..addListener(_onIap);
+      // El servicio compartido ya entrega la compra, pero nadie refrescaba ni
+      // cerraba ESTA pantalla al conseguirlo: el usuario pagaba, el backend
+      // concedía el plan y el paywall se quedaba exactamente igual, como si la
+      // compra no hubiera ocurrido.
+      _previousOnDelivered = _iap.onDelivered;
+      _previousOnRestoreFinished = _iap.onRestoreFinished;
+      _iap.onDelivered = _deliveredHandler;
       _iap.clearError();
       return;
     }
@@ -133,10 +157,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
     _ownsIap = true;
     _iap = IapService()
       ..deliver = _deliver
-      ..onDelivered = (_) {
-        widget.onPurchased?.call();
-        if (mounted) Navigator.of(context).maybePop();
-      }
+      ..onDelivered = _deliveredHandler
       ..addListener(_onIap);
     if (widget.verifySubscription != null) {
       _iap.init(productIds: _ids);
@@ -146,10 +167,41 @@ class _PaywallScreenState extends State<PaywallScreen> {
   @override
   void dispose() {
     _iap.removeListener(_onIap);
+    if (identical(_iap.onDelivered, _deliveredHandler)) {
+      _iap.onDelivered = _previousOnDelivered;
+    }
+    // El callback de restaurar se instalaba sobre el servicio de SESIÓN y no se
+    // retiraba nunca: seguía vivo (con el contexto de esta pantalla) durante el
+    // resto de la sesión.
+    _iap.onRestoreFinished = _previousOnRestoreFinished;
     // El servicio compartido sobrevive a esta pantalla: cerrarlo aquí volvería a
     // dejar las compras diferidas sin quien las entregue.
     if (_ownsIap) _iap.dispose();
     super.dispose();
+  }
+
+  /// Se llama cuando el backend ha CONCEDIDO una compra entregada.
+  void _onDelivered(PurchaseDetails purchase) {
+    // Refrescar entitlements siempre: aunque lo comprado no sea de esta pantalla.
+    widget.onPurchased?.call();
+    if (!mounted) return;
+    // El servicio es compartido: por él también pasan los packs de consumibles
+    // (Boosts/Swipes). Solo cerramos con una suscripción de este paywall.
+    if (!_ids.contains(purchase.productID)) return;
+    if (_restoring) {
+      // Con un restaurar en curso, cerrar ahora se comería el mensaje que
+      // explica cuántas compras se recuperaron.
+      _closeAfterRestore = true;
+      return;
+    }
+    _confirmAndClose('¡Listo! Tu plan ya está activo.');
+  }
+
+  void _confirmAndClose(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+    Navigator.of(context).maybePop();
   }
 
   void _onIap() {
@@ -210,7 +262,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
   /// que el restaurar sea funcional y verificable.
   Future<void> _restore() async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    _restoring = true;
+    _closeAfterRestore = false;
     _iap.onRestoreFinished = (int restored) {
+      _restoring = false;
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(
         content: Text(
@@ -220,8 +275,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
         ),
       ));
       widget.onPurchased?.call();
+      // Si el plan se ha concedido durante el restaurar, la pantalla ya no tiene
+      // nada que ofrecer: se cierra DESPUÉS de dar el aviso.
+      if (_closeAfterRestore) {
+        _closeAfterRestore = false;
+        Navigator.of(context).maybePop();
+      }
     };
     await _iap.restore();
+    // Si el flujo terminó sin pasar por el callback (no disponible, otro
+    // restaurar en curso), no dejamos la pantalla marcada como "restaurando".
+    _restoring = false;
   }
 
   Future<void> _buyPlan({
@@ -310,7 +374,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
                         style: theme.textTheme.headlineMedium),
                     const SizedBox(height: 6),
                     Text(
-                      'Más visibilidad, control total y la IA visual más avanzada.',
+                      'Más visibilidad, control de tu perfil y búsqueda con IA '
+                      'visual.',
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -383,15 +448,24 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       price: _priceFor(proOffer),
                       lengthLabel: _lengthLabel,
                       unitPrice: _unitPriceFor(proOffer),
-                      tagline: 'Todo Plus + IA visual flagship',
-                      highlightLabel: 'IA avanzada',
+                      tagline: 'Todo Plus + búsqueda con IA visual',
+                      highlightLabel: 'IA visual',
+                      // Solo se promete lo que existe de verdad en la app. Se
+                      // quitaron "Recomendaciones inteligentes" (el orden del
+                      // feed es el mismo para todos los planes) y "Filtros por
+                      // preferencias visuales" (no hay ninguna pantalla que los
+                      // ofrezca): vender funciones inexistentes es motivo de
+                      // rechazo en la App Store y de reclamación del usuario.
                       features: const <String>[
                         'Todo lo de Plus, incluido',
-                        'IA visual: encuentra parecidos a tu referencia',
-                        'Recomendaciones inteligentes',
-                        'Likes prioritarios y boost',
-                        'Insights para mejorar tu perfil',
-                        'Filtros por preferencias visuales',
+                        'IA visual: perfiles parecidos a tu foto de referencia',
+                        'Búsqueda por descripción: escribe cómo es tu tipo',
+                        'Sugerencias para mejorar tus fotos y tu bio',
+                        'Tus likes se muestran los primeros',
+                        // El % que ve Pro sale de los intereses en común (o de la
+                        // señal de afinidad del backend), no de la IA visual:
+                        // decir "IA" aquí prometía algo que no calcula ninguna IA.
+                        '% de afinidad por intereses en los likes que recibes',
                       ],
                       gradient: AppColors.pro,
                       owned: currentTier == SubscriptionTier.pro,

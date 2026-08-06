@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/config/app_store_validation_config.dart';
+import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../connection_lab/presentation/demo_challenge_screen.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/data/profile_summary_repository.dart';
@@ -62,10 +63,21 @@ class ChatsScreen extends StatelessWidget {
     this.dateFollowupEnabled = false,
     this.onDiscover,
     this.onOpenPlay,
+    this.onOpenUpgrade,
   });
+
+  /// Abre el paywall. Se usa cuando el backend rechaza un minijuego por el
+  /// límite diario del plan Free: antes eso salía como un error genérico y
+  /// parecía que el juego estaba roto.
+  final VoidCallback? onOpenUpgrade;
 
   /// App Store validation: lets the empty state route to Discover / Play.
   final VoidCallback? onDiscover;
+
+  /// Entrada al hub de juegos desde la navegación principal. Qué fallaba: el
+  /// contenedor dejó de pasarla, así que el único acceso al hub desaparecía y
+  /// los juegos parecían no existir. Ahora es opcional: si no llega, la pantalla
+  /// abre el hub ella misma con una ruta propia.
   final VoidCallback? onOpenPlay;
 
   /// Attra Clear §1: si está activo, las conversaciones donde te toca responder
@@ -116,6 +128,27 @@ class ChatsScreen extends StatelessWidget {
   final bool twoTruthsEnabled;
   final bool matchReactivationEnabled;
   final bool chatGameEnabled;
+
+  /// Abre el hub de juegos. Usa el callback del contenedor si existe y, si no,
+  /// empuja la pantalla directamente: así la entrada nunca vuelve a quedar
+  /// inalcanzable por un cambio en la navegación principal.
+  void _openPlay(BuildContext context) {
+    final VoidCallback? external = onOpenPlay;
+    if (external != null) {
+      external();
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ConversationGamesScreen(
+        onDiscover: onDiscover == null
+            ? null
+            : () {
+                Navigator.of(context).maybePop();
+                onDiscover!();
+              },
+      ),
+    ));
+  }
 
   void _openStory(BuildContext context, Story story) {
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -174,6 +207,7 @@ class ChatsScreen extends StatelessWidget {
         closeGracefullyEnabled: closeGracefullyEnabled,
         nudgesEnabled: nudgesEnabled,
         dateFollowupEnabled: dateFollowupEnabled,
+        onOpenUpgrade: onOpenUpgrade,
       ),
     ));
   }
@@ -219,7 +253,10 @@ class ChatsScreen extends StatelessWidget {
             .where((Chat c) => c.status != ChatStatus.deleted)
             .toList(growable: false);
         if (all.isEmpty) {
-          return _ChatsEmpty(onDiscover: onDiscover, onOpenPlay: onOpenPlay);
+          return _ChatsEmpty(
+            onDiscover: onDiscover,
+            onOpenPlay: () => _openPlay(context),
+          );
         }
         final List<Chat> nuevos =
             all.where((Chat c) => !_isConversation(c)).toList();
@@ -268,6 +305,13 @@ class ChatsScreen extends StatelessWidget {
 
         return ListView(
           children: <Widget>[
+            // Entrada al hub de juegos. Antes solo existía en el estado vacío
+            // de Chats y ni siquiera se pintaba, porque el callback que la
+            // activaba dejó de pasarse: el hub con los cinco juegos quedó
+            // inalcanzable. `_openPlay` siempre tiene salida (usa el callback
+            // externo si llega y, si no, abre la pantalla directamente), así
+            // que la banda nunca lleva a un callejón sin salida.
+            _PlayHubEntry(onTap: () => _openPlay(context)),
             if (nuevos.isNotEmpty) ...<Widget>[
               const _SectionTitle('Matches nuevos'),
               SizedBox(
@@ -310,6 +354,54 @@ class ChatsScreen extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Banda de acceso al hub de juegos, siempre visible sobre la lista de chats.
+class _PlayHubEntry extends StatelessWidget {
+  const _PlayHubEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Material(
+        color: theme.colorScheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.sports_esports_rounded,
+                    color: theme.colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text('Juegos de conversación',
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Text('Duelo de Química, Spark, Dos verdades y más',
+                          style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -607,10 +699,13 @@ class _ConversationRow extends StatelessWidget {
 }
 
 class _ChatsEmpty extends StatelessWidget {
-  const _ChatsEmpty({this.onDiscover, this.onOpenPlay});
+  const _ChatsEmpty({this.onDiscover, required this.onOpenPlay});
 
   final VoidCallback? onDiscover;
-  final VoidCallback? onOpenPlay;
+
+  /// Ya no es opcional: el botón "Explorar juegos" nunca llegaba a pintarse
+  /// porque el callback venía siempre a null desde el contenedor.
+  final VoidCallback onOpenPlay;
 
   @override
   Widget build(BuildContext context) {
@@ -644,12 +739,11 @@ class _ChatsEmpty extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          if (onOpenPlay != null)
-            _EmptyAction(
-              icon: Icons.sports_esports_rounded,
-              label: 'Explore Conversation Games',
-              onTap: onOpenPlay!,
-            ),
+          _EmptyAction(
+            icon: Icons.sports_esports_rounded,
+            label: 'Explore Conversation Games',
+            onTap: onOpenPlay,
+          ),
           const SizedBox(height: 10),
           if (onDiscover != null)
             _EmptyAction(
@@ -674,6 +768,13 @@ class _ChatsEmpty extends StatelessWidget {
             const Text(
               'Cuando hagas match, podrás empezar a chatear aquí.',
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            // Esta rama tampoco ofrecía los juegos por ningún lado.
+            _EmptyAction(
+              icon: Icons.sports_esports_rounded,
+              label: 'Ver los juegos de conversación',
+              onTap: onOpenPlay,
             ),
           ],
         ),

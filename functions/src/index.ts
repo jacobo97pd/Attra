@@ -58,7 +58,7 @@ export {
   deleteStory,
   cleanupExpiredStories,
 } from "./stories";
-export { completeSparkSession } from "./spark";
+export { completeSparkSession, sweepSparkSessions } from "./spark";
 export {
   startDoubleAnswer,
   submitDoubleAnswer,
@@ -107,6 +107,10 @@ export {
   respondChatGame,
   finishChatGame,
   abandonChatGame,
+  // Barridos por VENCIMIENTO. Sin exportarlos aqui no se despliegan y las
+  // sesiones se quedan 'active' para siempre: el veredicto de la IA no llega
+  // nunca y el par no puede volver a jugar.
+  sweepChatGames,
 } from "./chatGame";
 export {
   rankingOnLike,

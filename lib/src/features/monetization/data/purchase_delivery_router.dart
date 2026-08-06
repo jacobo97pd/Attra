@@ -54,6 +54,24 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
   int? _lastBoostBalance;
   int? _lastSwipeBalance;
 
+  /// Anota un saldo confirmado por el backend que NO viene de una compra: al
+  /// ACTIVAR un Boost, `activateBoost` descuenta y devuelve el restante.
+  ///
+  /// Hacía falta porque la hoja de Boosts se reconstruye desde `AppUser` cada
+  /// vez que se abre, y ese documento va por detrás (la recarga es asíncrona y
+  /// puede no haber llegado): activabas un Boost, cerrabas la hoja, la volvías a
+  /// abrir y el saldo mostraba otra vez el valor de ANTES de gastarlo.
+  ///
+  /// No notifica: quien activa ya pinta su propio estado, y avisar aquí haría
+  /// que la hoja interpretase el cambio como una compra recién entregada.
+  void noteBoostBalance(int balance) {
+    _lastBoostBalance = balance;
+  }
+
+  void noteSwipeBalance(int balance) {
+    _lastSwipeBalance = balance;
+  }
+
   bool _started = false;
 
   /// Todos los ids que la sesión debe vigilar: suscripciones y consumibles.
@@ -134,7 +152,16 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
         notifyListeners();
         return const IapDeliveryResult(delivered: true);
       } on BoostServiceException catch (e) {
-        return IapDeliveryResult(delivered: false, message: e.message);
+        // Un rechazo DEFINITIVO de grantConsumable (producto fuera del catálogo,
+        // recibo ya canjeado por otra cuenta) se devolvía como fallo temporal: la
+        // transacción se quedaba sin finalizar y la tienda la reencolaba para
+        // siempre. Igual que en la ruta de suscripciones, se marca permanente
+        // para cerrarla y avisar al usuario.
+        return IapDeliveryResult(
+          delivered: false,
+          permanent: e.isPermanent,
+          message: e.message,
+        );
       } catch (e) {
         return IapDeliveryResult(delivered: false, message: e.toString());
       }

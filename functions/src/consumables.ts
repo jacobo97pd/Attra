@@ -177,10 +177,20 @@ export const grantConsumable = onCall({ region: REGION }, async (request) => {
     if (ledgerSnap.exists || legacySnap?.exists) {
       const ownerUid = (ledgerSnap.data()?.uid ?? uid).toString();
       if (ledgerSnap.exists && ownerUid !== uid) {
-        throw new HttpsError(
-          "permission-denied",
-          "Esa compra ya fue canjeada por otra cuenta."
-        );
+        // NO se lanza excepcion: el cliente solo finaliza la transaccion
+        // cuando la entrega va bien, y un error aqui la dejaria reencolada en
+        // la tienda para siempre. Se devuelve un fallo PERMANENTE explicito
+        // para que el cliente la cierre y avise. Ademas, inferir la
+        // permanencia del CODIGO de error era peligroso: el SDK usa
+        // 'not-found' cuando la funcion no esta desplegada y
+        // 'permission-denied' ante problemas de App Check, y tratarlos como
+        // definitivos cerraba compras legitimas sin entregar nada.
+        return {
+          ok: false,
+          permanent: true,
+          reason: "claimed_by_other_account",
+          message: "Esa compra ya fue canjeada por otra cuenta.",
+        };
       }
       return {
         ok: true,

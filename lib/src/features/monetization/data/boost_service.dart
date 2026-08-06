@@ -10,6 +10,42 @@ class BoostServiceException implements Exception {
   final String message;
   final String? code;
 
+  /// Códigos de Cloud Functions que NO se arreglan reintentando: el producto no
+  /// está en el catálogo del servidor, el recibo ya lo canjeó otra cuenta, falta
+  /// el identificador de compra...
+  ///
+  /// Se distinguía solo en la ruta de suscripciones (`permanent` del backend) y
+  /// no en la de consumibles, así que un rechazo definitivo de `grantConsumable`
+  /// se trataba como fallo temporal: la transacción del pack nunca se finalizaba,
+  /// la tienda la reencolaba en cada arranque (bloqueando compras posteriores) y
+  /// en Android el consumible no se consumía, así que tampoco se podía recomprar.
+  /// Solo códigos que el BACKEND emite a propósito ante un rechazo de negocio
+  /// y que ninguna incidencia de infraestructura puede provocar.
+  ///
+  /// Antes esta lista incluía `not-found`, `unimplemented` y `permission-denied`,
+  /// que el SDK de Cloud Functions emite también cuando la función NO está
+  /// desplegada o cuando falla App Check. Marcarlos como definitivos hacía que
+  /// el cliente CERRARA la transacción en la tienda sin entregar nada: el
+  /// usuario pagaba, perdía el producto y no había forma de recuperarlo.
+  ///
+  /// La permanencia de verdad viaja ahora en el payload (`permanent: true`),
+  /// que es la señal fiable; esto es solo el respaldo.
+  static const Set<String> _permanentCodes = <String>{
+    'invalid-argument',
+    'already-exists',
+  };
+
+  /// True si el rechazo es DEFINITIVO (ver [_permanentCodes]). El código llega
+  /// con formatos distintos según plataforma (`permission-denied`,
+  /// `functions/permission-denied`, `PERMISSION_DENIED`), así que se normaliza.
+  bool get isPermanent {
+    final String raw = (code ?? '').trim().toLowerCase().replaceAll('_', '-');
+    if (raw.isEmpty) return false;
+    final int slash = raw.lastIndexOf('/');
+    final String normalized = slash < 0 ? raw : raw.substring(slash + 1);
+    return _permanentCodes.contains(normalized);
+  }
+
   @override
   String toString() => 'BoostServiceException($code): $message';
 }
@@ -52,6 +88,15 @@ class BoostService {
       if (platform != null) 'platform': platform,
       if (verificationData != null) 'verificationData': verificationData,
     });
+    // El backend puede rechazar la entrega de forma DEFINITIVA (p. ej. el
+    // recibo ya lo canjeó otra cuenta) sin lanzar excepción: lanzar una dejaba
+    // la transacción reencolada en la tienda para siempre.
+    if (data['ok'] == false) {
+      throw BoostServiceException(
+        (data['message'] as String?) ?? 'No se pudo entregar la compra.',
+        code: data['permanent'] == true ? 'invalid-argument' : null,
+      );
+    }
     return (data['balance'] as num?)?.toInt() ?? 0;
   }
 

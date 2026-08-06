@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
-import { REGION } from "./firebase";
+import { REGION, db } from "./firebase";
 import { col, nextJourneyStatus, requireAuthUid, requireStringArg } from "./common";
 
 /// completeSparkSession: al terminar una partida de Attra Spark, inserta el
@@ -109,3 +110,66 @@ export const completeSparkSession = onCall({ region: REGION }, async (request) =
 
   return { ok: true };
 });
+
+/// Una partida dura 5 min (`countdownSeconds` = 300) y CUALQUIER escritura de la
+/// partida (aceptar, responder, reaccionar, avanzar de ronda) refresca
+/// `lastActivityAt`. Con este margen, una sesión "active" sin tocar es una
+/// sesión muerta con total seguridad.
+const SPARK_ACTIVE_STALE_MS = 20 * 60 * 1000;
+
+/// Una invitación "waiting" sí puede aceptarse mucho después (la tarjeta del
+/// chat la ofrece), así que se le da un TTL largo antes de cerrarla.
+const SPARK_WAITING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/// sweepSparkSessions: cierre por VENCIMIENTO en el servidor. El paso a estado
+/// terminal lo hacía SOLO el cliente (el temporizador de la pantalla de juego, y
+/// además únicamente en el dispositivo del anfitrión): si cerraba la app, salía
+/// de la pantalla o perdía conexión, la sesión se quedaba "waiting"/"active"
+/// eternamente. Como Spark es un rompehielos de UNA sola vez por match, eso
+/// dejaba a la pareja con una partida colgada y sin poder volver a jugar.
+///
+/// Se elige un SCHEDULER (y no un cierre perezoso al leer) porque el documento
+/// se lee en streaming desde el cliente: no hay un punto de lectura en backend
+/// donde engancharse, y el cliente NO puede cerrar sesiones ajenas sin abrir la
+/// partida. El barrido escribe solo el estado terminal (no inventa resumen: la
+/// partida no llegó a terminar).
+export const sweepSparkSessions = onSchedule(
+  { schedule: "every 10 minutes", region: REGION },
+  async () => {
+    const now = Date.now();
+    const targets: Array<{ status: string; cutoffMs: number }> = [
+      { status: "active", cutoffMs: SPARK_ACTIVE_STALE_MS },
+      { status: "waiting", cutoffMs: SPARK_WAITING_TTL_MS },
+    ];
+    let expired = 0;
+
+    for (const target of targets) {
+      try {
+        const snap = await db
+          .collectionGroup("sparkSessions")
+          .where("status", "==", target.status)
+          .where("lastActivityAt", "<=", new Date(now - target.cutoffMs))
+          .limit(200)
+          .get();
+        if (snap.empty) continue;
+        const batch = db.batch();
+        for (const doc of snap.docs) {
+          batch.update(doc.ref, {
+            status: "expired",
+            endedAt: FieldValue.serverTimestamp(),
+            lastActivityAt: FieldValue.serverTimestamp(),
+            closedBy: "server",
+          });
+          expired++;
+        }
+        await batch.commit();
+      } catch (e) {
+        console.error(
+          `[spark] sweep ${target.status}: ${(e as Error).message}`
+        );
+      }
+    }
+
+    console.log(`[spark] sweep expired=${expired}`);
+  }
+);

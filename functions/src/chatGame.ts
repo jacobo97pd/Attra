@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { DocumentData, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, existsBlockBetween, requireAuthUid, requireStringArg } from "./common";
@@ -13,6 +14,14 @@ import { moderateComment } from "./moderation";
 
 const GAME_DURATION_MS = 5 * 60 * 1000; // 5 min
 const MIN_MESSAGES_TO_JUDGE = 4; // por debajo => "sin ganador, seguid hablando"
+
+/// Margen tras `endsAt` antes de que el servidor cierre la sesion por su cuenta.
+/// Da tiempo a que la cierre el cliente (ruta normal) sin duplicar trabajo.
+const SERVER_CLOSE_GRACE_MS = 60 * 1000;
+
+/// TTL de una invitacion sin responder: pasado este tiempo se cancela sola para
+/// que la tarjeta del chat no se quede "pendiente" para siempre.
+const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 
 type GameMode = "normal" | "coffee_challenge";
 
@@ -376,19 +385,19 @@ export const respondChatGame = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
-/// finishChatGame: al agotarse el tiempo, la IA analiza SOLO los mensajes de la
-/// sesión y emite el resultado. Idempotente.
-export const finishChatGame = onCall({ region: REGION }, async (request) => {
-  const uid = requireAuthUid(request.auth);
-  const chatId = requireStringArg(request.data?.chatId, "chatId");
-  const sessionId = requireStringArg(request.data?.sessionId, "sessionId");
-  const { chatRef, data: chatData } = await loadChat(chatId, uid);
+/// Cierra una sesión ACTIVA: analiza los mensajes del reto, publica el veredicto
+/// y marca la sesión. Compartido por la llamada del cliente y por el barrido del
+/// servidor (antes esta lógica vivía solo dentro del onCall, así que si nadie
+/// llamaba nunca se cerraba). Devuelve el estado final aplicado, o "skipped" si
+/// otra ejecución se adelantó (la reclamación del estado es transaccional).
+async function settleChatGameSession(
+  chatRef: FirebaseFirestore.DocumentReference,
+  chatData: DocumentData,
+  sessionId: string,
+  session: DocumentData,
+  closedBy: "client" | "server"
+): Promise<"completed" | "cancelled" | "skipped"> {
   const sessionRef = chatRef.collection("gameSessions").doc(sessionId);
-
-  const snap = await sessionRef.get();
-  if (!snap.exists) throw new HttpsError("not-found", "Reto no encontrado.");
-  const s = snap.data() ?? {};
-  if (s.status !== "active") return { ok: true, alreadyDone: true };
 
   // Solo mensajes de ESTA sesión (privacidad: nada de conversaciones antiguas).
   const msgsSnap = await chatRef
@@ -402,25 +411,45 @@ export const finishChatGame = onCall({ region: REGION }, async (request) => {
 
   // Moderación de tono: si algo grave, se cancela con aviso amable.
   const flagged = msgs.some((m) => moderateComment(m.text).reason === "banned");
-  const uidA = (s.creatorUserId ?? "").toString();
-  const uidB = (s.invitedUserId ?? "").toString();
+  const uidA = (session.creatorUserId ?? "").toString();
+  const uidB = (session.invitedUserId ?? "").toString();
   const names = await resolveNames(chatData, uidA, uidB);
-  const mode = parseMode(s.mode);
+  const mode = parseMode(session.mode);
+  const result = flagged
+    ? null
+    : analyzeConversation(msgs, uidA, uidB, names.a, names.b, mode);
 
-  const now = FieldValue.serverTimestamp();
-  if (flagged) {
-    await sessionRef.update({ status: "cancelled", completedAt: now });
-    await postSystem(chatRef, sessionId, "El reto se ha pausado para mantener el buen rollo. Seguid cuando queráis. 💛");
-    return { ok: true, cancelled: true };
-  }
-
-  const result = analyzeConversation(msgs, uidA, uidB, names.a, names.b, mode);
-  await sessionRef.update({
-    status: "completed",
-    completedAt: now,
-    result,
-    analyzedMessages: msgs.length,
+  // Reclama la sesión: si entre la lectura y la escritura la cerró el otro
+  // participante (o el barrido), no se pisa el resultado ya publicado.
+  const claimed = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(sessionRef);
+    if (!snap.exists) return false;
+    if ((snap.data()?.status ?? "") !== "active") return false;
+    const now = FieldValue.serverTimestamp();
+    tx.update(
+      sessionRef,
+      flagged
+        ? { status: "cancelled", completedAt: now, closedBy }
+        : {
+            status: "completed",
+            completedAt: now,
+            closedBy,
+            result,
+            analyzedMessages: msgs.length,
+          }
+    );
+    return true;
   });
+  if (!claimed) return "skipped";
+
+  if (flagged || !result) {
+    await postSystem(
+      chatRef,
+      sessionId,
+      "El reto se ha pausado para mantener el buen rollo. Seguid cuando queráis. 💛"
+    );
+    return "cancelled";
+  }
 
   // Mensaje de resultado de la IA en el chat.
   const lines: string[] = [];
@@ -435,10 +464,143 @@ export const finishChatGame = onCall({ region: REGION }, async (request) => {
   lines.push(`💘 Química: ${result.chemistryScore}/100`);
   if (result.followUpMessage) lines.push(result.followUpMessage);
   await postSystem(chatRef, sessionId, lines.join("\n"));
+  return "completed";
+}
 
-  console.log(`[chatGame] finish chat=${chatId} session=${sessionId} winner=${result.winnerUserId} chem=${result.chemistryScore}`);
-  return { ok: true };
+/// finishChatGame: al agotarse el tiempo, la IA analiza SOLO los mensajes de la
+/// sesión y emite el resultado. Idempotente.
+export const finishChatGame = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuthUid(request.auth);
+  const chatId = requireStringArg(request.data?.chatId, "chatId");
+  const sessionId = requireStringArg(request.data?.sessionId, "sessionId");
+  const { chatRef, data: chatData } = await loadChat(chatId, uid);
+  const sessionRef = chatRef.collection("gameSessions").doc(sessionId);
+
+  const snap = await sessionRef.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Reto no encontrado.");
+  const s = snap.data() ?? {};
+  if (s.status !== "active") return { ok: true, alreadyDone: true };
+
+  const outcome = await settleChatGameSession(
+    chatRef,
+    chatData,
+    sessionId,
+    s,
+    "client"
+  );
+  console.log(`[chatGame] finish chat=${chatId} session=${sessionId} outcome=${outcome}`);
+  if (outcome === "skipped") return { ok: true, alreadyDone: true };
+  return { ok: true, ...(outcome === "cancelled" ? { cancelled: true } : {}) };
 });
+
+/// sweepChatGames: cierre por VENCIMIENTO en el servidor. El fin del reto lo
+/// disparaba solo el cliente (temporizador en la pantalla del chat), asi que si
+/// el usuario cerraba la app o salia de la conversacion la sesion se quedaba
+/// "active" para siempre: el veredicto de la IA no llegaba nunca y la pareja se
+/// quedaba con un reto colgado. Se elige un SCHEDULER (y no un cierre perezoso
+/// al leer) porque el cierre publica un mensaje de sistema en el chat, y los
+/// mensajes son backend-only: nadie garantiza que alguien vuelva a leer la
+/// sesion, y el fichero ya trabaja con `endsAt` absoluto. Ademas caduca las
+/// invitaciones que nadie responde.
+export const sweepChatGames = onSchedule(
+  { schedule: "every 5 minutes", region: REGION },
+  async () => {
+    const now = Date.now();
+    let settled = 0;
+    let cancelled = 0;
+
+    try {
+      const due = await db
+        .collectionGroup("gameSessions")
+        .where("status", "==", "active")
+        .where("endsAt", "<=", new Date(now - SERVER_CLOSE_GRACE_MS))
+        .limit(50)
+        .get();
+      for (const doc of due.docs) {
+        const chatRef = doc.ref.parent.parent;
+        if (!chatRef) continue;
+        try {
+          const chatSnap = await chatRef.get();
+          const outcome = await settleChatGameSession(
+            chatRef,
+            chatSnap.data() ?? {},
+            doc.id,
+            doc.data(),
+            "server"
+          );
+          if (outcome !== "skipped") settled++;
+        } catch (e) {
+          console.error(`[chatGame] sweep ${doc.ref.path}: ${(e as Error).message}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[chatGame] sweep activas: ${(e as Error).message}`);
+    }
+
+    try {
+      const stale = await db
+        .collectionGroup("gameSessions")
+        .where("status", "in", ["pending", "accepted"])
+        .where("createdAt", "<=", new Date(now - PENDING_TTL_MS))
+        .limit(100)
+        .get();
+      if (!stale.empty) {
+        const batch = db.batch();
+        for (const doc of stale.docs) {
+          batch.update(doc.ref, {
+            status: "cancelled",
+            completedAt: FieldValue.serverTimestamp(),
+            closedBy: "server",
+          });
+          cancelled++;
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      console.error(`[chatGame] sweep pendientes: ${(e as Error).message}`);
+    }
+
+    console.log(`[chatGame] sweep settled=${settled} cancelled=${cancelled}`);
+  }
+);
+
+/// Valida un `gameSessionId` recibido del cliente al enviar un mensaje: debe
+/// existir en ESE chat, estar ACTIVA, no haber vencido y tener al emisor como
+/// participante. Sin esto cualquiera podia etiquetar mensajes con el id que
+/// quisiera (colar mensajes en el analisis de la IA de otra sesion, o inflar
+/// `gameMessageCount` del ranking). Devuelve el id valido o null (nunca lanza:
+/// un id invalido solo significa "mensaje normal, sin reto").
+export async function resolveActiveGameSessionId(
+  chatId: string,
+  rawSessionId: unknown,
+  senderId: string
+): Promise<string | null> {
+  if (typeof rawSessionId !== "string") return null;
+  const sessionId = rawSessionId.trim().slice(0, 80);
+  if (!sessionId) return null;
+  try {
+    const snap = await col.chats
+      .doc(chatId)
+      .collection("gameSessions")
+      .doc(sessionId)
+      .get();
+    const s = snap.data();
+    if (!snap.exists || !s) return null;
+    if ((s.status ?? "") !== "active") return null;
+    if (senderId !== s.creatorUserId && senderId !== s.invitedUserId) return null;
+    const endsAtMs =
+      s.endsAt && typeof s.endsAt.toMillis === "function"
+        ? (s.endsAt.toMillis() as number)
+        : null;
+    if (endsAtMs !== null && endsAtMs + SERVER_CLOSE_GRACE_MS < Date.now()) {
+      return null;
+    }
+    return sessionId;
+  } catch (e) {
+    console.error(`[chatGame] validar sesion ${sessionId}: ${(e as Error).message}`);
+    return null;
+  }
+}
 
 /// abandonChatGame: salir del reto sin penalización.
 export const abandonChatGame = onCall({ region: REGION }, async (request) => {

@@ -4,7 +4,41 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/attra_image.dart';
+import '../../spark/data/spark_service.dart';
+import '../../spark/presentation/spark_game_screen.dart';
 import '../domain/like.dart';
+
+/// Todo lo necesario para ofrecer Attra Spark desde la pantalla de match sin que
+/// quien la abre tenga que repetir el flujo (invitar + abrir la sala).
+///
+/// Qué fallaba: la misma pantalla de match ofrecía "jugar 5 minutos" cuando
+/// venías de Likes recibidos (que sí implementaba el flujo) y no lo ofrecía
+/// cuando venías del feed, así que el juego aparecía o desaparecía según por
+/// dónde hubieras hecho match.
+class MatchSparkOffer {
+  const MatchSparkOffer({
+    required this.service,
+    required this.matchId,
+    required this.currentUid,
+    required this.otherUid,
+    required this.otherName,
+    this.onOpenChat,
+  });
+
+  final SparkService service;
+
+  /// Id del match/chat (Spark usa el mismo id determinista).
+  final String matchId;
+  final String currentUid;
+  final String otherUid;
+  final String otherName;
+
+  /// Abre el chat normal al terminar o salir de la partida.
+  final VoidCallback? onOpenChat;
+
+  bool get isUsable =>
+      matchId.isNotEmpty && currentUid.isNotEmpty && otherUid.isNotEmpty;
+}
 
 /// Pantalla "¡Es un match!" con los colores corporativos de Attra: dos fotos
 /// circulares con halo coral, intereses en común y CTAs (enviar mensaje / seguir
@@ -21,6 +55,7 @@ Future<void> showMatchCreatedDialog(
   LikeTargetType? originType,
   VoidCallback? onOpenChat,
   VoidCallback? onPlaySpark,
+  MatchSparkOffer? sparkOffer,
   Future<void> Function(String text)? onSendFirstMessage,
 }) {
   for (final String? url in <String?>[photoUrl, currentUserPhotoUrl]) {
@@ -40,6 +75,7 @@ Future<void> showMatchCreatedDialog(
       sharedInterests: sharedInterests,
       onOpenChat: onOpenChat,
       onPlaySpark: onPlaySpark,
+      sparkOffer: sparkOffer,
     ),
     transitionsBuilder: (_, Animation<double> animation, __, Widget child) {
       final Animation<double> curved =
@@ -64,6 +100,7 @@ class _MatchCelebrationScreen extends StatelessWidget {
     this.sharedInterests = const <String>[],
     this.onOpenChat,
     this.onPlaySpark,
+    this.sparkOffer,
   });
 
   final String name;
@@ -73,8 +110,38 @@ class _MatchCelebrationScreen extends StatelessWidget {
   final List<String> sharedInterests;
   final VoidCallback? onOpenChat;
   final VoidCallback? onPlaySpark;
+  final MatchSparkOffer? sparkOffer;
 
   void _close(BuildContext context) => Navigator.of(context).maybePop();
+
+  /// Invita a Spark y abre la sala reemplazando esta pantalla (al salir del
+  /// juego se vuelve a donde estabas, no a la celebración del match).
+  Future<void> _startSpark(BuildContext context, MatchSparkOffer offer) async {
+    final NavigatorState nav = Navigator.of(context);
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    try {
+      final String sessionId = await offer.service.invite(
+        matchId: offer.matchId,
+        hostUid: offer.currentUid,
+        guestUid: offer.otherUid,
+      );
+      if (!nav.mounted) return;
+      await nav.pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => SparkGameScreen(
+          service: offer.service,
+          matchId: offer.matchId,
+          sessionId: sessionId,
+          currentUid: offer.currentUid,
+          otherName: offer.otherName,
+          onOpenChat: offer.onOpenChat,
+        ),
+      ));
+    } on Exception {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No se pudo iniciar Attra Spark.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,6 +151,15 @@ class _MatchCelebrationScreen extends StatelessWidget {
         .where((String s) => s.isNotEmpty)
         .map(_capitalize)
         .toList(growable: false);
+    final MatchSparkOffer? offer = sparkOffer;
+    final VoidCallback? playSpark = onPlaySpark != null
+        ? () {
+            _close(context);
+            onPlaySpark!();
+          }
+        : (offer != null && offer.isUsable)
+            ? () => _startSpark(context, offer)
+            : null;
 
     return Scaffold(
       backgroundColor: context.colors.bg,
@@ -150,13 +226,13 @@ class _MatchCelebrationScreen extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 10),
-              if (onPlaySpark != null) ...<Widget>[
+              // Attra Spark: acepta el callback del llamante (Likes recibidos) o
+              // resuelve el flujo aquí mismo con el servicio (feed), para que la
+              // oferta sea idéntica vengas de donde vengas.
+              if (playSpark != null) ...<Widget>[
                 AttraSecondaryButton(
                   label: 'Jugar 5 min para romper el hielo',
-                  onPressed: () {
-                    _close(context);
-                    onPlaySpark!();
-                  },
+                  onPressed: playSpark,
                 ),
                 const SizedBox(height: 10),
               ],

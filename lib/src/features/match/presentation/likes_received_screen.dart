@@ -291,6 +291,7 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
     if (chatId.isEmpty) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => ChatDetailScreen(
+        onOpenUpgrade: widget.onUpgrade,
         chatId: chatId,
         currentUid: widget.currentUid,
         other: other,

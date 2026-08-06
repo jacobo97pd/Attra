@@ -242,7 +242,11 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
     // "cambiar" de tipo sin regalar o quitar valor, asi que se rechaza SIN
     // cobrar (la transaccion aborta antes del cargo) y decide el usuario.
     if (hasLiveBoost) {
-      const liveType = boostTypeFromValue(activeData?.type, requestedType);
+      // El fallback del tipo vivo NO puede ser el tipo pedido: con un doc sin
+      // `type` (legacy) cualquier peticion "coincidia" y se acababa aplicando
+      // la spec equivocada. Con fallback fijo, un doc raro solo puede
+      // extenderse como Boost normal; pedir Superboost se rechaza sin cobrar.
+      const liveType = boostTypeFromValue(activeData?.type, "boost_normal");
       if (liveType !== requestedType) {
         throw new HttpsError(
           "failed-precondition",
@@ -264,12 +268,24 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
     }
 
     if (activeData && hasLiveBoost) {
-      // Mismo tipo garantizado por la comprobacion de arriba.
-      const activeType = boostTypeFromValue(activeData.type, requestedType);
+      // Mismo tipo garantizado por la comprobacion de arriba: se aplica SIEMPRE
+      // la spec del tipo PEDIDO (nunca la que hubiera guardada en el doc), asi
+      // extender un Superboost suma 24h/prioridad 150 y extender un Boost suma
+      // 30 min/prioridad 80, que es exactamente lo que el usuario ha pagado.
+      const activeType = requestedType;
       const spec = BOOST_SPECS[activeType];
       const boostId = (activeData.boostId ?? "").toString();
       const activeExpiresMs = millisFromDateLike(activeData.expiresAt) ?? nowMs;
       const expiresAt = new Date(Math.max(activeExpiresMs, nowMs) + spec.durationMs);
+      // Extender con el cap de impresiones agotado cobraba 1 Boost del saldo y
+      // no daba NADA: el cap se reescribia con el mismo valor mientras
+      // `deliveredImpressions` sigue siendo acumulado, asi que
+      // `recordBoostImpression` continuaba devolviendo "cap_reached" durante
+      // todo el tiempo extra. Se elige AMPLIAR el cap (increment) en vez de
+      // rechazar el cobro: el usuario que paga siempre recibe una tanda entera
+      // de impresiones nuevas, y sumar en vez de reiniciar el contador conserva
+      // las metricas acumuladas de la sesion (resumen del Boost).
+      const extendedCap = FieldValue.increment(spec.impressionCap);
       tx.set(
         col.boostSessions.doc(boostId),
         {
@@ -277,7 +293,7 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
           type: activeType,
           expiresAt,
           priorityBonus: spec.priorityBonus,
-          impressionCap: spec.impressionCap,
+          impressionCap: extendedCap,
           consumedAmount: FieldValue.increment(1),
           extendedCount: FieldValue.increment(1),
           updatedAt: serverNow,
@@ -293,7 +309,7 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
           status: "active",
           expiresAt,
           priorityBonus: spec.priorityBonus,
-          impressionCap: spec.impressionCap,
+          impressionCap: extendedCap,
           updatedAt: serverNow,
         },
         { merge: true }
@@ -301,6 +317,7 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
       logBoostEventTx(tx, "boostExtended", uid, boostId, undefined, {
         type: activeType,
         expiresAt: expiresAt.toISOString(),
+        addedImpressionCap: spec.impressionCap,
       });
       return {
         success: true,

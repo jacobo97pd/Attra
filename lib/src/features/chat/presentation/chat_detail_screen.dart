@@ -13,6 +13,7 @@ import '../../chat_game/domain/chat_game.dart';
 import '../../connection_lab/presentation/ai_compatibility_screen.dart';
 import '../../connection_lab/presentation/anti_ghosting_coach_screen.dart';
 import '../../connection_lab/presentation/chat_ai_challenge_card.dart';
+import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../connection_lab/presentation/date_planner_screen.dart';
 import '../../connection_lab/presentation/demo_challenge_screen.dart';
 import '../../date_plans/data/date_plan_service.dart';
@@ -84,7 +85,12 @@ class ChatDetailScreen extends StatefulWidget {
     this.safeDatePlanEnabled = false,
     this.safeDateAiRiskEnabled = false,
     this.safeDateSafePlacesEnabled = false,
+    this.onOpenUpgrade,
   });
+
+  /// Abre el paywall cuando el backend rechaza un minijuego por el límite
+  /// diario del plan. Opcional: si no llega, el aviso explica el límite igual.
+  final VoidCallback? onOpenUpgrade;
 
   final String chatId;
   final String currentUid;
@@ -206,9 +212,66 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   DateTime? _activeGameEndsAt;
   bool _finishingGame = false;
 
-  /// La burbuja del reto reporta su estado activo. Al vencer, cierra el reto.
+  /// Qué fallaba: la suscripción a la sesión y el temporizador de cierre vivían
+  /// DENTRO de la burbuja del reto. Como la lista de mensajes es perezosa, al
+  /// hacer scroll la burbuja se destruía, el temporizador moría con ella y
+  /// `finishChatGame` no se llamaba nunca: el veredicto de la IA no llegaba y la
+  /// sesión se quedaba colgada en "active" hasta que alguien volviera a verla.
+  /// Ahora la sesión se observa desde la pantalla, que sobrevive al scroll.
+  String? _trackedGameSessionId;
+  StreamSubscription<ChatGameSession?>? _gameSub;
+  Timer? _gameTicker;
+
+  /// Empieza a vigilar la sesión de duelo más reciente del chat (idempotente).
+  void _trackGameSession(String? sessionId) {
+    if (sessionId == _trackedGameSessionId) return;
+    _trackedGameSessionId = sessionId;
+    _gameSub?.cancel();
+    _gameSub = null;
+    if (sessionId == null || sessionId.isEmpty) {
+      _gameTicker?.cancel();
+      _gameTicker = null;
+      _onGameActive(null, null);
+      return;
+    }
+    _gameSub = widget.chatService
+        .observeGameSession(widget.chatId, sessionId)
+        .listen(_onTrackedSession);
+  }
+
+  void _onTrackedSession(ChatGameSession? session) {
+    if (!mounted) return;
+    final bool active = session != null && session.status.isActive;
+    _onGameActive(active ? session.id : null, active ? session.endsAt : null);
+    if (active) {
+      _gameTicker ??=
+          Timer.periodic(const Duration(seconds: 1), (_) => _checkGameTimeUp());
+      _checkGameTimeUp();
+    } else {
+      _gameTicker?.cancel();
+      _gameTicker = null;
+    }
+  }
+
+  /// Cierra el reto en cuanto vence el tiempo, esté o no visible la tarjeta.
+  void _checkGameTimeUp() {
+    final String? id = _activeGameSessionId;
+    final DateTime? endsAt = _activeGameEndsAt;
+    if (id == null || endsAt == null) return;
+    if (DateTime.now().isBefore(endsAt)) return;
+    _gameTicker?.cancel();
+    _gameTicker = null;
+    _finishGame(id);
+  }
+
+  /// Guarda la sesión activa (para etiquetar los mensajes de esos 5 minutos).
   void _onGameActive(String? sessionId, DateTime? endsAt) {
     if (_activeGameSessionId == sessionId && _activeGameEndsAt == endsAt) {
+      return;
+    }
+    if (!mounted) {
+      _activeGameSessionId = sessionId;
+      _activeGameEndsAt = endsAt;
       return;
     }
     setState(() {
@@ -242,6 +305,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void dispose() {
     _recordTimer?.cancel();
+    _gameTicker?.cancel();
+    _gameSub?.cancel();
     _recorder.dispose();
     _voicePlayer.dispose();
     _inputFocus.dispose();
@@ -540,6 +605,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       onCoffeeChallenge: widget.chatGameEnabled
           ? () => _startChatGameFlow(canSend, mode: 'coffee_challenge')
           : null,
+      // El hub de juegos se quedó sin entradas al reordenar la navegación: el
+      // menú de juegos del chat vuelve a ofrecerlo desde cualquier conversación.
+      onOpenGamesHub: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const ConversationGamesScreen(),
+        ),
+      ),
       showQuickQuestion: widget.icebreakersEnabled,
       showThisOrThat: widget.thisOrThatEnabled,
     );
@@ -578,7 +650,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     try {
       await widget.chatService.startChatGame(chatId: widget.chatId, mode: mode);
     } on ChatServiceException catch (e) {
-      _snack(e.message);
+      _handleGameError(e, 'No se pudo iniciar el reto.');
     } catch (_) {
       _snack('No se pudo iniciar el reto.');
     }
@@ -624,7 +696,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       );
       _logMessageMetrics();
     } on ChatServiceException catch (e) {
-      _snack(e.message);
+      _handleGameError(e, 'No se pudo iniciar Doble Respuesta.');
     } catch (_) {
       _snack('No se pudo iniciar Doble Respuesta.');
     }
@@ -739,7 +811,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       );
       _logMessageMetrics();
     } on ChatServiceException catch (e) {
-      _snack(e.message);
+      _handleGameError(e, 'No se pudo iniciar Dos Verdades.');
     } catch (_) {
       _snack('No se pudo iniciar Dos Verdades.');
     }
@@ -816,6 +888,52 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Error de un minijuego. Qué fallaba: el backend rechaza con
+  /// `resource-exhausted` cuando se agota el cupo diario del plan (Free: 1 al
+  /// día, Plus: 5, Pro: ilimitado) y el cliente lo pintaba como un snackbar
+  /// genérico sin acentos: parecía que el juego estaba roto, no que fuera un
+  /// límite del plan. Ahora se explica y se ofrece el paywall.
+  void _handleGameError(ChatServiceException e, String fallback) {
+    if (e.code == 'resource-exhausted') {
+      _showGameLimitDialog();
+      return;
+    }
+    _snack(e.message.isEmpty ? fallback : e.message);
+  }
+
+  void _showGameLimitDialog() {
+    if (!mounted) return;
+    final VoidCallback? upgrade = widget.onOpenUpgrade;
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: context.colors.surface,
+        title: const Text('Has agotado tus minijuegos de hoy'),
+        content: const Text(
+          'Tu plan incluye un número limitado de minijuegos al día (Doble '
+          'respuesta y Dos verdades y una mentira).\n\nMañana vuelves a tener '
+          'partidas, o pasa a Plus para jugar más cada día y a Pro para '
+          'jugar sin límite.\n\nMientras tanto puedes seguir con el Duelo de '
+          'Química, Attra Spark y las aperturas guiadas: no consumen cupo.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
+          ),
+          if (upgrade != null)
+            FilledButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                upgrade();
+              },
+              child: const Text('Ver planes'),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openProfile() async {
@@ -1536,6 +1654,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             .length;
         _journey = _deriveJourney(messages, persistedStatus: persistedStatus);
 
+        // Vigila el duelo más reciente desde la PANTALLA (no desde la burbuja):
+        // así el cierre por tiempo se dispara aunque la tarjeta esté fuera de
+        // pantalla. Fuera del ciclo de build para no llamar a setState durante él.
+        String? latestGameSession;
+        for (final ChatMessage m in messages) {
+          if (m.type.isChatGame && (m.gameSessionId ?? '').isNotEmpty) {
+            latestGameSession = m.gameSessionId;
+          }
+        }
+        if (latestGameSession != _trackedGameSessionId) {
+          final String? next = latestGameSession;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _trackGameSession(next);
+          });
+        }
+
         // Reconciliación: el stream confirma los optimistas por su id real.
         final Set<String> streamIds =
             messages.map((ChatMessage m) => m.id).toSet();
@@ -1632,8 +1766,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 sessionId: m.gameSessionId!,
                 currentUid: widget.currentUid,
                 chatService: widget.chatService,
-                onActive: _onGameActive,
-                onTimeUp: _finishGame,
                 onAbandon: (String sid) => widget.chatService
                     .abandonChatGame(chatId: widget.chatId, sessionId: sid),
               );
@@ -1648,16 +1780,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
 /// Tarjeta del "Duelo de Química" dentro del chat. Observa la sesión en vivo y
 /// pinta el estado: invitación (aceptar/rechazar), reto activo (cuenta atrás) y
-/// resultado de la IA. Reporta el estado activo al padre (para etiquetar
-/// mensajes) y dispara el cierre cuando vence el tiempo.
+/// resultado de la IA.
+///
+/// SOLO presenta: el seguimiento de la sesión activa y el cierre por tiempo
+/// viven en la pantalla, porque esta tarjeta se destruye al salir del viewport
+/// y con ella moría el temporizador que cerraba el reto.
 class _ChatGameBubble extends StatefulWidget {
   const _ChatGameBubble({
     required this.chatId,
     required this.sessionId,
     required this.currentUid,
     required this.chatService,
-    required this.onActive,
-    required this.onTimeUp,
     required this.onAbandon,
   });
 
@@ -1665,8 +1798,6 @@ class _ChatGameBubble extends StatefulWidget {
   final String sessionId;
   final String currentUid;
   final ChatService chatService;
-  final void Function(String? sessionId, DateTime? endsAt) onActive;
-  final Future<void> Function(String sessionId) onTimeUp;
   final Future<void> Function(String sessionId) onAbandon;
 
   @override
@@ -1678,7 +1809,6 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
   StreamSubscription<ChatGameSession?>? _sub;
   Timer? _ticker;
   bool _responding = false;
-  bool _timeUpSent = false;
 
   @override
   void initState() {
@@ -1686,26 +1816,17 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
     _sub = widget.chatService
         .observeGameSession(widget.chatId, widget.sessionId)
         .listen(_onSession);
+    // Solo refresca la cuenta atrás visible; el cierre lo dispara la pantalla.
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       final ChatGameSession? s = _session;
-      if (s != null && s.status.isActive) {
-        setState(() {});
-        if (s.secondsLeft() <= 0 && !_timeUpSent) {
-          _timeUpSent = true;
-          widget.onTimeUp(s.id);
-        }
-      }
+      if (s != null && s.status.isActive) setState(() {});
     });
   }
 
   void _onSession(ChatGameSession? s) {
     if (!mounted) return;
     setState(() => _session = s);
-    // Reporta al padre el estado activo (para etiquetar mensajes / cerrar).
-    final bool active = s != null && s.status.isActive;
-    widget.onActive(active ? s.id : null, active ? s.endsAt : null);
-    if (s == null || !s.status.isActive) _timeUpSent = false;
   }
 
   @override

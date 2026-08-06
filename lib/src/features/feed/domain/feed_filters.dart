@@ -92,8 +92,17 @@ class FeedFilters {
     if (religion != null) n++;
     if (verifiedOnly) n++;
     if (_heightActive) n++;
+    // Las búsquedas IA NO se contaban: son los filtros más agresivos (dejan el
+    // feed solo con quien supera el umbral, y pueden vaciarlo), pero el badge
+    // de "filtros activos" marcaba 0 y el usuario no veía que los tenía puestos.
+    if (aiSearchActive) n++;
     return n;
   }
+
+  /// True si hay alguna búsqueda IA pedida (por descripción o por foto de
+  /// referencia). Cuenta como UN filtro aunque se usen las dos a la vez.
+  bool get aiSearchActive =>
+      sortByVisualReference || promptQuery.trim().isNotEmpty;
 
   FeedFilters copyWith({
     int? minAge,

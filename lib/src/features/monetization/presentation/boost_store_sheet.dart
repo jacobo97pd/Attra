@@ -94,18 +94,21 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     super.initState();
     _boosts = widget.user?.boostBalance ?? 0;
     _swipes = widget.user?.swipeBalance ?? 0;
+    // Saldos confirmados por el BACKEND durante esta sesión (compra o
+    // activación). Mandan sobre los de `AppUser`, que se recarga de forma
+    // asíncrona y va por detrás: al reabrir la hoja tras activar un Boost, el
+    // contador volvía al valor de ANTES de gastarlo.
+    widget.purchases?.addListener(_onPurchasesChanged);
+    _syncBalancesFromRouter();
     final IapService? shared = widget.iapService;
     if (shared != null) {
       // El enrutador de sesión ya entrega estos productos y ya tiene sus
-      // precios cargados: aquí solo se escucha para reflejar busy/errores...
+      // precios cargados: aquí solo se escucha para reflejar busy/errores; el
+      // saldo resultante llega por el enrutador. Sin esto la compra se abonaba
+      // en el servidor pero los contadores de la hoja seguían mostrando el
+      // valor con el que se abrió (0), y parecía que no había servido de nada.
       _iap = shared..addListener(_onIap);
       _iap.clearError();
-      // ...y el saldo resultante, que llega por el enrutador. Sin esto la
-      // compra se abonaba en el servidor pero los contadores de la hoja
-      // seguían mostrando el valor con el que se abrió (0), y parecía que la
-      // compra no había servido de nada.
-      widget.purchases?.addListener(_onPurchasesChanged);
-      _syncBalancesFromRouter();
       return;
     }
     _ownsIap = true;
@@ -133,7 +136,8 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     }
   }
 
-  /// Copia los saldos que el BACKEND confirmó en la última entrega.
+  /// Copia los saldos que el BACKEND confirmó por última vez en esta sesión
+  /// (entrega de una compra o activación de un Boost).
   void _syncBalancesFromRouter() {
     final PurchaseDeliveryRouter? router = widget.purchases;
     if (router == null) return;
@@ -183,6 +187,13 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
         platform: _platform(),
         verificationData: purchase.verificationData.serverVerificationData,
       );
+      // El saldo confirmado se anota también en la sesión: si la hoja se cierra
+      // y se vuelve a abrir, no se repinta el de `AppUser` (aún sin recargar).
+      if (def.consumableKind == 'boost') {
+        widget.purchases?.noteBoostBalance(balance);
+      } else {
+        widget.purchases?.noteSwipeBalance(balance);
+      }
       if (!mounted) return const IapDeliveryResult(delivered: true);
       setState(() {
         if (def.consumableKind == 'boost') {
@@ -195,7 +206,16 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
       widget.onChanged?.call();
       return const IapDeliveryResult(delivered: true);
     } on BoostServiceException catch (e) {
-      return IapDeliveryResult(delivered: false, message: e.message);
+      // Un rechazo DEFINITIVO (producto fuera del catálogo del servidor, recibo
+      // ya canjeado por otra cuenta) se devolvía como temporal: la transacción
+      // no se finalizaba nunca, la tienda la reencolaba en cada arranque y en
+      // Android el consumible no se consumía, así que ni siquiera se podía
+      // recomprar. Igual que en la ruta de suscripciones, se marca permanente.
+      return IapDeliveryResult(
+        delivered: false,
+        permanent: e.isPermanent,
+        message: e.message,
+      );
     }
   }
 
@@ -217,6 +237,10 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
           await widget.service.activateBoost(type: type);
       if (r.success) {
         setState(() => _boosts = r.remainingBoosts);
+        // El saldo restante lo confirma el backend: se guarda en la sesión para
+        // que al reabrir la hoja no se pinte otra vez el de `AppUser` (que aún
+        // no se ha recargado y mostraría el Boost como no gastado).
+        widget.purchases?.noteBoostBalance(r.remainingBoosts);
         _snack(type == BoostType.superboost
             ? '¡Superboost activado 24h!'
             : '¡Boost activado!');
@@ -271,7 +295,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
                 builder: (_, AsyncSnapshot<ActiveBoost?> snap) {
                   final ActiveBoost? b = snap.data;
                   if (b == null) return const SizedBox.shrink();
-                  return _ActiveBoostCard(boost: b);
+                  return _ActiveBoostCard(boost: b, service: widget.service);
                 },
               ),
 
@@ -350,8 +374,9 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
 }
 
 class _ActiveBoostCard extends StatefulWidget {
-  const _ActiveBoostCard({required this.boost});
+  const _ActiveBoostCard({required this.boost, required this.service});
   final ActiveBoost boost;
+  final BoostService service;
 
   @override
   State<_ActiveBoostCard> createState() => _ActiveBoostCardState();
@@ -360,18 +385,55 @@ class _ActiveBoostCard extends StatefulWidget {
 class _ActiveBoostCardState extends State<_ActiveBoostCard> {
   Timer? _t;
 
+  /// Refresco de las métricas. El backend las va acumulando mientras el Boost
+  /// corre, así que se vuelven a pedir cada poco (no cada segundo como el
+  /// contador: sería una llamada por segundo a la Cloud Function).
+  Timer? _metricsTimer;
+  BoostSummary? _summary;
+
+  static const Duration _metricsInterval = Duration(seconds: 45);
+
   @override
   void initState() {
     super.initState();
     _t = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
+    _loadSummary();
+    _metricsTimer = Timer.periodic(_metricsInterval, (_) => _loadSummary());
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActiveBoostCard old) {
+    super.didUpdateWidget(old);
+    // Otro Boost (se activó uno nuevo): las métricas anteriores ya no son suyas.
+    if (old.boost.boostId != widget.boost.boostId) {
+      _summary = null;
+      _loadSummary();
+    }
   }
 
   @override
   void dispose() {
     _t?.cancel();
+    _metricsTimer?.cancel();
     super.dispose();
+  }
+
+  /// Métricas reales del Boost (getBoostSummary). Existían en backend y en el
+  /// servicio, pero ninguna pantalla las pedía: el usuario pagaba por
+  /// visibilidad y no llegaba a ver nunca qué le había dado.
+  Future<void> _loadSummary() async {
+    final String boostId = widget.boost.boostId.trim();
+    if (boostId.isEmpty) return;
+    try {
+      final BoostSummary summary =
+          await widget.service.getBoostSummary(boostId);
+      if (mounted) setState(() => _summary = summary);
+    } catch (_) {
+      // Sin métricas la tarjeta sigue mostrando el temporizador y las
+      // impresiones del propio documento del Boost: no se molesta al usuario.
+    }
   }
 
   @override
@@ -383,6 +445,9 @@ class _ActiveBoostCardState extends State<_ActiveBoostCard> {
     final String mmss = left.inHours > 0
         ? '${left.inHours}h ${(left.inMinutes % 60)}m'
         : '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+    final BoostSummary? summary = _summary;
+    final int impressions =
+        summary?.deliveredImpressions ?? widget.boost.deliveredImpressions;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(14),
@@ -390,18 +455,82 @@ class _ActiveBoostCardState extends State<_ActiveBoostCard> {
         gradient: const LinearGradient(colors: AppColors.action),
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const Icon(Icons.bolt_rounded, color: Colors.white),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text('Boost activo — más visibilidad',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700)),
+          Row(
+            children: <Widget>[
+              const Icon(Icons.bolt_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Boost activo — más visibilidad',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+              Text(mmss,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w800)),
+            ],
           ),
-          Text(mmss,
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              _BoostMetric(
+                  icon: Icons.visibility_rounded,
+                  label: 'Vistas',
+                  value: impressions),
+              _BoostMetric(
+                  icon: Icons.person_search_rounded,
+                  label: 'Perfil',
+                  value: summary?.profileOpens ?? 0),
+              _BoostMetric(
+                  icon: Icons.favorite_rounded,
+                  label: 'Likes',
+                  value: summary?.likesReceived ?? 0),
+              _BoostMetric(
+                  icon: Icons.bolt_rounded,
+                  label: 'Matches',
+                  value: summary?.matchesGenerated ?? 0),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Resultados de este Boost, en directo.',
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85), fontSize: 11),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Una métrica del Boost activo (vistas, visitas al perfil, likes, matches).
+class _BoostMetric extends StatelessWidget {
+  const _BoostMetric(
+      {required this.icon, required this.label, required this.value});
+
+  final IconData icon;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: <Widget>[
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(height: 3),
+          Text('$value',
               style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w800)),
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1)),
+          Text(label,
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85), fontSize: 10.5)),
         ],
       ),
     );

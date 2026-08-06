@@ -1,6 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+// PlatformException + Uint8List: el picker falla con PlatformException cuando
+// el usuario deniega el acceso a las fotos.
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../theme/app_colors.dart';
@@ -8,6 +9,7 @@ import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_image.dart';
 import '../../../widgets/attra_loader.dart';
 import '../data/ai_visual_service.dart';
+import '../domain/ai_reference_state.dart';
 import '../domain/profile_insight.dart';
 
 /// Pantalla de IA visual de Attra Pro. Gating en cascada:
@@ -44,58 +46,242 @@ class AiVisualScreen extends StatefulWidget {
   State<AiVisualScreen> createState() => _AiVisualScreenState();
 }
 
+/// Aviso a pie de pantalla (sin red, plan caducado, permiso de fotos…). Antes
+/// todos estos casos acababan en una pantalla muda o en un snackbar que ya se
+/// había ido: el usuario no sabía por qué la IA no hacía nada.
+class _Issue {
+  _Issue({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+}
+
 class _AiVisualScreenState extends State<AiVisualScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _busy = false;
+  bool _loading = false;
   List<ProfileInsight> _insights = const <ProfileInsight>[];
+
+  /// Estado REAL de la referencia (lo dice el backend, no la existencia del
+  /// fichero en Storage).
+  AiReferenceState _reference = AiReferenceState.empty;
+
+  /// Las sugerencias ya se han pedido al menos una vez (para distinguir
+  /// "todavía cargando" de "el backend no devolvió ninguna").
+  bool _insightsLoaded = false;
+  String? _insightsError;
+
+  _Issue? _issue;
+
   // Estado local de consentimiento: permite refrescar la pantalla al instante
   // tras conceder, sin tener que salir y volver a entrar.
   late bool _hasConsent;
-  String? _referenceUrl;
 
   @override
   void initState() {
     super.initState();
     _hasConsent = widget.hasConsent;
     if (widget.isPro && _hasConsent) {
-      _loadInsights();
-      _loadReference();
+      _load();
     }
+  }
+
+  /// Carga estado de referencia + sugerencias, clasificando los errores para
+  /// poder explicárselos al usuario.
+  Future<void> _load() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _issue = null;
+      });
+    }
+    try {
+      final AiReferenceState state =
+          await widget.service.loadReferenceState(widget.uid);
+      if (!mounted) return;
+      setState(() => _reference = state);
+      _issueForReference(state);
+    } on AiVisualException catch (e) {
+      if (mounted) setState(() => _issue = _issueFor(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+    await _loadInsights();
+  }
+
+  /// Traduce un estado no utilizable de la referencia a un aviso accionable.
+  void _issueForReference(AiReferenceState state) {
+    if (state.status == AiReferenceStatus.denied) {
+      // El backend distingue "no eres Pro / Pro caducado" de "consentimiento"
+      // o "IA deshabilitada" solo por el texto; el CTA de planes únicamente
+      // tiene sentido en el primer caso.
+      final bool isPlan = state.explanation.toLowerCase().contains('pro');
+      setState(() => _issue = _Issue(
+            icon: Icons.workspace_premium_outlined,
+            title: 'IA visual no disponible',
+            message: state.explanation,
+            actionLabel: isPlan ? 'Ver planes' : null,
+            onAction: isPlan ? widget.onUpgrade : null,
+          ));
+      return;
+    }
+    if (state.status == AiReferenceStatus.unknown) {
+      setState(() => _issue = _Issue(
+            icon: Icons.wifi_off_rounded,
+            title: 'Sin conexión con la IA',
+            message: state.explanation,
+            actionLabel: 'Reintentar',
+            onAction: _load,
+          ));
+      return;
+    }
+    setState(() => _issue = null);
+  }
+
+  _Issue _issueFor(AiVisualException e) {
+    if (e.isNetwork) {
+      return _Issue(
+        icon: Icons.wifi_off_rounded,
+        title: 'Sin conexión',
+        message: e.message,
+        actionLabel: 'Reintentar',
+        onAction: _load,
+      );
+    }
+    if (e.isPlan) {
+      return _Issue(
+        icon: Icons.workspace_premium_outlined,
+        title: 'Tu plan no cubre la IA visual',
+        message: e.message,
+        actionLabel: 'Ver planes',
+        onAction: widget.onUpgrade,
+      );
+    }
+    return _Issue(
+      icon: Icons.error_outline_rounded,
+      title: 'No se pudo completar',
+      message: e.message,
+      actionLabel: 'Reintentar',
+      onAction: _load,
+    );
   }
 
   Future<void> _loadInsights() async {
     try {
       final List<ProfileInsight> list = await widget.service.getInsights();
-      if (mounted) setState(() => _insights = list);
-    } catch (_) {/* silencioso */}
-  }
-
-  Future<void> _loadReference() async {
-    final String? url = await widget.service.getReferenceUrl(widget.uid);
-    if (mounted) setState(() => _referenceUrl = url);
+      if (!mounted) return;
+      setState(() {
+        _insights = list;
+        _insightsLoaded = true;
+        _insightsError = null;
+      });
+    } on AiVisualException catch (e) {
+      // Antes se tragaba el error en silencio y la sección desaparecía sin más.
+      if (!mounted) return;
+      setState(() {
+        _insightsLoaded = true;
+        _insightsError = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _insightsLoaded = true;
+        _insightsError = 'No se pudieron cargar las sugerencias.';
+      });
+    }
   }
 
   Future<void> _pickReference() async {
-    final XFile? file = await _picker.pickImage(
-        source: ImageSource.gallery, maxWidth: 1280, imageQuality: 85);
-    if (file == null || !mounted) return;
-    final Uint8List bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() => _busy = true);
+    final XFile? file;
     try {
-      final String status = await runWithAttraLoader(
+      file = await _picker.pickImage(
+          source: ImageSource.gallery, maxWidth: 1280, imageQuality: 85);
+    } on PlatformException catch (e) {
+      // Sin permiso de fotos el picker lanzaba y el botón se quedaba mudo: el
+      // usuario pulsaba y no ocurría absolutamente nada.
+      final bool denied = e.code == 'photo_access_denied' ||
+          e.code == 'camera_access_denied' ||
+          e.code == 'permission';
+      setState(() => _issue = _Issue(
+            icon: Icons.no_photography_outlined,
+            title: denied
+                ? 'Sin acceso a tus fotos'
+                : 'No se pudo abrir la galería',
+            message: denied
+                ? 'Attra necesita permiso para acceder a tus fotos. Actívalo en '
+                    'los ajustes del sistema (Attra → Fotos) y vuelve a intentarlo.'
+                : 'No hemos podido abrir la galería (${e.code}). Inténtalo de nuevo.',
+          ));
+      return;
+    } catch (_) {
+      setState(() => _issue = _Issue(
+            icon: Icons.no_photography_outlined,
+            title: 'No se pudo abrir la galería',
+            message: 'Inténtalo de nuevo en unos segundos.',
+          ));
+      return;
+    }
+    if (file == null || !mounted) return; // el usuario canceló
+
+    final Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      _snack('No se pudo leer esa foto. Prueba con otra.');
+      return;
+    }
+    if (!mounted) return;
+    if (bytes.isEmpty) {
+      // Respuesta vacía del picker (fichero corrupto o en la nube sin
+      // descargar): subirlo daría un análisis inútil.
+      _snack('Esa foto está vacía o no se pudo descargar. Prueba con otra.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _issue = null;
+      _reference = _reference.copyWith(status: AiReferenceStatus.processing);
+    });
+    try {
+      final AiReferenceStatus status = await runWithAttraLoader(
         context,
         () => widget.service.analyzeReference(uid: widget.uid, bytes: bytes),
         message: 'Analizando tu referencia…',
       );
-      if (mounted) {
-        _snack(status == 'pending_provider'
-            ? 'Referencia guardada. El análisis visual se activará al integrar el motor de IA.'
-            : 'Referencia analizada.');
-        _loadReference(); // muestra la nueva miniatura
+      final String? url = await widget.service.getReferenceUrl(widget.uid);
+      if (!mounted) return;
+      setState(
+          () => _reference = AiReferenceState(status: status, photoUrl: url));
+      if (status == AiReferenceStatus.ready) {
+        _snack('Referencia lista: ya puedes buscar perfiles parecidos.');
+      } else {
+        // pending_provider: la foto está guardada pero NO hay huella visual.
+        // Decir "referencia analizada" era mentira y la búsqueda no devolvía
+        // nada.
+        _snack('Foto guardada, pero el motor de IA no pudo analizarla.');
+        setState(() => _issue = _Issue(
+              icon: Icons.auto_awesome_outlined,
+              title: 'Análisis no disponible',
+              message: _reference.explanation,
+              actionLabel: 'Probar otra foto',
+              onAction: _pickReference,
+            ));
       }
     } on AiVisualException catch (e) {
+      if (!mounted) return;
+      setState(() => _issue = _issueFor(e));
       _snack(e.message);
+      await _load();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -197,8 +383,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
                       _busy = false;
                       _hasConsent = true; // refresca la pantalla al instante
                     });
-                    _loadInsights();
-                    _loadReference();
+                    _load();
                   }
                 },
           child: const Text('Doy mi consentimiento'),
@@ -208,10 +393,13 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
   }
 
   Widget _active(BuildContext context) {
-    final bool hasRef = _referenceUrl != null;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: <Widget>[
+        if (_issue != null) ...<Widget>[
+          _IssueBanner(issue: _issue!),
+          const SizedBox(height: 14),
+        ],
         // ── 01 Tu foto de referencia ─────────────────────────────────────
         const _SectionHeader(
           number: '01',
@@ -220,13 +408,13 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
               'Sube la foto de alguien con el estilo que te atrae y la IA encontrará perfiles con una estética similar.',
         ),
         const SizedBox(height: 14),
-        _ReferencePhoto(url: _referenceUrl),
+        _ReferencePhoto(state: _reference, loading: _loading),
         const SizedBox(height: 12),
-        _AnalysisPanel(hasRef: hasRef),
+        _AnalysisPanel(state: _reference, loading: _loading),
         const SizedBox(height: 12),
         _OutlinedAction(
           icon: Icons.image_outlined,
-          label: hasRef
+          label: _reference.hasPhoto
               ? 'Cambiar foto de referencia'
               : 'Subir foto de referencia',
           loading: _busy,
@@ -280,21 +468,30 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
         ),
 
         // Mejoras reales del perfil (insights del backend).
-        if (_insights.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 18),
-          const _SubHeader('Mejoras sugeridas para tu perfil'),
-          const SizedBox(height: 8),
-          ..._insights.map((ProfileInsight i) => _InsightRow(insight: i)),
-        ],
+        const SizedBox(height: 18),
+        const _SubHeader('Mejoras sugeridas para tu perfil'),
+        const SizedBox(height: 8),
+        ..._insightsSection(context),
 
         const SizedBox(height: 26),
         // ── 03 Buscar ────────────────────────────────────────────────────
         const _SectionHeader(number: '03', title: 'Buscar parecidos'),
         const SizedBox(height: 14),
         _SearchButton(
-          enabled: hasRef && !_busy,
+          enabled: _reference.canSearch && !_busy,
           onTap: _onSearchSimilar,
         ),
+        if (!_reference.canSearch && !_loading) ...<Widget>[
+          const SizedBox(height: 8),
+          Text(
+            _reference.explanation,
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: context.colors.textMuted),
+          ),
+        ],
         const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -328,9 +525,53 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
     );
   }
 
+  /// Sección de sugerencias: cargando / error / lista vacía / lista. Antes, si
+  /// el backend fallaba o no devolvía nada, la sección desaparecía sin decir
+  /// nada y parecía que la IA no hacía su trabajo.
+  List<Widget> _insightsSection(BuildContext context) {
+    if (!_insightsLoaded) {
+      return <Widget>[
+        Text('Analizando tu perfil…',
+            style: TextStyle(color: context.colors.textMuted)),
+      ];
+    }
+    if (_insightsError != null) {
+      return <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Icon(Icons.error_outline_rounded,
+                size: 18, color: AppColors.coral),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(_insightsError!,
+                  style: TextStyle(color: context.colors.textSecondary)),
+            ),
+            TextButton(
+                onPressed: _loadInsights, child: const Text('Reintentar')),
+          ],
+        ),
+      ];
+    }
+    if (_insights.isEmpty) {
+      return <Widget>[
+        Text(
+          'Ahora mismo no tenemos mejoras que sugerirte: tu perfil está completo.',
+          style: TextStyle(color: context.colors.textSecondary),
+        ),
+      ];
+    }
+    return _insights
+        .map((ProfileInsight i) => _InsightRow(insight: i))
+        .toList(growable: false);
+  }
+
   void _onSearchSimilar() {
-    if (_referenceUrl == null) {
-      _snack('Sube primero una foto de referencia.');
+    // La búsqueda solo funciona si el BACKEND tiene huella visual. Antes
+    // bastaba con que hubiera foto, así que se llevaba al usuario a un feed que
+    // no iba a devolver a nadie.
+    if (!_reference.canSearch) {
+      _snack(_reference.explanation);
       return;
     }
     // El motor de parecidos vive en el FEED (filtro "Solo parecidos a mi
@@ -349,15 +590,64 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
   }
 
   Future<void> _clearData() async {
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: const Text('¿Borrar tus datos de IA?'),
+            content: const Text(
+              'Eliminaremos tu huella visual del servidor y las fotos de '
+              'referencia que hayas subido. También retiramos tu consentimiento: '
+              'la búsqueda de parecidos dejará de funcionar hasta que vuelvas a '
+              'activarla.',
+            ),
+            actions: <Widget>[
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancelar')),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Borrar',
+                    style: TextStyle(color: AppColors.coral)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
     final NavigatorState nav = Navigator.of(context);
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      await widget.service.clearAiData();
+      // El borrado ahora incluye las fotos de Storage: antes solo se borraba la
+      // huella del backend y las fotos seguían ahí (y la pantalla las seguía
+      // enseñando como "Referencia cargada").
+      final AiDataDeletion result =
+          await widget.service.clearAiData(widget.uid);
       await widget.onRevokeConsent();
-      _snack('Datos de IA borrados.');
+      if (!mounted) return;
+      setState(() {
+        _reference = AiReferenceState.empty;
+        _insights = const <ProfileInsight>[];
+        _insightsLoaded = false;
+        _issue = null;
+      });
+      messenger.showSnackBar(SnackBar(
+        content: Text(result.isComplete
+            ? 'Datos de IA borrados: huella visual y fotos de referencia eliminadas.'
+            : 'Huella visual borrada. No hemos podido eliminar todas las fotos '
+                'de referencia del almacenamiento; vuelve a intentarlo más tarde.'),
+      ));
       nav.maybePop();
+    } on AiVisualException catch (e) {
+      if (!mounted) return;
+      setState(() => _issue = _issueFor(e));
+      messenger.showSnackBar(
+          SnackBar(content: Text('No se pudo borrar: ${e.message}')));
     } catch (_) {
-      _snack('No se pudo borrar.');
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(
+          content: Text('No se pudo borrar. Inténtalo de nuevo.')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -365,6 +655,55 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
 }
 
 // ── Widgets de la pantalla premium de IA visual ────────────────────────────
+
+class _IssueBanner extends StatelessWidget {
+  const _IssueBanner({required this.issue});
+  final _Issue issue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.coral.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(issue.icon, size: 20, color: AppColors.coral),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(issue.title,
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(issue.message,
+                    style: TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 13,
+                        height: 1.3)),
+                if (issue.actionLabel != null && issue.onAction != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: issue.onAction,
+                      child: Text(issue.actionLabel!),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(
@@ -417,11 +756,14 @@ class _SubHeader extends StatelessWidget {
 }
 
 class _ReferencePhoto extends StatelessWidget {
-  const _ReferencePhoto({required this.url});
-  final String? url;
+  const _ReferencePhoto({required this.state, required this.loading});
+  final AiReferenceState state;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
+    final String? url = state.photoUrl;
+    final bool hasPhoto = url != null && url.isNotEmpty;
     return AspectRatio(
       aspectRatio: 4 / 3,
       child: ClipRRect(
@@ -429,38 +771,17 @@ class _ReferencePhoto extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            if (url != null && url!.isNotEmpty)
+            if (hasPhoto)
               Positioned.fill(child: AttraImage(url: url))
             else
               _placeholder(context),
-            // Badge "Referencia cargada".
-            if (url != null && url!.isNotEmpty)
+            // Badge de estado: antes decía siempre "Referencia cargada" con
+            // solo existir el fichero, aunque no hubiera análisis detrás.
+            if (hasPhoto && !loading)
               Positioned(
                 left: 12,
                 bottom: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                        color: AppColors.attraRed.withValues(alpha: 0.6)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(Icons.check_circle_rounded,
-                          size: 13, color: AppColors.attraRed),
-                      SizedBox(width: 5),
-                      Text('Referencia cargada',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
+                child: _StatusBadge(state: state),
               ),
           ],
         ),
@@ -478,7 +799,10 @@ class _ReferencePhoto extends StatelessWidget {
             Icon(Icons.add_a_photo_outlined,
                 size: 40, color: context.colors.textMuted),
             const SizedBox(height: 8),
-            Text('Sube una foto de referencia',
+            Text(
+                loading
+                    ? 'Comprobando tu referencia…'
+                    : 'Sube una foto de referencia',
                 style: TextStyle(color: context.colors.textMuted)),
           ],
         ),
@@ -487,10 +811,52 @@ class _ReferencePhoto extends StatelessWidget {
   }
 }
 
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.state});
+  final AiReferenceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool ready = state.status == AiReferenceStatus.ready;
+    final IconData icon = ready
+        ? Icons.check_circle_rounded
+        : state.status == AiReferenceStatus.processing
+            ? Icons.hourglass_top_rounded
+            : Icons.error_outline_rounded;
+    final Color tint = ready ? AppColors.attraRed : AppColors.coral;
+    final String text = ready
+        ? 'Referencia lista'
+        : state.status == AiReferenceStatus.processing
+            ? 'Analizando…'
+            : 'Sin análisis';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tint.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 13, color: tint),
+          const SizedBox(width: 5),
+          Text(text,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
 /// Panel "qué analiza la IA" — VERAZ: estética, no rasgos biométricos.
 class _AnalysisPanel extends StatelessWidget {
-  const _AnalysisPanel({required this.hasRef});
-  final bool hasRef;
+  const _AnalysisPanel({required this.state, required this.loading});
+  final AiReferenceState state;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -524,9 +890,11 @@ class _AnalysisPanel extends StatelessWidget {
               label: 'Qué NO usa',
               value: 'Raza, etnia, salud, edad ni rasgos sensibles'),
           const _Sep(),
+          // Estado REAL (lo dice el backend). Antes bastaba con que existiera la
+          // foto para anunciar "Referencia lista ✓", aunque no hubiera huella
+          // visual y la búsqueda no fuera a devolver nada.
           _AnalysisRow(
-              label: 'Estado',
-              value: hasRef ? 'Referencia lista ✓' : 'Sin referencia aún'),
+              label: 'Estado', value: loading ? 'Comprobando…' : state.label),
         ],
       ),
     );
@@ -703,7 +1071,9 @@ class _SearchButton extends StatelessWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(999),
         child: InkWell(
-          onTap: enabled ? onTap : null,
+          // Deshabilitado visualmente, pero sigue siendo pulsable para poder
+          // EXPLICAR por qué no se puede buscar (antes no se enteraba nadie).
+          onTap: onTap,
           borderRadius: BorderRadius.circular(999),
           child: Container(
             height: 54,

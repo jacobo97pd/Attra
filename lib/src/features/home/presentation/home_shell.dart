@@ -504,6 +504,8 @@ class _HomeShellState extends State<HomeShell> {
         onLoadSeedProfiles: widget.onLoadSeedProfiles,
         matchService: widget.matchService,
         chatService: widget.chatService,
+        sparkService: widget.sparkService,
+        sparkEnabled: _entitlementController?.sparkEnabled ?? false,
         attrasBalance: attrasBalance,
         canComment: _entitlementController?.isPlusActive ?? false,
         reloadToken: _feedReloadToken,

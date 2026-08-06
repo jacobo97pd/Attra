@@ -25,6 +25,8 @@ import '../../safety/presentation/safety_actions.dart';
 import '../../social/domain/intent_mode.dart';
 import '../../monetization/data/boost_service.dart';
 import '../../monetization/domain/boost.dart';
+import '../../spark/data/spark_service.dart';
+import '../../spark/presentation/spark_game_screen.dart';
 import '../../stories/data/story_service.dart';
 import '../../stories/domain/story.dart';
 import '../../stories/presentation/stories_bar.dart';
@@ -39,6 +41,7 @@ import '../data/ranking_signals_repository.dart';
 import '../domain/boost_ranker.dart';
 import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
+import '../domain/liked_me_ranker.dart';
 import '../domain/ranking.dart';
 import '../domain/ranking_config.dart';
 import '../domain/slow_dating.dart';
@@ -53,6 +56,8 @@ class FeedScreen extends StatefulWidget {
     required this.user,
     required this.onLoadSeedProfiles,
     required this.matchService,
+    this.sparkService,
+    this.sparkEnabled = false,
     required this.chatService,
     this.attrasBalance = 0,
     this.canComment = false,
@@ -111,6 +116,12 @@ class FeedScreen extends StatefulWidget {
   final AppUser? user;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
   final MatchService matchService;
+
+  /// Attra Spark tras un match. El diálogo de match del feed no lo ofrecía
+  /// mientras que el de "Conexiones" sí: la misma acción se comportaba distinto
+  /// según de dónde vinieras.
+  final SparkService? sparkService;
+  final bool sparkEnabled;
   final ChatService chatService;
   final StoryService? storyService;
   final int attrasBalance;
@@ -177,6 +188,51 @@ enum _FeedActionKind {
   final String wireName;
 }
 
+/// Resultado de una búsqueda IA del feed (foto de referencia o descripción).
+///
+/// Antes estas búsquedas devolvían simplemente una lista vacía en TODOS los
+/// casos de fallo (motor caído, función sin desplegar, sin red, nadie supera el
+/// umbral) y el feed acababa en el estado genérico "No hay más personas por el
+/// momento": el usuario no podía saber que tenía un filtro IA vaciándole el
+/// feed ni por qué.
+enum _AiSearchStatus {
+  /// La IA respondió y hay resultados.
+  ok,
+
+  /// La IA respondió pero nadie supera el umbral de parecido/encaje.
+  noMatches,
+
+  /// El motor no devolvió ranking (deshabilitado, sin referencia, función no
+  /// desplegada, sin red...).
+  unavailable,
+
+  /// La llamada lanzó excepción.
+  failed,
+
+  /// Hay un filtro IA guardado pero el plan actual ya no lo incluye, así que NO
+  /// se ha aplicado (el feed va sin él).
+  notEntitled,
+}
+
+/// Estado de la búsqueda IA de la última carga (null = ninguna pedida).
+class _AiSearchState {
+  const _AiSearchState({
+    required this.byPrompt,
+    required this.status,
+    this.query = '',
+  });
+
+  /// true = búsqueda por descripción; false = por foto de referencia.
+  final bool byPrompt;
+  final _AiSearchStatus status;
+  final String query;
+
+  /// Etiqueta corta para el banner del feed.
+  String get label => byPrompt
+      ? (query.isEmpty ? 'Búsqueda por descripción' : '«$query»')
+      : 'Solo parecidos a mi referencia';
+}
+
 class _FeedRewindAction {
   const _FeedRewindAction({
     required this.index,
@@ -214,6 +270,11 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _rewinding = false;
   List<_FeedRewindAction> _rewindHistory = const <_FeedRewindAction>[];
   FeedFilters _filters = const FeedFilters();
+
+  /// Estado de la búsqueda IA de la última carga. null = no hay ninguna pedida.
+  /// Es lo que permite explicar un feed vacío causado por el filtro IA en vez
+  /// de soltar el genérico "No hay más personas por el momento".
+  _AiSearchState? _aiSearch;
 
   // Ubicación del dispositivo como RESPALDO cuando el perfil del usuario no tiene
   // coordenadas guardadas: así la distancia del feed siempre tiene un "yo".
@@ -289,15 +350,25 @@ class _FeedScreenState extends State<FeedScreen> {
   /// (>= [_kVisualThreshold]), ordenados de más a menos parecido.
   ///
   /// Si el motor no esta disponible, devuelve una lista vacia. Al aplicar el
-  /// filtro visual es peor mostrar el feed organico como falso positivo.
-  Future<List<SeedProfile>> _sortByVisualReference(
-      List<SeedProfile> profiles) async {
+  /// filtro visual es peor mostrar el feed organico como falso positivo. Ahora
+  /// devuelve TAMBIÉN el motivo, para que el estado vacío pueda explicarlo.
+  Future<({List<SeedProfile> profiles, _AiSearchStatus status})>
+      _sortByVisualReference(List<SeedProfile> profiles) async {
+    // Sin candidatos previos la culpa no es de la IA (son los otros filtros).
+    if (profiles.isEmpty) {
+      return (profiles: profiles, status: _AiSearchStatus.ok);
+    }
     try {
       final List<VisualMatch> ranking = await widget.aiVisualService!
           .getVisualMatches(profiles.map((SeedProfile p) => p.id).toList());
       // Motor no disponible (Vertex deshabilitado / sin referencia): sin falsos
       // positivos.
-      if (ranking.isEmpty) return const <SeedProfile>[];
+      if (ranking.isEmpty) {
+        return (
+          profiles: const <SeedProfile>[],
+          status: _AiSearchStatus.unavailable
+        );
+      }
 
       if (kDebugMode) {
         for (final VisualMatch m in ranking) {
@@ -314,12 +385,16 @@ class _FeedScreenState extends State<FeedScreen> {
           if (m.score >= _kVisualThreshold && byId.containsKey(m.uid))
             byId[m.uid]!,
       ];
-      return matches;
+      return (
+        profiles: matches,
+        status:
+            matches.isEmpty ? _AiSearchStatus.noMatches : _AiSearchStatus.ok,
+      );
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[IA visual] error al ordenar: $e');
       }
-      return const <SeedProfile>[];
+      return (profiles: const <SeedProfile>[], status: _AiSearchStatus.failed);
     }
   }
 
@@ -328,24 +403,39 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// FILTRA el feed dejando SOLO los que encajan con la descripción (prompt),
   /// ordenados por encaje. Si el motor no está disponible, devuelve vacío (mejor
-  /// que mostrar falsos positivos).
-  Future<List<SeedProfile>> _sortByPrompt(List<SeedProfile> profiles) async {
+  /// que mostrar falsos positivos) junto con el motivo, para poder explicárselo
+  /// al usuario en vez de dejarle un feed en blanco.
+  Future<({List<SeedProfile> profiles, _AiSearchStatus status})> _sortByPrompt(
+      List<SeedProfile> profiles) async {
+    if (profiles.isEmpty) {
+      return (profiles: profiles, status: _AiSearchStatus.ok);
+    }
     try {
       final List<PromptMatch> ranking = await widget.aiVisualService!
           .getPromptMatches(_filters.promptQuery.trim(),
               profiles.map((SeedProfile p) => p.id).toList());
-      if (ranking.isEmpty) return const <SeedProfile>[];
+      if (ranking.isEmpty) {
+        return (
+          profiles: const <SeedProfile>[],
+          status: _AiSearchStatus.unavailable
+        );
+      }
       final Map<String, SeedProfile> byId = <String, SeedProfile>{
         for (final SeedProfile p in profiles) p.id: p,
       };
-      return <SeedProfile>[
+      final List<SeedProfile> matches = <SeedProfile>[
         for (final PromptMatch m in ranking)
           if (m.score >= _kPromptThreshold && byId.containsKey(m.uid))
             byId[m.uid]!,
       ];
+      return (
+        profiles: matches,
+        status:
+            matches.isEmpty ? _AiSearchStatus.noMatches : _AiSearchStatus.ok,
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('[IA prompt] error: $e');
-      return const <SeedProfile>[];
+      return (profiles: const <SeedProfile>[], status: _AiSearchStatus.failed);
     }
   }
 
@@ -508,16 +598,26 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted) {
         return;
       }
+      // ¿Hay algún filtro IA PEDIDO? (independiente de si el plan lo permite).
+      // Se guarda para poder avisar de que un filtro IA guardado ya no se
+      // aplica: antes se ignoraba en silencio.
+      final String promptQuery = _filters.promptQuery.trim();
+      final bool aiEntitled =
+          widget.canUseVisualMatch && widget.aiVisualService != null;
       // Búsqueda visual (Pro): buscar tu "tipo" es GLOBAL → no restringe por
       // ubicación ni curación de Slow Dating; la IA evalúa a todos los candidatos.
-      final bool visualSearch = _filters.sortByVisualReference &&
-          widget.canUseVisualMatch &&
-          widget.aiVisualService != null;
+      final bool visualSearch = _filters.sortByVisualReference && aiEntitled;
       // Búsqueda por PROMPT (Pro): descripción en lenguaje natural. Como la
       // visual, es GLOBAL (no restringe por ubicación ni Slow Dating).
-      final bool promptSearch = _filters.promptQuery.trim().isNotEmpty &&
-          widget.canUseVisualMatch &&
-          widget.aiVisualService != null;
+      final bool promptSearch = promptQuery.isNotEmpty && aiEntitled;
+      _AiSearchState? aiState;
+      if (!aiEntitled && _filters.aiSearchActive) {
+        aiState = _AiSearchState(
+          byPrompt: promptQuery.isNotEmpty,
+          status: _AiSearchStatus.notEntitled,
+          query: promptQuery,
+        );
+      }
       // Cualquier búsqueda IA (foto o prompt) desactiva distancia/curación.
       final bool aiSearch = visualSearch || promptSearch;
       // Modo viajes: cuando viajas, el feed se CENTRA en el destino (se ignora
@@ -597,18 +697,30 @@ class _FeedScreenState extends State<FeedScreen> {
             );
       // Slow Dating (opt-in): cura el feed (menos perfiles, más afines e
       // intencionales). No se aplica en búsqueda visual (que es global).
+      // Se le pasan los boosts activos porque, al recortar a sus 12 perfiles
+      // por afinidad, borraba por completo el efecto del Boost pagado que
+      // BoostAwareRanker acababa de aplicar (ver SlowDatingRanker.maxBoostBonus).
       if (!aiSearch && (widget.user?.slowDatingEnabled ?? false)) {
         filtered = SlowDatingRanker.curate(
           profiles: filtered,
           me: widget.user,
+          activeBoosts: activeBoosts,
         );
       }
       // IA visual (Pro): ordena por parecido a la foto de referencia.
       if (visualSearch) {
-        filtered = await _sortByVisualReference(filtered);
+        final ({List<SeedProfile> profiles, _AiSearchStatus status}) res =
+            await _sortByVisualReference(filtered);
+        filtered = res.profiles;
+        aiState =
+            _AiSearchState(byPrompt: false, status: res.status, query: '');
       } else if (promptSearch) {
         // IA por prompt (Pro): deja solo los que encajan con la descripción.
-        filtered = await _sortByPrompt(filtered);
+        final ({List<SeedProfile> profiles, _AiSearchStatus status}) res =
+            await _sortByPrompt(filtered);
+        filtered = res.profiles;
+        aiState = _AiSearchState(
+            byPrompt: true, status: res.status, query: promptQuery);
       }
       // Plus/Pro: quién te ha dado like -> badge + prioridad al frente del feed.
       Set<String> likedMe = const <String>{};
@@ -623,15 +735,16 @@ class _FeedScreenState extends State<FeedScreen> {
         } catch (_) {
           likedMe = const <String>{};
         }
-        if (likedMe.isNotEmpty) {
-          // Partición estable: primero quienes te dieron like, resto después.
-          final List<SeedProfile> liked = <SeedProfile>[];
-          final List<SeedProfile> rest = <SeedProfile>[];
-          for (final SeedProfile p in filtered) {
-            (likedMe.contains(p.id) ? liked : rest).add(p);
-          }
-          filtered = <SeedProfile>[...liked, ...rest];
-        }
+        // Antes se reparticionaba SIEMPRE la lista (todos los "te dio like"
+        // al frente). Con una búsqueda IA activa eso reventaba el orden por
+        // encaje: el feed decía estar ordenado por parecido/descripción y en
+        // realidad mandaba el like. Ahora, con IA, el like solo EMPUJA unas
+        // posiciones dentro de ese orden; sin IA se mantiene "al frente".
+        filtered = LikedMeRanker.apply(
+          profiles: filtered,
+          likedMeUids: likedMe,
+          nudgePositions: aiSearch ? LikedMeRanker.defaultNudge : null,
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -639,6 +752,7 @@ class _FeedScreenState extends State<FeedScreen> {
         _likedMeUids = likedMe;
         _dislikedUids = disliked;
         _activeBoostsByUid = activeBoosts;
+        _aiSearch = aiState;
         _profiles = filtered;
         _index = 0;
         _pendingAd = false;
@@ -994,6 +1108,11 @@ class _FeedScreenState extends State<FeedScreen> {
                 ? null
                 : (String text) => widget.chatService
                     .sendMessage(chatId: matchChatId, text: text),
+            onPlaySpark: (widget.sparkEnabled &&
+                    widget.sparkService != null &&
+                    matchChatId.isNotEmpty)
+                ? () => _playSpark(matchChatId, profile)
+                : null,
           );
           break;
         case MatchOutcome.limitReached:
@@ -1017,10 +1136,37 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  /// Attra Spark (juego de 5 min) recién creado el match.
+  Future<void> _playSpark(String matchId, SeedProfile profile) async {
+    final SparkService? spark = widget.sparkService;
+    if (spark == null || matchId.isEmpty) return;
+    try {
+      final String sessionId = await spark.invite(
+        matchId: matchId,
+        hostUid: _uid,
+        guestUid: profile.id,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => SparkGameScreen(
+          service: spark,
+          matchId: matchId,
+          sessionId: sessionId,
+          currentUid: _uid,
+          otherName: profile.displayName,
+          onOpenChat: () => _openChat(matchId, profile),
+        ),
+      ));
+    } on Exception {
+      if (mounted) _snack('No se pudo iniciar el juego.');
+    }
+  }
+
   void _openChat(String chatId, SeedProfile profile) {
     if (chatId.isEmpty) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => ChatDetailScreen(
+        onOpenUpgrade: widget.onOpenUpgrade,
         chatId: chatId,
         currentUid: widget.user?.uid ?? '',
         other: ProfileSummary(
@@ -1152,6 +1298,93 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  /// Quita las búsquedas IA (foto de referencia + descripción) y recarga. Es la
+  /// salida que antes no existía: con el filtro IA puesto el feed se quedaba en
+  /// blanco y no había forma de desactivarlo desde el propio feed.
+  void _clearAiSearch() {
+    setState(() {
+      _filters =
+          _filters.copyWith(sortByVisualReference: false, promptQuery: '');
+      _aiSearch = null;
+    });
+    _load();
+  }
+
+  /// Banner permanente cuando hay una búsqueda IA pedida: dice QUÉ filtro está
+  /// activo (o que no se está aplicando) y permite quitarlo de un toque.
+  Widget _aiSearchBanner(_AiSearchState ai) {
+    final ThemeData theme = Theme.of(context);
+    final bool inactive = ai.status == _AiSearchStatus.notEntitled;
+    final Color color =
+        inactive ? theme.colorScheme.outline : theme.colorScheme.primary;
+    final String text = inactive
+        ? 'Filtro IA guardado (${ai.label}): no se aplica, es de Attra Pro'
+        : 'Búsqueda IA activa: ${ai.label}';
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.auto_awesome, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+            TextButton(
+              onPressed: _clearAiSearch,
+              child: const Text('Quitar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Estado vacío cuando la causa es la búsqueda IA: explica el motivo real
+  /// (nadie encaja / motor caído / error) y ofrece quitar el filtro.
+  Widget _aiEmptyState(_AiSearchState ai) {
+    final bool byPrompt = ai.byPrompt;
+    final String what =
+        byPrompt ? 'tu descripción (${ai.label})' : 'tu foto de referencia';
+    final String message;
+    switch (ai.status) {
+      case _AiSearchStatus.noMatches:
+        message = byPrompt
+            ? 'Ninguno de los perfiles disponibles encaja con $what. Prueba con una descripción menos específica o quita el filtro para ver el feed completo.'
+            : 'Ninguno de los perfiles disponibles se parece lo suficiente a $what. Quita el filtro para ver el feed completo.';
+        break;
+      case _AiSearchStatus.unavailable:
+        message =
+            'La búsqueda IA no está disponible ahora mismo, así que no ha podido devolver resultados. Tu feed está vacío por este filtro, no porque no haya gente.';
+        break;
+      case _AiSearchStatus.failed:
+        message =
+            'La búsqueda IA ha fallado (puede ser la conexión). Tu feed está vacío por este filtro, no porque no haya gente.';
+        break;
+      case _AiSearchStatus.ok:
+      case _AiSearchStatus.notEntitled:
+        message =
+            'Tienes una búsqueda IA activa filtrando el feed. Quítala para ver el resto de perfiles.';
+        break;
+    }
+    return _FeedEndState(
+      icon: Icons.filter_alt_off_rounded,
+      title: 'El filtro IA ha dejado el feed vacío',
+      message: message,
+      primaryLabel: 'Quitar el filtro IA',
+      onPrimary: _clearAiSearch,
+      secondaryLabel: 'Reintentar',
+      onSecondary: _load,
+    );
+  }
+
   /// Muestra el acceso a grupos en el feed cuando el usuario está en un modo
   /// social (amistad / ambas / planes en grupo). En modo grupos el feed de
   /// personas queda vacío, así que este acceso es la vía a los grupos.
@@ -1196,10 +1429,14 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final _AiSearchState? ai = _aiSearch;
     return Column(
       children: <Widget>[
         _feedHeader(),
         if (widget.user?.isTraveling ?? false) _travelBanner(),
+        // Aviso siempre visible del filtro IA: sin él, el usuario no tenía
+        // ninguna pista de que una búsqueda IA le estaba recortando el feed.
+        if (ai != null) _aiSearchBanner(ai),
         if (_showGroupsBanner) _groupsBanner(),
         Expanded(child: _buildContent(context)),
       ],
@@ -1223,6 +1460,17 @@ class _FeedScreenState extends State<FeedScreen> {
     // se reinicia el indice (los perfiles vistos no deben reaparecer); solo
     // "Recargar" vuelve a consultar y re-excluye lo ya likeado/pasado/matcheado.
     if (_profiles.isEmpty || _index >= _profiles.length) {
+      // Feed vacío CON búsqueda IA aplicada: la causa es el filtro, no la falta
+      // de gente. Se explica y se ofrece quitarlo (antes: mensaje genérico).
+      final _AiSearchState? ai = _aiSearch;
+      // (Con `ok` o `notEntitled` la IA no es la culpable: el feed venía vacío
+      // de los filtros previos o el filtro ni se aplicó → mensaje genérico.)
+      if (ai != null &&
+          _profiles.isEmpty &&
+          ai.status != _AiSearchStatus.ok &&
+          ai.status != _AiSearchStatus.notEntitled) {
+        return _aiEmptyState(ai);
+      }
       // Fin de la segunda vuelta: se acabaron los perfiles que pasaste.
       if (_secondRound) {
         return AttraEmptyState(
@@ -2256,8 +2504,9 @@ class _FeedEndState extends StatelessWidget {
                   Colors.transparent,
                 ]),
               ),
-              child: const Icon(Icons.replay_rounded,
-                  size: 44, color: AppColors.attraRed),
+              // El icono del círculo estaba fijo a "replay" e ignoraba `icon`:
+              // en estados que no son la segunda vuelta contaba otra historia.
+              child: Icon(icon, size: 44, color: AppColors.attraRed),
             ),
             const SizedBox(height: 18),
             Text(title,

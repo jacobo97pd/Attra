@@ -59,6 +59,7 @@ Future<void> showIcebreakerSheet(
   VoidCallback? onTwoTruths,
   VoidCallback? onChatGame,
   VoidCallback? onCoffeeChallenge,
+  VoidCallback? onOpenGamesHub,
   bool showQuickQuestion = true,
   bool showThisOrThat = true,
 }) {
@@ -137,7 +138,7 @@ Future<void> showIcebreakerSheet(
                       () => onPrefill(IcebreakerCatalog.randomThisOrThat())),
                 if (onChatGame != null)
                   tile(
-                      Icons.bolt_rounded,
+                      Icons.emoji_events_rounded,
                       'Duelo de Química · 5 min',
                       'Reto de conversación con resultado de la IA',
                       onChatGame),
@@ -150,17 +151,21 @@ Future<void> showIcebreakerSheet(
                 if (onDoubleAnswer != null)
                   tile(Icons.question_answer_rounded, 'Doble respuesta',
                       'Responded sin veros hasta el reveal', onDoubleAnswer),
+                // Qué fallaba: el minijuego real y la plantilla de texto tenían
+                // EL MISMO título y el mismo icono, así que quien buscaba el
+                // juego acababa con un mensaje a medio escribir. Ahora cada uno
+                // dice qué es (juego interactivo vs. texto para enviar).
                 if (onTwoTruths != null)
                   tile(
                       Icons.psychology_alt_rounded,
-                      'Dos verdades y una mentira',
-                      'Crea el juego con respuesta oculta',
+                      'Dos verdades y una mentira · juego',
+                      'Juego interactivo: tu match adivina cuál es la mentira',
                       onTwoTruths)
                 else
                   tile(
-                      Icons.psychology_alt_rounded,
-                      'Dos verdades y una mentira',
-                      'Plantilla editable',
+                      Icons.edit_note_rounded,
+                      'Dos verdades y una mentira · plantilla',
+                      'Solo texto: rellenas las 3 frases y lo envías como mensaje',
                       () => onPrefill(IcebreakerCatalog.twoTruthsTemplate)),
                 if (onProposePlan != null)
                   tile(Icons.calendar_today_rounded, 'Crear un plan juntos',
@@ -168,6 +173,12 @@ Future<void> showIcebreakerSheet(
                 if (onSpark != null)
                   tile(Icons.local_fire_department_rounded, 'Attra Spark',
                       'El juego de 5 minutos', onSpark),
+                if (onOpenGamesHub != null)
+                  tile(
+                      Icons.sports_esports_rounded,
+                      'Ver todos los juegos',
+                      'Cómo funciona cada uno y dónde se juega',
+                      onOpenGamesHub),
               ],
             ),
           ),
