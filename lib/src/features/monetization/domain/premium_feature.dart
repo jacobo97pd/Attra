@@ -8,7 +8,18 @@ enum PremiumFeature {
   discoveryPriority('discovery_priority'),
   incognitoMode('incognito_mode'),
   advancedDeclaredFilters('advanced_declared_filters'),
+
+  /// Grant mensual de Boosts. Ya NO es decorativa: la cantidad concreta la da
+  /// `MonetizationFeatureFlags.monthlyBoostsForTier` (Plus 1, Premium 2, Pro 4)
+  /// y el backend la ingresa en `users.wallet.boosts`. No hace falta una
+  /// feature nueva: esta ya existía y es exactamente lo que representa.
   monthlyBoost('monthly_boost'),
+
+  /// OBSOLETA. No está implementada en ninguna parte de la app (no hay
+  /// confirmaciones de lectura en el chat), así que se ha quitado de las listas
+  /// por defecto de TODOS los tiers para no venderla. Se mantiene en el enum
+  /// porque hay docs `userEntitlements` en base que la traen y `fromValue`
+  /// devolvería null, no porque conceda nada.
   readReceipts('read_receipts'),
   attrasMonthlyGrant('attras_monthly_grant'),
   travelMode('travel_mode'),

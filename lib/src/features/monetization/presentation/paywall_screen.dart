@@ -10,8 +10,10 @@ import '../../../widgets/attra_badges.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/legal_links_row.dart';
 import '../data/iap_service.dart';
+import '../domain/monetization_feature_flags.dart';
 import '../domain/price_format.dart';
 import '../domain/subscription_tier.dart';
+import 'monetization_plan_numbers.dart';
 
 /// Verifica una suscripción comprada por IAP en el backend. Devuelve true si se
 /// concedió el plan.
@@ -30,6 +32,7 @@ class PaywallScreen extends StatefulWidget {
   const PaywallScreen({
     super.key,
     required this.currentTier,
+    this.flags = const MonetizationFeatureFlags(),
     this.iapService,
     this.verifySubscription,
     this.onPurchased,
@@ -42,6 +45,16 @@ class PaywallScreen extends StatefulWidget {
   });
 
   final SubscriptionTier currentTier;
+
+  /// Flags vigentes de monetización. De aquí salen TODOS los números que se
+  /// anuncian (likes/día, Attras/mes, Boosts/mes, coste del Superboost): si
+  /// Producto los cambia en `config/featureFlags`, el paywall cambia con ellos
+  /// y sigue diciendo la verdad. Escribirlos a mano en el texto es justo lo que
+  /// convierte el paywall en publicidad engañosa en cuanto se toca el backend.
+  ///
+  /// Si el llamante no los pasa se usan los defaults del contrato, que son los
+  /// mismos que aplica el servidor por defecto.
+  final MonetizationFeatureFlags flags;
 
   /// Servicio de compras COMPARTIDO por toda la sesión (lo inyecta home_shell
   /// desde PurchaseDeliveryRouter). Se inyecta en lugar de crear uno propio
@@ -329,6 +342,83 @@ class _PaywallScreenState extends State<PaywallScreen> {
       ? 'Suscripción de 1 año · se renueva automáticamente cada año'
       : 'Suscripción de 1 mes · se renueva automáticamente cada mes';
 
+  /// Números de la propuesta, siempre desde los flags.
+  MonetizationPlanNumbers get _numbers => MonetizationPlanNumbers(widget.flags);
+
+  /// Qué tiene HOY quien está mirando el paywall (likes al día y Attras al mes
+  /// de su tier), para que las cifras de Plus/Pro se puedan comparar con algo.
+  String _currentPlanSummary(SubscriptionTier tier) {
+    final MonetizationPlanNumbers n = _numbers;
+    final int likes = n.dailyLikesFor(tier);
+    final int attras = n.monthlyAttrasFor(tier);
+    final String likesPart = likes == MonetizationPlanNumbers.unlimited
+        ? 'likes sin tope diario'
+        : '$likes likes al día';
+    if (attras <= 0) {
+      return 'Ahora mismo tienes $likesPart.';
+    }
+    final String attrasUnit = attras == 1 ? 'Attra' : 'Attras';
+    return 'Ahora mismo tienes $likesPart y $attras $attrasUnit al mes.';
+  }
+
+  /// Ventajas de Attra Plus: SOLO lo que el código concede de verdad.
+  ///
+  /// Cada línea está atada a algo real: `seeAllLikes` (la bandeja completa de
+  /// likes), el comentario al dar like (que el servidor descarta si eres Free),
+  /// `plusFilters`/`advancedDeclaredFilters`, `travelMode`, `incognitoMode`,
+  /// `rewind`, el tope `plusDailyLikes` que ahora aplica el servidor, y los
+  /// grants mensuales de Attras y Boosts.
+  List<String> _plusFeatures() {
+    final MonetizationPlanNumbers n = _numbers;
+    final int likes = n.dailyLikesFor(SubscriptionTier.plus);
+    final int freeLikes = n.dailyLikesFor(SubscriptionTier.free);
+    final int attras = n.monthlyAttrasFor(SubscriptionTier.plus);
+    final int boosts = n.monthlyBoostsFor(SubscriptionTier.plus);
+    return <String>[
+      'Ve a todas las personas que te dan like (en Free solo ves la última)',
+      'Comenta la foto o la respuesta al dar like',
+      if (likes == MonetizationPlanNumbers.unlimited)
+        'Likes sin límite diario'
+      else
+        '$likes likes al día (en Free son $freeLikes)',
+      'Filtros avanzados y modo viaje',
+      'Modo incógnito: decides quién te ve',
+      'Deshacer el último perfil que pasaste',
+      'Sin anuncios',
+      if (attras > 0) _monthlyAttrasCopy(attras),
+      if (boosts > 0) _monthlyBoostsCopy(boosts, n.superboostCostBoosts),
+    ];
+  }
+
+  /// Ventajas de Attra Pro. Nada de "recomendaciones inteligentes" ni
+  /// "compatibilidad visual": el orden del feed es el mismo para todos los
+  /// planes y no hay pantalla de filtros por preferencias visuales. Tampoco
+  /// "confirmación de lectura": `PremiumFeature.readReceipts` no la implementa
+  /// nadie, así que venderla sería mentir.
+  List<String> _proFeatures() {
+    final MonetizationPlanNumbers n = _numbers;
+    final int likes = n.dailyLikesFor(SubscriptionTier.pro);
+    final int attras = n.monthlyAttrasFor(SubscriptionTier.pro);
+    final int boosts = n.monthlyBoostsFor(SubscriptionTier.pro);
+    return <String>[
+      'Todo lo de Plus, incluido',
+      if (likes == MonetizationPlanNumbers.unlimited)
+        'Likes ilimitados, sin tope diario'
+      else
+        '$likes likes al día',
+      if (boosts > 0) _monthlyBoostsCopy(boosts, n.superboostCostBoosts),
+      if (attras > 0) _monthlyAttrasCopy(attras),
+      'Tus likes se muestran los primeros a quien los recibe',
+      'Deshacer sin límite mientras dure la sesión',
+      'IA visual: perfiles parecidos a tu foto de referencia',
+      'Búsqueda por descripción: escribe cómo es tu tipo',
+      // "Insights" existen, pero son REGLAS deterministas (nº de fotos, largo
+      // de la bio, prompts sin responder), no IA: se redacta sin sugerirlo.
+      'Repaso de tu perfil: qué le falta a tus fotos, tu bio y tus prompts',
+      '% de afinidad por intereses en los likes que recibes',
+    ];
+  }
+
   /// Precio por unidad (por mes) del plan anual, con el MISMO formato que el
   /// precio de la tienda. Ver price_format.dart.
   String? _unitPriceFor(ProductDetails? offer) {
@@ -394,6 +484,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
                             style: theme.textTheme.labelLarge),
                       ),
                     ),
+                    // Punto de partida REAL de quien mira: sin esto, "100 likes
+                    // al día" no dice nada porque nadie sabe cuántos tiene
+                    // ahora. También sale de los flags.
+                    const SizedBox(height: 6),
+                    Text(_currentPlanSummary(currentTier),
+                        style: theme.textTheme.bodySmall),
                     const SizedBox(height: AppSpacing.lg),
                     // Selector mensual / anual (planes básicos de Play).
                     _PeriodToggle(
@@ -407,16 +503,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       price: _priceFor(plusOffer),
                       lengthLabel: _lengthLabel,
                       unitPrice: _unitPriceFor(plusOffer),
-                      tagline: 'Ventajas sociales y más alcance',
+                      tagline: 'Que te vean y ver quién te quiere',
                       highlightLabel: 'Más popular',
-                      features: const <String>[
-                        'Ve a todas las personas que te dan like',
-                        'Comenta fotos al dar like',
-                        'Filtros avanzados',
-                        'Modo incógnito',
-                        'Sin anuncios',
-                        'Pack mensual de Attras',
-                      ],
+                      features: _plusFeatures(),
                       // Plus = negro → champagne (acceso prioritario premium).
                       gradient: AppColors.plus,
                       owned: currentTier.atLeast(SubscriptionTier.plus),
@@ -448,7 +537,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       price: _priceFor(proOffer),
                       lengthLabel: _lengthLabel,
                       unitPrice: _unitPriceFor(proOffer),
-                      tagline: 'Todo Plus + búsqueda con IA visual',
+                      tagline: 'Todo Plus + alcance e IA visual',
                       highlightLabel: 'IA visual',
                       // Solo se promete lo que existe de verdad en la app. Se
                       // quitaron "Recomendaciones inteligentes" (el orden del
@@ -456,17 +545,14 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       // preferencias visuales" (no hay ninguna pantalla que los
                       // ofrezca): vender funciones inexistentes es motivo de
                       // rechazo en la App Store y de reclamación del usuario.
-                      features: const <String>[
-                        'Todo lo de Plus, incluido',
-                        'IA visual: perfiles parecidos a tu foto de referencia',
-                        'Búsqueda por descripción: escribe cómo es tu tipo',
-                        'Sugerencias para mejorar tus fotos y tu bio',
-                        'Tus likes se muestran los primeros',
-                        // El % que ve Pro sale de los intereses en común (o de la
-                        // señal de afinidad del backend), no de la IA visual:
-                        // decir "IA" aquí prometía algo que no calcula ninguna IA.
-                        '% de afinidad por intereses en los likes que recibes',
-                      ],
+                      features: _proFeatures(),
+                      // Las funciones de IA solo se activan con consentimiento
+                      // explícito (así lo exige `hasFeature`, que lo comprueba
+                      // antes que el tier). Venderlas sin decirlo dejaría al
+                      // usuario pagando por algo que aún no puede usar.
+                      note: 'Las funciones con IA visual necesitan tu '
+                          'consentimiento explícito: lo das (y lo retiras) '
+                          'cuando quieras desde la pantalla de IA.',
                       gradient: AppColors.pro,
                       owned: currentTier == SubscriptionTier.pro,
                       ctaLabel: currentTier == SubscriptionTier.pro
@@ -519,15 +605,21 @@ class _PaywallScreenState extends State<PaywallScreen> {
                             'de la tienda.',
                             style: theme.textTheme.bodySmall,
                           ),
-                          const SizedBox(height: AppSpacing.sm),
-                          const AttraLegalLinksRow(
-                            alignment: WrapAlignment.start,
-                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
+              ),
+              // Guideline 3.1.2(c): los enlaces al EULA y a la privacidad van
+              // FUERA de la lista, anclados abajo. Dentro de la lista solo se
+              // construían si se llegaba a hacer scroll hasta ellos: al crecer
+              // las ventajas de los planes, los enlaces dejaban de existir en
+              // el árbol y el flujo de compra se quedaba sin ellos.
+              const Padding(
+                padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.sm),
+                child: AttraLegalLinksRow(),
               ),
             ],
           ),
@@ -535,6 +627,43 @@ class _PaywallScreenState extends State<PaywallScreen> {
       ),
     );
   }
+}
+
+/// "3 Attras al mes" / "1 Attra al mes". El número viene de los flags, así que
+/// el singular/plural tiene que calcularse: no se puede dejar escrito.
+String _monthlyAttrasCopy(int attras) {
+  final String unit = attras == 1 ? 'Attra' : 'Attras';
+  return '$attras $unit al mes: tu like se ve el primero';
+}
+
+/// Explica el saldo mensual de Boosts en la única moneda que existe.
+///
+/// El gancho es que el usuario entienda qué puede hacer con su saldo: con 4
+/// Boosts y un Superboost a 3, "un Superboost de 24 h más un Boost, o cuatro
+/// Boosts: tú eliges". Se calcula a partir de [boosts] y [superboostCost]
+/// porque ambos son flags: si mañana el saldo pasa a 6, la frase se recalcula
+/// sola en vez de quedarse mintiendo.
+String _monthlyBoostsCopy(int boosts, int superboostCost) {
+  final String boostUnit = boosts == 1 ? 'Boost' : 'Boosts';
+  final String head = '$boosts $boostUnit al mes';
+  if (superboostCost <= 0 || boosts < superboostCost) {
+    // Con el saldo del plan no da para un Superboost: se dice claro cuánto
+    // cuesta en vez de insinuar que entra en el plan.
+    return '$head de 30 min · un Superboost de 24 h cuesta '
+        '$superboostCost Boosts';
+  }
+  final int superboosts = boosts ~/ superboostCost;
+  final int leftover = boosts % superboostCost;
+  final String superLabel = superboosts == 1
+      ? 'un Superboost de 24 h'
+      : '$superboosts Superboosts de 24 h';
+  final String leftoverLabel = leftover == 0
+      ? ''
+      : leftover == 1
+          ? ' más un Boost de 30 min'
+          : ' más $leftover Boosts de 30 min';
+  return '$head: $superLabel ($superboostCost cada uno)$leftoverLabel, '
+      'o $boosts $boostUnit de 30 min: tú eliges';
 }
 
 /// Conmutador Mensual / Anual (planes básicos de la suscripción).
@@ -604,6 +733,7 @@ class _PlanCard extends StatelessWidget {
     required this.owned,
     this.unitPrice,
     this.highlightLabel,
+    this.note,
     this.onTap,
   });
 
@@ -625,6 +755,10 @@ class _PlanCard extends StatelessWidget {
   final String ctaLabel;
   final bool owned;
   final String? highlightLabel;
+
+  /// Letra pequeña honesta del plan (condiciones de una ventaja). Va sin
+  /// "check" para que no se lea como una ventaja más.
+  final String? note;
   final VoidCallback? onTap;
 
   @override
@@ -693,6 +827,10 @@ class _PlanCard extends StatelessWidget {
                   ],
                 ),
               )),
+          if (note != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            Text(note!, style: theme.textTheme.bodySmall),
+          ],
           const SizedBox(height: AppSpacing.lg),
           owned
               ? AttraGhostButton(label: ctaLabel, onPressed: null)

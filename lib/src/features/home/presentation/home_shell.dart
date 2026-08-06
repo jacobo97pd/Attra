@@ -43,6 +43,7 @@ import '../../monetization/data/purchase_delivery_router.dart';
 import '../../monetization/presentation/boost_store_sheet.dart';
 import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
+import '../../monetization/domain/monetization_feature_flags.dart';
 import '../../monetization/domain/premium_feature.dart';
 import '../../monetization/domain/subscription_tier.dart';
 import '../../monetization/presentation/entitlement_controller.dart';
@@ -870,6 +871,7 @@ class _HomeShellState extends State<HomeShell> {
       user: widget.user,
       iapService: _purchases?.iap,
       purchases: _purchases,
+      flags: _entitlementController?.flags ?? const MonetizationFeatureFlags(),
       onChanged: () => _entitlementController?.load(),
     );
   }
@@ -880,6 +882,11 @@ class _HomeShellState extends State<HomeShell> {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => PaywallScreen(
         currentTier: tier,
+        // Flags REMOTOS: los numeros del paywall (Attras/Boosts al mes, tope de
+        // likes) salen de aqui. Con los defaults compilados, cambiar un valor
+        // en config/featureFlags dejaria el paywall anunciando el anterior.
+        flags:
+            _entitlementController?.flags ?? const MonetizationFeatureFlags(),
         iapService: _purchases?.iap,
         verifySubscription: widget.boostService == null
             ? null

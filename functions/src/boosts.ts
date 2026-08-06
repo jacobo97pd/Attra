@@ -46,6 +46,55 @@ const BOOST_SPECS: Record<BoostType, BoostSpec> = {
   },
 };
 
+/// Coste en Boosts de cada tipo.
+///
+/// QUE FALLABA: el Superboost (24 h, prioridad +150, cap 5000 impresiones)
+/// descontaba EXACTAMENTE lo mismo que el Boost de 30 min (prioridad +80, cap
+/// 500): `increment(-1)` de `users.wallet.boosts`. El producto caro valia lo
+/// mismo que el barato, asi que nadie tenia motivo para gastar un Boost normal
+/// y el saldo mensual no se podia expresar en una sola unidad.
+///
+/// Ahora el Superboost cuesta 3 Boosts (flag `superboost_cost_boosts`), que es
+/// lo que permite tener UNA sola moneda: el usuario decide si gasta su saldo en
+/// un Superboost o en varios Boosts cortos.
+const DEFAULT_SUPERBOOST_COST = 3;
+
+const FLAGS_CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedSuperboostCost: { value: number; at: number } | null = null;
+
+/// Lee el coste del Superboost de `config/featureFlags` aceptando las dos
+/// variantes de nombre (snake_case y camelCase), igual que el resto de flags.
+///
+/// Se cachea en memoria del proceso (5 min) porque `activateBoost` esta en la
+/// ruta caliente: sin cache seria una lectura extra de Firestore por cada
+/// activacion solo para releer un numero que casi nunca cambia.
+async function superboostCostBoosts(): Promise<number> {
+  const now = Date.now();
+  if (cachedSuperboostCost && now - cachedSuperboostCost.at < FLAGS_CACHE_TTL_MS) {
+    return cachedSuperboostCost.value;
+  }
+  let value = DEFAULT_SUPERBOOST_COST;
+  try {
+    const snap = await db.collection("config").doc("featureFlags").get();
+    const data = snap.data() ?? {};
+    const raw = data.superboost_cost_boosts ?? data.superboostCostBoosts;
+    const parsed = Math.floor(numericValue(raw, DEFAULT_SUPERBOOST_COST));
+    // Un flag mal puesto a 0 (o negativo) regalaria Superboosts infinitos: se
+    // ignora y se cobra el default. El minimo vendible es 1.
+    if (Number.isFinite(parsed) && parsed >= 1) value = parsed;
+  } catch {
+    // Si `config/featureFlags` no se puede leer se cobra el default: nunca
+    // gratis, que es el fallo seguro para el negocio.
+    value = DEFAULT_SUPERBOOST_COST;
+  }
+  cachedSuperboostCost = { value, at: now };
+  return value;
+}
+
+function boostCostFor(type: BoostType, superboostCost: number): number {
+  return type === "superboost" ? superboostCost : 1;
+}
+
 function boostTypeFromValue(value: unknown, fallback: BoostType): BoostType {
   if (value === "boost_normal" || value === "superboost") return value;
   return fallback;
@@ -201,6 +250,10 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
   const requestedType = requiredBoostType(request.data?.type);
   const userRef = col.users.doc(uid);
   const activeRef = col.activeBoosts.doc(uid);
+  // Fuera de la transaccion: es otro documento y no debe participar en el
+  // bloqueo del cobro.
+  const superboostCost = await superboostCostBoosts();
+  const cost = boostCostFor(requestedType, superboostCost);
 
   return db.runTransaction(async (tx) => {
     const [userSnap, activeSnap] = await Promise.all([
@@ -217,15 +270,27 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
         ? (wallet as DocumentData).boosts
         : undefined
     );
-    if (boosts < 1) {
-      logBoostEventTx(tx, "boostActivationFailedNoBalance", uid, null);
+    // El saldo se comprueba ANTES de cualquier escritura (incluido el camino de
+    // "extender un boost ya activo", que se resuelve mas abajo dentro de esta
+    // misma transaccion): si no llega, no se cobra nada.
+    if (boosts < cost) {
+      logBoostEventTx(tx, "boostActivationFailedNoBalance", uid, null, undefined, {
+        type: requestedType,
+        requiredBoosts: cost,
+        availableBoosts: boosts,
+      });
       return {
         success: false,
         boostId: null,
-        status: "no_balance",
+        // `no_balance` se reserva para "no tienes NADA" porque el cliente ya lo
+        // traduce a "compra un Boost". Tener saldo pero insuficiente para un
+        // Superboost es otra situacion (basta con esperar/comprar 2 mas), asi
+        // que necesita un motivo distinguible para poder explicarla.
+        status: boosts <= 0 ? "no_balance" : "insufficient_balance",
         startedAt: null,
         expiresAt: null,
         remainingBoosts: boosts,
+        requiredBoosts: cost,
       };
     }
 
@@ -258,7 +323,7 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
     }
 
     tx.update(userRef, {
-      "wallet.boosts": FieldValue.increment(-1),
+      "wallet.boosts": FieldValue.increment(-cost),
       "wallet.boostsUpdatedAt": serverNow,
       updatedAt: serverNow,
     });
@@ -294,7 +359,9 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
           expiresAt,
           priorityBonus: spec.priorityBonus,
           impressionCap: extendedCap,
-          consumedAmount: FieldValue.increment(1),
+          // El consumo registrado tiene que ser el REAL (3 para el Superboost),
+          // no siempre 1, o el resumen del Boost mentiria sobre lo gastado.
+          consumedAmount: FieldValue.increment(cost),
           extendedCount: FieldValue.increment(1),
           updatedAt: serverNow,
         },
@@ -325,7 +392,8 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
         status: "active",
         startedAt: isoFromDateLike(activeData.startedAt, nowDate),
         expiresAt: expiresAt.toISOString(),
-        remainingBoosts: boosts - 1,
+        remainingBoosts: boosts - cost,
+        spentBoosts: cost,
       };
     }
 
@@ -339,7 +407,7 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
       type: requestedType,
       status: "active",
       source: "wallet",
-      consumedAmount: 1,
+      consumedAmount: cost,
       startedAt: nowDate,
       expiresAt,
       createdAt: serverNow,
@@ -368,6 +436,7 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
     logBoostEventTx(tx, "boostStarted", uid, boostId, undefined, {
       type: requestedType,
       expiresAt: expiresAt.toISOString(),
+      spentBoosts: cost,
     });
     return {
       success: true,
@@ -375,7 +444,8 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
       status: "active",
       startedAt: nowDate.toISOString(),
       expiresAt: expiresAt.toISOString(),
-      remainingBoosts: boosts - 1,
+      remainingBoosts: boosts - cost,
+      spentBoosts: cost,
     };
   });
 });

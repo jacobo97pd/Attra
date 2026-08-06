@@ -10,6 +10,7 @@ import {
 } from "./boosts";
 import {
   FREE_DAILY_LIKES,
+  activeEntitlementTier,
   col,
   dailyUsageKey,
   isUserContactable,
@@ -18,6 +19,86 @@ import {
   resolveReceiverPhoto,
   senderPrioritySnapshot,
 } from "./common";
+
+/// Tope diario de likes POR TIER.
+///
+/// QUE FALLABA: el tope solo existia para Free (`FREE_DAILY_LIKES`), asi que
+/// Attra Plus tenia likes ILIMITADOS de facto y era indistinguible de Pro en lo
+/// unico que de verdad se nota a diario. Ahora Free 25, Plus 100 y Pro/Premium
+/// ilimitado, leyendo los topes de `config/featureFlags`.
+const DEFAULT_PLUS_DAILY_LIKES = 100;
+
+const FLAGS_CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedLikeLimits: {
+  value: { free: number; plus: number };
+  at: number;
+} | null = null;
+
+function flagInt(
+  flags: Record<string, unknown>,
+  snakeKey: string,
+  camelKey: string,
+  fallback: number
+): number {
+  const raw = flags[snakeKey] ?? flags[camelKey];
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.floor(raw);
+  if (typeof raw === "string") {
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+/// Lee los topes de `config/featureFlags` con cache en memoria (5 min).
+/// `sendLike` es la ruta mas caliente de la app (tiene `minInstances: 1` justo
+/// para eso): una lectura extra de Firestore por like solo para releer dos
+/// numeros que casi nunca cambian no compensa.
+async function dailyLikeLimits(): Promise<{ free: number; plus: number }> {
+  const now = Date.now();
+  if (cachedLikeLimits && now - cachedLikeLimits.at < FLAGS_CACHE_TTL_MS) {
+    return cachedLikeLimits.value;
+  }
+  let value = { free: FREE_DAILY_LIKES, plus: DEFAULT_PLUS_DAILY_LIKES };
+  try {
+    const snap = await db.collection("config").doc("featureFlags").get();
+    const flags = (snap.data() ?? {}) as Record<string, unknown>;
+    const free = flagInt(flags, "free_daily_likes", "freeDailyLikes", FREE_DAILY_LIKES);
+    const plus = flagInt(
+      flags,
+      "plus_daily_likes",
+      "plusDailyLikes",
+      DEFAULT_PLUS_DAILY_LIKES
+    );
+    // Un flag a 0/negativo dejaria la app inutilizable (nadie podria dar likes):
+    // se ignora y se usa el default.
+    value = {
+      free: free >= 1 ? free : FREE_DAILY_LIKES,
+      plus: plus >= 1 ? plus : DEFAULT_PLUS_DAILY_LIKES,
+    };
+  } catch {
+    // Sin flags se usan los defaults del producto: nunca se bloquea el like.
+    value = { free: FREE_DAILY_LIKES, plus: DEFAULT_PLUS_DAILY_LIKES };
+  }
+  cachedLikeLimits = { value, at: now };
+  return value;
+}
+
+/// Tope diario del tier. `null` = ilimitado (Pro y el legacy Premium, al que se
+/// le dan las ventajas de Pro para que nadie pierda lo que ya tenia).
+function dailyLikeLimitForTier(
+  tier: string,
+  limits: { free: number; plus: number }
+): number | null {
+  switch (tier) {
+    case "pro":
+    case "premium":
+      return null;
+    case "plus":
+      return limits.plus;
+    default:
+      return limits.free;
+  }
+}
 
 interface FlowResult {
   outcome: "liked" | "matched" | "already_liked" | "blocked" | "limit_reached";
@@ -113,6 +194,9 @@ export const sendLike = onCall(
     .doc(fromUid)
     .collection("usage")
     .doc(`likes_${dailyUsageKey()}`);
+  // Fuera de la transaccion: `config/featureFlags` es otro documento y no debe
+  // entrar en el bloqueo del like.
+  const likeLimits = await dailyLikeLimits();
 
   return db.runTransaction(async (tx): Promise<FlowResult> => {
     const [
@@ -161,17 +245,25 @@ export const sendLike = onCall(
     const inverseActive =
       likeInv.exists && (inverseStatus === "active" || inverseStatus === "matched");
 
-    const tier = (entSnap.data()?.tier ?? "free").toString();
+    // Antes se leia `entSnap.data().tier` en crudo: un entitlement de pago
+    // CADUCADO seguia contando como Plus/Pro (comentarios en el like y, ahora,
+    // tope de likes). `activeEntitlementTier` ya resuelve caducidad y lifetime,
+    // y es lo que usa `senderPrioritySnapshot` justo debajo, asi que ademas
+    // elimina la incoherencia entre las dos lecturas del mismo dato.
+    const tier = activeEntitlementTier(entSnap.data());
     const isFree = tier === "free";
     const prioritySnapshot = senderPrioritySnapshot(entSnap.data(), "like");
     const usageCount = (usageSnap.data()?.count ?? 0) as number;
-    // Attra Swipes: si Free se queda sin likes diarios, puede CONSUMIR un swipe
-    // (consumible comprado) para seguir likeando. Si no tiene, limit_reached.
-    const overFreeLimit = !alreadyLiked && isFree && usageCount >= FREE_DAILY_LIKES;
+    // Attra Swipes: si te quedas sin likes diarios (Free o Plus) puedes CONSUMIR
+    // un swipe (consumible comprado) para seguir likeando. Si no tienes,
+    // limit_reached. Pro/Premium no tienen tope, asi que nunca gastan swipes.
+    const dailyLimit = dailyLikeLimitForTier(tier, likeLimits);
+    const overDailyLimit =
+      !alreadyLiked && dailyLimit !== null && usageCount >= dailyLimit;
     const fromWallet = (fromSnap.data()?.wallet ?? {}) as Record<string, unknown>;
     const swipeBalance = Number(fromWallet.swipes ?? 0);
     let consumeSwipe = false;
-    if (overFreeLimit) {
+    if (overDailyLimit) {
       if (swipeBalance >= 1) {
         consumeSwipe = true;
       } else {
@@ -218,7 +310,7 @@ export const sendLike = onCall(
         { count: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() },
         { merge: true }
       );
-      // Consume un Attra Swipe si se usó para superar el límite diario gratis.
+      // Consume un Attra Swipe si se usó para superar el límite diario del tier.
       if (consumeSwipe) {
         tx.set(
           col.users.doc(fromUid),

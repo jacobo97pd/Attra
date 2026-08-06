@@ -49,9 +49,32 @@ FLAGS = {
     "date_plans_kill_switch": ("booleanValue", False),
     "date_plans_free_limit": ("integerValue", "1"),
     "weeklyFreeAttras": ("integerValue", "0"),
-    "plusMonthlyAttras": ("integerValue", "3"),
+    # --- Pack mensual incluido en cada plan (grants.ts) ------------------
+    # Free pasa de 0 a 1 Attra/mes: es el gancho de conversion, sin probar el
+    # producto nadie entiende para que sirve un Attra.
+    "freeMonthlyAttras": ("integerValue", "1"),
+    # Plus sube de 3 a 5: con Free recibiendo 1 al mes, 3 no se notaba.
+    "plusMonthlyAttras": ("integerValue", "5"),
+    # `premium` ya no se vende, pero hay entitlements vivos en la base: se le
+    # dan las ventajas de Pro sin IA para que nadie pierda lo que ya tenia.
     "premiumMonthlyAttras": ("integerValue", "10"),
     "proMonthlyAttras": ("integerValue", "15"),
+    # Boosts incluidos al mes. Hasta ahora `monthlyBoost` se anunciaba en el
+    # paywall pero NADIE los concedia: el saldo solo subia comprando.
+    # Con el Superboost a 3 Boosts, Pro (4) = un Superboost + un Boost corto.
+    "freeMonthlyBoosts": ("integerValue", "0"),
+    "plusMonthlyBoosts": ("integerValue", "1"),
+    "premiumMonthlyBoosts": ("integerValue", "2"),
+    "proMonthlyBoosts": ("integerValue", "4"),
+    # --- Coste del Superboost (boosts.ts) --------------------------------
+    # Antes el Superboost (24 h, +150) costaba 1 Boost, lo MISMO que el Boost
+    # de 30 min (+80): el producto caro valia igual que el barato.
+    "superboostCostBoosts": ("integerValue", "3"),
+    # --- Tope diario de likes por tier (likes.ts) ------------------------
+    # El tope solo existia para Free, asi que Plus tenia likes ilimitados de
+    # facto y era indistinguible de Pro. Pro/Premium siguen sin tope.
+    "freeDailyLikes": ("integerValue", "25"),
+    "plusDailyLikes": ("integerValue", "100"),
 }
 
 fields = {k: {t: v} for k, (t, v) in FLAGS.items()}

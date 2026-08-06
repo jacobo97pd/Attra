@@ -8,6 +8,7 @@ import '../domain/monetization_feature_flags.dart';
 import '../domain/premium_feature.dart';
 import '../domain/subscription_tier.dart';
 import '../domain/user_entitlements.dart';
+import 'monetization_plan_numbers.dart';
 
 /// Estado de monetizacion de la sesion actual, combinando la fuente
 /// autoritativa (`userEntitlements`, escrita por backend) con los feature flags
@@ -38,6 +39,11 @@ class EntitlementController extends ChangeNotifier {
   bool get isLoading => _loading;
   MonetizationFeatureFlags get flags => _flags;
   UserEntitlements get entitlements => _entitlements;
+
+  /// Números de la propuesta (likes/día, Attras/mes, Boosts/mes, coste del
+  /// Superboost) leídos de los flags vigentes. La UI que necesite comparar
+  /// planes (paywall) puede pedirlo aquí en vez de escribir cifras a mano.
+  MonetizationPlanNumbers get planNumbers => MonetizationPlanNumbers(_flags);
 
   /// Attra Spark habilitado por flag remoto (`spark_enabled`). No depende del
   /// tier: es gratis para todos. Si es false, el juego no se ofrece en ningún
@@ -91,10 +97,17 @@ class EntitlementController extends ChangeNotifier {
   // Las pantallas NO deben mirar el tier directamente: usan estos getters.
 
   /// Límite diario de likes para Free (alineado con backend FREE_DAILY_LIKES).
-  static const int freeDailyLikes = 25;
+  ///
+  /// Ya NO es el valor que se aplica: el efectivo sale del flag
+  /// `freeDailyLikes` (ver [dailyLikeLimit]). Se queda como red de seguridad
+  /// para cuando el flag remoto trae un valor imposible.
+  static const int freeDailyLikes =
+      MonetizationPlanNumbers.defaultFreeDailyLikes;
 
-  /// Límite ampliado para quien tiene `expandedLikes` pero no ilimitado.
-  static const int expandedDailyLikes = 100;
+  /// Límite ampliado para quien tiene `expandedLikes` pero no ilimitado (Plus).
+  /// Igual que el anterior: el efectivo sale del flag `plusDailyLikes`.
+  static const int expandedDailyLikes =
+      MonetizationPlanNumbers.defaultPlusDailyLikes;
 
   bool get canSeeAllLikes => hasFeature(PremiumFeature.seeAllLikes);
   bool get canUseAdvancedFilters =>
@@ -113,14 +126,35 @@ class EntitlementController extends ChangeNotifier {
   bool get canUseProfileInsights => hasFeature(PremiumFeature.aiExplanations);
 
   /// Likes diarios permitidos. -1 = ilimitado.
+  ///
+  /// El número sale de los flags, no del binario: si mañana Producto cambia
+  /// `plusDailyLikes`, la app aplica el nuevo tope sin publicar versión y el
+  /// paywall sigue diciendo la verdad. Se decide por FEATURE (no por tier)
+  /// porque quien manda es el entitlement: `unlimitedLikes` gana a
+  /// `expandedLikes`, y quien no tenga ninguna de las dos va con el tope Free.
   int get dailyLikeLimit {
-    if (hasFeature(PremiumFeature.unlimitedLikes)) return -1;
-    if (hasFeature(PremiumFeature.expandedLikes)) return expandedDailyLikes;
-    return freeDailyLikes;
+    final MonetizationPlanNumbers numbers = planNumbers;
+    if (hasFeature(PremiumFeature.unlimitedLikes)) {
+      return MonetizationPlanNumbers.unlimited;
+    }
+    if (hasFeature(PremiumFeature.expandedLikes)) {
+      return numbers.dailyLikesFor(SubscriptionTier.plus);
+    }
+    return numbers.dailyLikesFor(SubscriptionTier.free);
   }
 
-  /// Attras incluidos al mes según el tier (0 para Free).
-  int get monthlyIncludedAttras => _flags.monthlyAttrasForTier(tier);
+  /// Attras incluidos al mes en el tier actual. Free ya NO es 0: recibe
+  /// `freeMonthlyAttras` (1 por defecto), que es el gancho de conversión.
+  int get monthlyIncludedAttras => planNumbers.monthlyAttrasFor(tier);
+
+  /// Boosts incluidos al mes en el tier actual. `PremiumFeature.monthlyBoost`
+  /// se anunciaba desde siempre pero no concedía nada; el grant lo hace el
+  /// backend y aquí solo se expone el número para poder contarlo bien.
+  int get monthlyIncludedBoosts => planNumbers.monthlyBoostsFor(tier);
+
+  /// Cuántos Boosts del saldo cuesta activar un Superboost (24 h). Lo consume
+  /// la tienda de Boosts para enseñar el precio ANTES de gastarlo.
+  int get superboostCostBoosts => planNumbers.superboostCostBoosts;
 
   /// Sin anuncios: cualquier plan de pago. `remove_ads_forever` (consumible)
   /// NO concede Plus/Pro; si se compra por separado, se sumaría aquí en el

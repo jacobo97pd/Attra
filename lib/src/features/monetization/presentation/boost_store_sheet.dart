@@ -13,7 +13,9 @@ import '../data/boost_service.dart';
 import '../data/purchase_delivery_router.dart';
 import '../data/iap_service.dart';
 import '../domain/boost.dart';
+import '../domain/monetization_feature_flags.dart';
 import '../domain/premium_product_catalog.dart';
+import 'monetization_plan_numbers.dart';
 
 /// Hoja de consumibles: Boosts (visibilidad temporal) y Attra Swipes (likes
 /// extra). Muestra saldos, permite ACTIVAR un Boost (consume saldo) y COMPRAR
@@ -25,6 +27,7 @@ Future<void> showBoostStoreSheet(
   IapService? iapService,
   PurchaseDeliveryRouter? purchases,
   VoidCallback? onChanged,
+  MonetizationFeatureFlags flags = const MonetizationFeatureFlags(),
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -39,6 +42,7 @@ Future<void> showBoostStoreSheet(
       iapService: iapService,
       purchases: purchases,
       onChanged: onChanged,
+      flags: flags,
     ),
   );
 }
@@ -50,10 +54,16 @@ class _BoostStoreBody extends StatefulWidget {
     this.iapService,
     this.purchases,
     this.onChanged,
+    this.flags = const MonetizationFeatureFlags(),
   });
 
   final BoostService service;
   final AppUser? user;
+
+  /// De aquí sale el coste del Superboost. Antes la hoja no lo decía en ningún
+  /// sitio: el usuario activaba un Superboost sin saber cuánto saldo le
+  /// costaba, y con el precio nuevo (varios Boosts) eso es inaceptable.
+  final MonetizationFeatureFlags flags;
 
   /// Servicio COMPARTIDO de la sesión. Se inyecta para no abrir una segunda
   /// suscripción a `purchaseStream`: con dos escuchas vivas, la compra de un
@@ -73,12 +83,14 @@ class _BoostStoreBody extends StatefulWidget {
 
 class _BoostStoreBodyState extends State<_BoostStoreBody> {
   bool _busy = false;
+  int _attras = 0;
   int _boosts = 0;
   int _swipes = 0;
 
   // Compras IAP: ids consumibles del catálogo (boosts + swipes).
   static Set<String> get _consumableIds => <String>{
         for (final PremiumProductDefinition p in <PremiumProductDefinition>[
+          ...PremiumProductCatalog.attraPacks,
           ...PremiumProductCatalog.boostPacks,
           ...PremiumProductCatalog.swipePacks,
         ])
@@ -92,6 +104,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
   @override
   void initState() {
     super.initState();
+    _attras = widget.user?.attrasBalance ?? 0;
     _boosts = widget.user?.boostBalance ?? 0;
     _swipes = widget.user?.swipeBalance ?? 0;
     // Saldos confirmados por el BACKEND durante esta sesión (compra o
@@ -128,9 +141,9 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
 
   void _onPurchasesChanged() {
     if (!mounted) return;
-    final int before = _boosts + _swipes;
+    final int before = _attras + _boosts + _swipes;
     setState(_syncBalancesFromRouter);
-    if (_boosts + _swipes > before) {
+    if (_attras + _boosts + _swipes > before) {
       _snack('Compra realizada. Boosts: $_boosts · Swipes: $_swipes');
       widget.onChanged?.call();
     }
@@ -141,8 +154,10 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
   void _syncBalancesFromRouter() {
     final PurchaseDeliveryRouter? router = widget.purchases;
     if (router == null) return;
+    final int? attras = router.lastAttraBalance;
     final int? boosts = router.lastBoostBalance;
     final int? swipes = router.lastSwipeBalance;
+    if (attras != null) _attras = attras;
     if (boosts != null) _boosts = boosts;
     if (swipes != null) _swipes = swipes;
   }
@@ -229,8 +244,51 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  /// Números de la propuesta (hoy solo el coste del Superboost) desde los flags.
+  MonetizationPlanNumbers get _numbers => MonetizationPlanNumbers(widget.flags);
+
+  /// Lo que cuesta cada tipo de Boost en saldo. El Boost de 30 min siempre vale
+  /// 1: es la unidad de la moneda.
+  int _costOf(BoostType type) =>
+      type == BoostType.superboost ? _numbers.superboostCostBoosts : 1;
+
+  String _labelOf(BoostType type) =>
+      type == BoostType.superboost ? 'Superboost' : 'Boost';
+
+  /// "1 Boost" / "3 Boosts". El coste sale de un flag, así que el plural hay
+  /// que calcularlo: no se puede dejar escrito en el texto.
+  static String _boostsLabel(int amount) =>
+      amount == 1 ? '1 Boost' : '$amount Boosts';
+
+  /// Explica el saldo bajo los botones: qué cuesta el Superboost y, si no
+  /// llega, cuánto falta. Sin esto, el botón deshabilitado no dice por qué.
+  String _activationHint() {
+    final int superCost = _costOf(BoostType.superboost);
+    if (_boosts >= superCost) {
+      return 'Tienes ${_boostsLabel(_boosts)}. El Boost de 30 min gasta '
+          '${_boostsLabel(_costOf(BoostType.boostNormal))} y el Superboost de '
+          '24 h gasta ${_boostsLabel(superCost)}: tú eliges cómo gastarlos.';
+    }
+    if (_boosts <= 0) {
+      return 'No tienes Boosts. El de 30 min gasta '
+          '${_boostsLabel(_costOf(BoostType.boostNormal))} y el Superboost de '
+          '24 h, ${_boostsLabel(superCost)}. Cómpralos aquí abajo.';
+    }
+    return 'Tienes ${_boostsLabel(_boosts)}: te falta saldo para el '
+        'Superboost de 24 h, que gasta ${_boostsLabel(superCost)}. '
+        'Puedes activar el Boost de 30 min o comprar más aquí abajo.';
+  }
+
   Future<void> _activate(BoostType type) async {
     if (_busy) return;
+    final int cost = _costOf(type);
+    if (_boosts < cost) {
+      // Defensa de cliente: el servidor también lo rechaza, pero pedirle al
+      // usuario que pulse para enterarse de que no le llega es maltratarlo.
+      _snack('Te falta saldo: un ${_labelOf(type)} cuesta '
+          '${_boostsLabel(cost)} y tienes ${_boostsLabel(_boosts)}.');
+      return;
+    }
     setState(() => _busy = true);
     try {
       final BoostActivationResult r =
@@ -246,7 +304,8 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
             : '¡Boost activado!');
         widget.onChanged?.call();
       } else if (r.status == 'no_balance') {
-        _snack('No tienes Boosts. Compra uno abajo.');
+        _snack('Saldo insuficiente: un ${_labelOf(type)} cuesta '
+            '${_boostsLabel(cost)}. Compra más abajo.');
       } else {
         _snack('No se pudo activar el Boost.');
       }
@@ -302,6 +361,13 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
             // Saldos.
             Row(
               children: <Widget>[
+                // El saldo de Attras se compra aquí, así que también se ve aquí.
+                Expanded(
+                    child: _BalanceTile(
+                        icon: Icons.auto_awesome_rounded,
+                        label: 'Attras',
+                        value: _attras)),
+                const SizedBox(width: 12),
                 Expanded(
                     child: _BalanceTile(
                         icon: Icons.bolt_rounded,
@@ -317,25 +383,41 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
             ),
             const SizedBox(height: 18),
 
-            // Activar.
+            // Activar. El COSTE va en la propia etiqueta: es una sola moneda
+            // (Boosts) y cada producto gasta una cantidad distinta, así que sin
+            // el precio delante el usuario no puede decidir.
             Text('Activar Boost',
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             AttraPrimaryButton(
-              label: 'Boost 30 min',
+              label:
+                  'Boost 30 min · ${_boostsLabel(_costOf(BoostType.boostNormal))}',
               icon: Icons.bolt_rounded,
               loading: _busy,
-              onPressed: _boosts > 0 && !_busy
+              onPressed: _boosts >= _costOf(BoostType.boostNormal) && !_busy
                   ? () => _activate(BoostType.boostNormal)
                   : null,
             ),
             const SizedBox(height: 8),
             AttraSecondaryButton(
-              label: 'Superboost 24h',
-              onPressed: _boosts > 0 && !_busy
+              label:
+                  'Superboost 24 h · ${_boostsLabel(_costOf(BoostType.superboost))}',
+              // Antes bastaba con tener 1 Boost para activarlo, así que el
+              // producto caro salía al mismo precio que el barato. Ahora se
+              // desactiva si el saldo no llega, y justo debajo se explica.
+              onPressed: _boosts >= _costOf(BoostType.superboost) && !_busy
                   ? () => _activate(BoostType.superboost)
                   : null,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _activationHint(),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _boosts >= _costOf(BoostType.superboost)
+                    ? context.colors.textMuted
+                    : AppColors.attraRed,
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -346,7 +428,12 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
             const SizedBox(height: 8),
             // Packs de compra desde el catálogo (única fuente de verdad de los
             // IDs de tienda y cantidades). El precio lo pone la tienda.
+            // Los packs de ATTRAS estaban definidos en el catálogo desde el
+            // principio pero NO se ofrecían en ninguna pantalla: eran producto
+            // muerto, imposible de comprar. Van los primeros porque el Attra es
+            // la acción con más valor percibido.
             for (final PremiumProductDefinition p in <PremiumProductDefinition>[
+              ...PremiumProductCatalog.attraPacks,
               ...PremiumProductCatalog.boostPacks,
               ...PremiumProductCatalog.swipePacks,
             ])

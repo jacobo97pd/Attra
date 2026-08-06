@@ -49,8 +49,10 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
   /// Boosts pintaba el saldo que traía `AppUser` al abrirse y se quedaba
   /// congelado, así que tras comprar seguía marcando 0 aunque el abono sí se
   /// hubiera hecho en el servidor.
+  int? get lastAttraBalance => _lastAttraBalance;
   int? get lastBoostBalance => _lastBoostBalance;
   int? get lastSwipeBalance => _lastSwipeBalance;
+  int? _lastAttraBalance;
   int? _lastBoostBalance;
   int? _lastSwipeBalance;
 
@@ -143,10 +145,13 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
           platform: platform,
           verificationData: purchase.verificationData.serverVerificationData,
         );
-        if (def.consumableKind == 'boost') {
-          _lastBoostBalance = balance;
-        } else if (def.consumableKind == 'swipe') {
-          _lastSwipeBalance = balance;
+        switch (def.consumableKind) {
+          case 'attra':
+            _lastAttraBalance = balance;
+          case 'boost':
+            _lastBoostBalance = balance;
+          case 'swipe':
+            _lastSwipeBalance = balance;
         }
         onConsumableDelivered?.call(def.consumableKind!, balance);
         notifyListeners();

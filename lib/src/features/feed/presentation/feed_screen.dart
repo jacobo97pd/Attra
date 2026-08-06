@@ -1745,19 +1745,21 @@ class _SwipeCardState extends State<_SwipeCard>
                   Positioned(
                     top: 24,
                     left: 20,
-                    child: Opacity(
-                      opacity: likeOpacity,
-                      child:
-                          _Stamp(label: 'LIKE', color: context.colors.accent),
+                    child: _SwipeStamp(
+                      progress: likeOpacity,
+                      icon: Icons.check_rounded,
+                      color: context.colors.accent,
+                      semanticLabel: 'Me interesa',
                     ),
                   ),
                   Positioned(
                     top: 24,
                     right: 20,
-                    child: Opacity(
-                      opacity: nopeOpacity,
-                      child: _Stamp(
-                          label: 'NOPE', color: context.colors.textSecondary),
+                    child: _SwipeStamp(
+                      progress: nopeOpacity,
+                      icon: Icons.close_rounded,
+                      color: context.colors.textSecondary,
+                      semanticLabel: 'Paso',
                     ),
                   ),
                 ],
@@ -2375,31 +2377,59 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-class _Stamp extends StatelessWidget {
-  const _Stamp({required this.label, required this.color});
+/// Señal de swipe: un check o una X en un disco de vidrio.
+///
+/// Antes eran dos cajas con las palabras "LIKE" y "NOPE": lenguaje de otra app,
+/// en inglés dentro de una app en español, y con el peso visual de un sello
+/// gigante. Un icono se lee al instante, no necesita traducción y deja
+/// respirar la foto, que es lo que el usuario está mirando.
+///
+/// La señal CRECE y se opaca con el arrastre ([progress] 0..1) en vez de solo
+/// aparecer: así el gesto tiene respuesta continua y se nota cuánto falta para
+/// que cuente.
+class _SwipeStamp extends StatelessWidget {
+  const _SwipeStamp({
+    required this.progress,
+    required this.icon,
+    required this.color,
+    required this.semanticLabel,
+  });
 
-  final String label;
+  final double progress;
+  final IconData icon;
   final Color color;
+  final String semanticLabel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.colors.bg.withValues(alpha: 0.55),
-        border: Border.all(color: color, width: 3),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: <BoxShadow>[
-          BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 18),
-        ],
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 26,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 3,
+    final double t = progress.clamp(0.0, 1.0);
+    if (t <= 0.01) return const SizedBox.shrink();
+    // De 0.82 a 1.0: el disco "entra" con el gesto sin dar un salto brusco.
+    final double scale = 0.82 + (0.18 * t);
+
+    return Opacity(
+      opacity: t,
+      child: Transform.scale(
+        scale: scale,
+        child: Semantics(
+          label: semanticLabel,
+          child: Container(
+            width: 74,
+            height: 74,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: context.colors.bg.withValues(alpha: 0.42),
+              border: Border.all(color: color, width: 2.5),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: color.withValues(alpha: 0.45 * t),
+                  blurRadius: 26,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Icon(icon, color: color, size: 40),
+          ),
         ),
       ),
     );
