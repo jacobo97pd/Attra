@@ -43,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.didChangeDependencies();
     if (_didPrecacheLogo) return;
     _didPrecacheLogo = true;
-    precacheImage(const AssetImage('assets/images/app_logo.png'), context);
+    precacheImage(const AssetImage('assets/images/attra_mark.png'), context);
   }
 
   @override
@@ -85,7 +85,10 @@ class _SplashScreenState extends State<SplashScreen>
                   );
                 },
                 child: Image.asset(
-                  'assets/images/app_logo.png',
+                  // Marca CON transparencia: `app_logo.png` lleva fondo negro
+                  // sólido porque el icono de iOS no admite alfa, y sobre el
+                  // degradado del splash se vería un cuadrado recortado.
+                  'assets/images/attra_mark.png',
                   filterQuality: FilterQuality.medium,
                 ),
               ),

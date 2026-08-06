@@ -30,7 +30,7 @@ class AppUser {
     this.screenshotProtectionEnabled = false,
     this.analyticsConsent = true,
     this.aiPersonalization = true,
-    this.themeModeWire = 'system',
+    this.themeModeWire = 'dark',
     this.relationshipIntent = '',
     this.interests = const <String>[],
     this.intentMode = IntentMode.dating,
@@ -95,7 +95,8 @@ class AppUser {
   final bool aiPersonalization;
 
   /// Modo de tema elegido: 'system' | 'light' | 'dark'. De
-  /// `settings['appearance.themeMode']`. Default 'system'.
+  /// `settings['appearance.themeMode']`. Default 'dark': Attra es una marca de
+  /// fondo negro y arrancar en claro rompía la identidad.
   final String themeModeWire;
 
   /// Qué busca (relationshipIntent) — para afinidad intencional en Slow Dating.
@@ -223,7 +224,8 @@ class AppUser {
           (settings['appearance.themeMode'] as String?)?.trim().isNotEmpty ==
                   true
               ? settings['appearance.themeMode'] as String
-              : 'system',
+              // Sin ajuste guardado, OSCURO (ver ThemeController).
+              : 'dark',
       relationshipIntent: (profile['relationshipIntent'] as String?) ??
           (preferences['relationshipIntent'] as String?) ??
           '',
