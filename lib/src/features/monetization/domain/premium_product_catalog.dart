@@ -53,6 +53,8 @@ class PremiumProductCatalog {
       title: '3 Attras',
       description: 'Destaca tres likes con una senal especial.',
       attraAmount: 3,
+      consumableKind: 'attra',
+      consumableAmount: 3,
     ),
     PremiumProductDefinition(
       id: 'attra_pack_10',
@@ -60,6 +62,8 @@ class PremiumProductCatalog {
       title: '10 Attras',
       description: 'Pack equilibrado para destacar intereses clave.',
       attraAmount: 10,
+      consumableKind: 'attra',
+      consumableAmount: 10,
       badge: 'Más comprado',
     ),
     PremiumProductDefinition(
@@ -68,6 +72,8 @@ class PremiumProductCatalog {
       title: '50 Attras',
       description: 'Pack grande para usuarios frecuentes.',
       attraAmount: 50,
+      consumableKind: 'attra',
+      consumableAmount: 50,
       badge: 'Mejor precio',
     ),
     // ── Consumibles: Boosts y Swipes ───────────────────────────────────────

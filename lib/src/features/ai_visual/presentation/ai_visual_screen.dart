@@ -24,6 +24,7 @@ class AiVisualScreen extends StatefulWidget {
     required this.onUpgrade,
     required this.onGiveConsent,
     required this.onRevokeConsent,
+    this.onSearchSimilar,
   });
 
   final String uid;
@@ -33,6 +34,11 @@ class AiVisualScreen extends StatefulWidget {
   final VoidCallback onUpgrade;
   final Future<void> Function() onGiveConsent;
   final Future<void> Function() onRevokeConsent;
+
+  /// Activa el filtro "Solo parecidos a mi referencia" y lleva al feed. Sin
+  /// esto, el botón principal de la función estrella de Pro no buscaba nada:
+  /// cerraba la pantalla y pedía al usuario que fuera a buscar el filtro.
+  final VoidCallback? onSearchSimilar;
 
   @override
   State<AiVisualScreen> createState() => _AiVisualScreenState();
@@ -327,11 +333,19 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
       _snack('Sube primero una foto de referencia.');
       return;
     }
-    // El motor real ordena el FEED por parecido (filtro "Solo parecidos a mi
-    // referencia"). Volvemos al feed y guiamos al usuario.
+    // El motor de parecidos vive en el FEED (filtro "Solo parecidos a mi
+    // referencia"). Antes este botón se limitaba a cerrar la pantalla y pedirle
+    // al usuario que fuera a buscar el filtro él mismo, así que el botón
+    // principal de la función estrella de Pro no hacía absolutamente nada.
+    // Ahora lo activa y lleva al feed.
+    final VoidCallback? apply = widget.onSearchSimilar;
     Navigator.of(context).maybePop();
-    _snack(
-        'Activa "Solo parecidos a mi referencia" en los filtros del feed para ver los resultados.');
+    if (apply == null) {
+      _snack(
+          'Activa "Solo parecidos a mi referencia" en los filtros del feed.');
+      return;
+    }
+    apply();
   }
 
   Future<void> _clearData() async {

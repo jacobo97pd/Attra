@@ -36,6 +36,18 @@ FLAGS = {
     "two_truths_enabled": ("booleanValue", True),
     "date_builder_enabled": ("booleanValue", True),
     "match_reactivation_enabled": ("booleanValue", True),
+    # El parser (MonetizationFeatureFlags.fromMap) lee estas claves con default
+    # FALSE, y este script era el unico que escribe config/featureFlags. Al no
+    # sembrarlas, el Duelo de Quimica y el Reto Cafe quedaban INALCANZABLES en
+    # produccion sin que nadie los hubiera apagado a proposito, y Attra Plans
+    # caia siempre al camino de respaldo manual.
+    "chat_game_enabled": ("booleanValue", True),
+    "date_plans_enabled": ("booleanValue", True),
+    "date_plans_ai_enabled": ("booleanValue", True),
+    "date_plans_places_enabled": ("booleanValue", True),
+    "date_plans_auto_nudge_enabled": ("booleanValue", True),
+    "date_plans_kill_switch": ("booleanValue", False),
+    "date_plans_free_limit": ("integerValue", "1"),
     "weeklyFreeAttras": ("integerValue", "0"),
     "plusMonthlyAttras": ("integerValue", "3"),
     "premiumMonthlyAttras": ("integerValue", "10"),

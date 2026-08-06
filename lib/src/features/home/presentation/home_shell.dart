@@ -107,6 +107,7 @@ class HomeShell extends StatefulWidget {
     required this.onSetSlowDating,
     this.onSetBusyMode,
     required this.onSetThemeMode,
+    this.onRefreshUser,
     required this.onRepublishDiscovery,
     required this.onSetTravelLocation,
     required this.onLoadProfileByUid,
@@ -216,6 +217,10 @@ class HomeShell extends StatefulWidget {
 
   /// Re-publica el doc público de discovery (efecto inmediato de los ajustes de
   /// visibilidad/ubicación en el feed).
+  /// Recarga el documento del usuario (saldos incluidos). Se llama tras
+  /// entregar una compra: el backend abona el saldo pero `AppUser` no es
+  /// reactivo, así que sin esto la app seguía diciendo "Tienes 0 boosts".
+  final Future<void> Function()? onRefreshUser;
   final Future<void> Function() onRepublishDiscovery;
 
   /// Modo viajes (Plus/Pro): fija/desactiva el destino del feed.
@@ -242,6 +247,7 @@ enum _HomeDestination {
 class _HomeShellState extends State<HomeShell> {
   _HomeDestination _destination = _HomeDestination.discover;
   int _feedReloadToken = 0;
+  int _visualSearchToken = 0;
 
   /// Paso actual del tour guiado (-1 = inactivo). Cada paso resalta una pestaña.
   int _tourStep = -1;
@@ -394,8 +400,16 @@ class _HomeShellState extends State<HomeShell> {
     if (boosts != null) {
       final PurchaseDeliveryRouter router =
           PurchaseDeliveryRouter(boostService: boosts);
-      router.onSubscriptionDelivered = () => _entitlementController?.load();
-      router.onConsumableDelivered = (_, __) => _onEntitlementsChanged();
+      router.onSubscriptionDelivered = () {
+        _entitlementController?.load();
+        widget.onRefreshUser?.call();
+      };
+      // El saldo de consumibles vive en el documento del usuario, no en los
+      // entitlements: hay que recargarlo o la compra no se ve ni se puede usar.
+      router.onConsumableDelivered = (_, __) {
+        _onEntitlementsChanged();
+        widget.onRefreshUser?.call();
+      };
       _purchases = router;
       router.start(subscriptionIds: _subscriptionProductIds);
     }
@@ -493,6 +507,7 @@ class _HomeShellState extends State<HomeShell> {
         attrasBalance: attrasBalance,
         canComment: _entitlementController?.isPlusActive ?? false,
         reloadToken: _feedReloadToken,
+        visualSearchToken: _visualSearchToken,
         storyService: widget.storyService,
         isPlus: _entitlementController?.isPlusActive ?? false,
         canRewind:
@@ -752,6 +767,12 @@ class _HomeShellState extends State<HomeShell> {
         onUpgrade: _openPaywall,
         onGiveConsent: () => widget.onSetAiConsent(true),
         onRevokeConsent: () => widget.onSetAiConsent(false),
+        // Activa el filtro de parecidos y lleva al feed: antes el botón
+        // principal de la IA visual no hacía nada.
+        onSearchSimilar: () => setState(() {
+          _visualSearchToken++;
+          _destination = _HomeDestination.discover;
+        }),
       ),
     ));
   }

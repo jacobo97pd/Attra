@@ -999,6 +999,22 @@ class SessionController extends ChangeNotifier {
     );
   }
 
+  /// Recarga el documento del usuario y reemite la sesión.
+  ///
+  /// Lo necesita todo lo que cambia el usuario POR FUERA de la app (el backend
+  /// abonando un consumible comprado, por ejemplo): sin esto, `AppUser` se
+  /// quedaba con el saldo que tenía al iniciar sesión y la compra no aparecía
+  /// hasta reiniciar la app, ni siquiera para poder activar el Boost.
+  Future<void> refreshCurrentUser() async {
+    final String? uid = _state.user?.uid;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      await _refreshAuthenticatedUser(uid);
+    } catch (error) {
+      debugPrint('[Attra][Session] no se pudo refrescar el usuario: $error');
+    }
+  }
+
   Future<void> _refreshAuthenticatedUser(String uid) async {
     final SessionState previous = _state;
     if (previous.status != SessionStatus.authenticated ||

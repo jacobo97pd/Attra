@@ -145,6 +145,19 @@ export const sendAttra = onCall(
       { balance: FieldValue.increment(-1), updatedAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
+    // El saldo vive en DOS sitios: `attraWallets` (autoritativo) y el espejo
+    // `users/{uid}.attrasBalance`, que es de donde lo lee la app. Solo las
+    // rutas de ABONO escribian el espejo, asi que al gastar Attras el numero
+    // que ve el usuario no bajaba nunca: seguia ofreciendo "Enviar Attra" con
+    // saldo real 0 y cada intento fallaba con insufficient_attras.
+    tx.set(
+      col.users.doc(fromUid),
+      {
+        attrasBalance: Math.max(0, balance - 1),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
     tx.set(ledgerRef, {
       uid: fromUid,
       type: "send",

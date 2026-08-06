@@ -57,6 +57,7 @@ class FeedScreen extends StatefulWidget {
     this.attrasBalance = 0,
     this.canComment = false,
     this.reloadToken = 0,
+    this.visualSearchToken = 0,
     this.storyService,
     this.isPlus = false,
     this.canRewind = false,
@@ -117,6 +118,11 @@ class FeedScreen extends StatefulWidget {
   /// Cambia (lo incrementa HomeShell al abrir la pestaña Feed) para forzar una
   /// recarga que re-aplica la exclusion (p.ej. tras un match desde Likes).
   final int reloadToken;
+
+  /// Se incrementa desde fuera (pantalla de IA visual) para ACTIVAR el filtro
+  /// "Solo parecidos a mi referencia" y recargar. Antes ese botón solo enseñaba
+  /// un aviso pidiendo al usuario que buscara el filtro él mismo.
+  final int visualSearchToken;
 
   /// Comentar una foto es una función Plus. Si es false, el sheet bloquea el
   /// comentario pero permite enviar Like/Attra sin texto.
@@ -444,6 +450,14 @@ class _FeedScreenState extends State<FeedScreen> {
     super.didUpdateWidget(oldWidget);
     // Al volver a la pestaña Feed, recarga y re-excluye (matched/liked/pasados).
     if (oldWidget.reloadToken != widget.reloadToken && !_loading) {
+      _load();
+    }
+    // Petición externa de "buscar parecidos a mi referencia".
+    if (oldWidget.visualSearchToken != widget.visualSearchToken &&
+        widget.visualSearchToken > 0) {
+      setState(() {
+        _filters = _filters.copyWith(sortByVisualReference: true);
+      });
       _load();
     }
   }
