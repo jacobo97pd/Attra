@@ -10,6 +10,7 @@ import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../auth/domain/app_user.dart';
 import '../data/boost_service.dart';
+import '../data/purchase_delivery_router.dart';
 import '../data/iap_service.dart';
 import '../domain/boost.dart';
 import '../domain/premium_product_catalog.dart';
@@ -22,6 +23,7 @@ Future<void> showBoostStoreSheet(
   required BoostService service,
   required AppUser? user,
   IapService? iapService,
+  PurchaseDeliveryRouter? purchases,
   VoidCallback? onChanged,
 }) {
   return showModalBottomSheet<void>(
@@ -35,6 +37,7 @@ Future<void> showBoostStoreSheet(
       service: service,
       user: user,
       iapService: iapService,
+      purchases: purchases,
       onChanged: onChanged,
     ),
   );
@@ -45,6 +48,7 @@ class _BoostStoreBody extends StatefulWidget {
     required this.service,
     required this.user,
     this.iapService,
+    this.purchases,
     this.onChanged,
   });
 
@@ -57,6 +61,10 @@ class _BoostStoreBody extends StatefulWidget {
   /// backend la rechazaba por producto desconocido y el usuario se quedaba sin
   /// su saldo pese a haber pagado.
   final IapService? iapService;
+
+  /// Enrutador de sesión. Es quien entrega las compras cuando esta hoja usa el
+  /// servicio compartido, así que también es quien conoce el saldo resultante.
+  final PurchaseDeliveryRouter? purchases;
   final VoidCallback? onChanged;
 
   @override
@@ -89,9 +97,15 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     final IapService? shared = widget.iapService;
     if (shared != null) {
       // El enrutador de sesión ya entrega estos productos y ya tiene sus
-      // precios cargados: aquí solo se escucha para reflejar busy/errores.
+      // precios cargados: aquí solo se escucha para reflejar busy/errores...
       _iap = shared..addListener(_onIap);
       _iap.clearError();
+      // ...y el saldo resultante, que llega por el enrutador. Sin esto la
+      // compra se abonaba en el servidor pero los contadores de la hoja
+      // seguían mostrando el valor con el que se abrió (0), y parecía que la
+      // compra no había servido de nada.
+      widget.purchases?.addListener(_onPurchasesChanged);
+      _syncBalancesFromRouter();
       return;
     }
     _ownsIap = true;
@@ -104,8 +118,29 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
   @override
   void dispose() {
     _iap.removeListener(_onIap);
+    widget.purchases?.removeListener(_onPurchasesChanged);
     if (_ownsIap) _iap.dispose();
     super.dispose();
+  }
+
+  void _onPurchasesChanged() {
+    if (!mounted) return;
+    final int before = _boosts + _swipes;
+    setState(_syncBalancesFromRouter);
+    if (_boosts + _swipes > before) {
+      _snack('Compra realizada. Boosts: $_boosts · Swipes: $_swipes');
+      widget.onChanged?.call();
+    }
+  }
+
+  /// Copia los saldos que el BACKEND confirmó en la última entrega.
+  void _syncBalancesFromRouter() {
+    final PurchaseDeliveryRouter? router = widget.purchases;
+    if (router == null) return;
+    final int? boosts = router.lastBoostBalance;
+    final int? swipes = router.lastSwipeBalance;
+    if (boosts != null) _boosts = boosts;
+    if (swipes != null) _swipes = swipes;
   }
 
   String get _uid => widget.user?.uid ?? '';
@@ -141,6 +176,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
     }
     try {
       final int balance = await widget.service.purchaseConsumable(
+        productId: purchase.productID,
         kind: def.consumableKind!,
         amount: def.consumableAmount,
         purchaseId: purchase.purchaseID,

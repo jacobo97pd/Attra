@@ -35,12 +35,17 @@ class BoostService {
   Future<int> purchaseConsumable({
     required String kind,
     int amount = 1,
+    String? productId,
     String? purchaseId,
     String? platform, // 'app_store' | 'play_store'
     String? verificationData,
   }) async {
     final Map<String, dynamic> data =
         await _call('grantConsumable', <String, dynamic>{
+      // El productId es lo que el servidor usa para decidir CUÁNTO abonar
+      // (lista blanca). `kind`/`amount` se siguen enviando por compatibilidad
+      // con el backend anterior, pero no son la fuente de verdad.
+      if (productId != null) 'productId': productId,
       'kind': kind,
       'amount': amount,
       if (purchaseId != null) 'purchaseId': purchaseId,

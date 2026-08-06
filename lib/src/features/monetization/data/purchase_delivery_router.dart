@@ -22,7 +22,7 @@ import 'iap_service.dart';
 ///
 /// Este enrutador vive mientras dura la sesión y decide el destino por el
 /// PRODUCTO, no por la pantalla que esté abierta.
-class PurchaseDeliveryRouter {
+class PurchaseDeliveryRouter extends ChangeNotifier {
   PurchaseDeliveryRouter({
     required BoostService boostService,
     IapService? iapService,
@@ -42,6 +42,18 @@ class PurchaseDeliveryRouter {
   /// Se llama tras abonar un consumible, con el nuevo saldo.
   void Function(String kind, int balance)? onConsumableDelivered;
 
+  /// Últimos saldos confirmados POR EL BACKEND tras una entrega.
+  ///
+  /// Hacen falta porque la pantalla que lanzó la compra puede no ser la que
+  /// recibe la respuesta: la entrega vive en la sesión. Sin esto, la hoja de
+  /// Boosts pintaba el saldo que traía `AppUser` al abrirse y se quedaba
+  /// congelado, así que tras comprar seguía marcando 0 aunque el abono sí se
+  /// hubiera hecho en el servidor.
+  int? get lastBoostBalance => _lastBoostBalance;
+  int? get lastSwipeBalance => _lastSwipeBalance;
+  int? _lastBoostBalance;
+  int? _lastSwipeBalance;
+
   bool _started = false;
 
   /// Todos los ids que la sesión debe vigilar: suscripciones y consumibles.
@@ -60,8 +72,10 @@ class PurchaseDeliveryRouter {
     );
   }
 
+  @override
   void dispose() {
     iap.dispose();
+    super.dispose();
   }
 
   String? _platform() {
@@ -104,13 +118,20 @@ class PurchaseDeliveryRouter {
     if (def?.consumableKind != null) {
       try {
         final int balance = await _boosts.purchaseConsumable(
+          productId: purchase.productID,
           kind: def!.consumableKind!,
           amount: def.consumableAmount,
           purchaseId: purchase.purchaseID,
           platform: platform,
           verificationData: purchase.verificationData.serverVerificationData,
         );
+        if (def.consumableKind == 'boost') {
+          _lastBoostBalance = balance;
+        } else if (def.consumableKind == 'swipe') {
+          _lastSwipeBalance = balance;
+        }
         onConsumableDelivered?.call(def.consumableKind!, balance);
+        notifyListeners();
         return const IapDeliveryResult(delivered: true);
       } on BoostServiceException catch (e) {
         return IapDeliveryResult(delivered: false, message: e.message);

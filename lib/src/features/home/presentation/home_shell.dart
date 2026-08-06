@@ -846,6 +846,7 @@ class _HomeShellState extends State<HomeShell> {
       service: service,
       user: widget.user,
       iapService: _purchases?.iap,
+      purchases: _purchases,
       onChanged: () => _entitlementController?.load(),
     );
   }
