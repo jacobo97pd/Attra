@@ -803,8 +803,17 @@ class _FeedScreenState extends State<FeedScreen> {
   /// búsquedas con IA exactamente igual que antes. Lo único que cambia es que
   /// quien no tiene nada que contar no ocupa sitio.
   void _applyStoryWall() {
-    final String? currentId =
-        (_index >= 0 && _index < _profiles.length) ? _profiles[_index].id : null;
+    // Sin servicio de historias no hay historias que cruzar: filtrar dejaría el
+    // muro vacío PARA SIEMPRE, que es una pantalla rota, no una decisión de
+    // producto. En ese caso se degrada al pool completo.
+    if (widget.storyService == null) {
+      _profiles = _rankedPool;
+      _index = _index.clamp(0, _rankedPool.isEmpty ? 0 : _rankedPool.length);
+      return;
+    }
+    final String? currentId = (_index >= 0 && _index < _profiles.length)
+        ? _profiles[_index].id
+        : null;
     final List<SeedProfile> wall = _rankedPool
         .where((SeedProfile p) => (_storiesByOwner[p.id]?.isNotEmpty ?? false))
         .toList(growable: false);

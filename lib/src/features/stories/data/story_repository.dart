@@ -103,9 +103,8 @@ class StoryRepository {
               Story.fromMap(d.id, d.data()))
           .where((Story s) => s.isLive)
           .toList(growable: true)
-        ..sort((Story a, Story b) =>
-            (a.createdAt?.millisecondsSinceEpoch ?? 0)
-                .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
+        ..sort((Story a, Story b) => (a.createdAt?.millisecondsSinceEpoch ?? 0)
+            .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
       return live;
     });
   }
