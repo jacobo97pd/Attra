@@ -13,11 +13,20 @@ import {
   resolvePublicDisplayName,
 } from "./common";
 
-const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+// 72 h: Discover pasa a ser un muro de historias, asi que una ventana de 24 h
+// dejaba el muro vacio para quien no entra a diario. Las historias YA creadas
+// conservan su expiresAt de 24 h (se guarda por documento, no se recalcula):
+// no se alargan retroactivamente, simplemente las nuevas duran mas.
+const STORY_TTL_MS = 72 * 60 * 60 * 1000;
 const MAX_VIDEO_BYTES = 15 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 15;
-const FREE_MAX_ACTIVE_STORIES = 1;
+// Maximo de historias VIVAS por usuario. Era 1, que convierte la funcion en
+// "una foto del dia"; con 5 el usuario puede construir un relato, que es lo que
+// hace que el muro tenga algo que ver. El tope se aplica en SERVIDOR: el
+// cliente puede ocultar el boton, pero quien llame a la callable directamente
+// no puede saltarselo.
+const MAX_ACTIVE_STORIES = 5;
 
 type StoryMediaType = "video" | "image";
 type StoryOverlayType = "text" | "sticker";
@@ -183,8 +192,12 @@ export const createStory = onCall({ region: REGION }, async (request) => {
   const activeLive = activeSnap.docs.filter(
     (d) => (d.data().expiresAt?.toMillis?.() ?? 0) > now,
   );
-  if (activeLive.length >= FREE_MAX_ACTIVE_STORIES) {
-    throw new HttpsError("failed-precondition", "Ya tienes una story activa.");
+  if (activeLive.length >= MAX_ACTIVE_STORIES) {
+    throw new HttpsError(
+      "resource-exhausted",
+      `Ya tienes ${MAX_ACTIVE_STORIES} historias activas. Borra alguna o ` +
+        "espera a que caduque para subir otra.",
+    );
   }
 
   const userSnap = await col.users.doc(uid).get();

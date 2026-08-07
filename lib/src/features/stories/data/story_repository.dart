@@ -55,6 +55,61 @@ class StoryRepository {
     });
   }
 
+  /// Stories vivas AGRUPADAS por dueño, de más reciente a más antigua dentro de
+  /// cada grupo.
+  ///
+  /// [observeLiveStories] colapsa a UNA story por dueño porque nació con el
+  /// límite de una historia por usuario. Con hasta 5 por persona eso perdía el
+  /// resto: el muro no podría apilarlas ni el visor pasarlas una a una.
+  ///
+  /// El orden DENTRO del grupo es cronológico ASCENDENTE (la más antigua
+  /// primero), que es como se leen las historias; el orden ENTRE grupos lo
+  /// decide quien pinta el muro (el ranking del feed), no este repositorio.
+  Stream<Map<String, List<Story>>> observeLiveStoriesByOwner({
+    String excludeUid = '',
+    Set<String> excludedOwners = const <String>{},
+  }) {
+    return _stories
+        .where('status', isEqualTo: 'active')
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> snap) {
+      final Map<String, List<Story>> byOwner = <String, List<Story>>{};
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
+        final Story s = Story.fromMap(d.id, d.data());
+        if (!s.isLive) continue;
+        if (s.ownerUid == excludeUid) continue;
+        if (excludedOwners.contains(s.ownerUid)) continue;
+        (byOwner[s.ownerUid] ??= <Story>[]).add(s);
+      }
+      for (final List<Story> group in byOwner.values) {
+        group.sort((Story a, Story b) =>
+            (a.createdAt?.millisecondsSinceEpoch ?? 0)
+                .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
+      }
+      return byOwner;
+    });
+  }
+
+  /// Todas las stories vivas del propio usuario, de más antigua a más reciente.
+  /// Sustituye a [observeMyLiveStory] ahora que se admiten varias.
+  Stream<List<Story>> observeMyLiveStories(String uid) {
+    return _stories
+        .where('ownerUid', isEqualTo: uid)
+        .where('status', isEqualTo: 'active')
+        .snapshots()
+        .map((QuerySnapshot<Map<String, dynamic>> snap) {
+      final List<Story> live = snap.docs
+          .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+              Story.fromMap(d.id, d.data()))
+          .where((Story s) => s.isLive)
+          .toList(growable: true)
+        ..sort((Story a, Story b) =>
+            (a.createdAt?.millisecondsSinceEpoch ?? 0)
+                .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
+      return live;
+    });
+  }
+
   /// La story viva del propio usuario (o null).
   Stream<Story?> observeMyLiveStory(String uid) {
     return _stories

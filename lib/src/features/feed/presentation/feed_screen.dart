@@ -263,7 +263,16 @@ class _FeedScreenState extends State<FeedScreen> {
   // Stories vivas agrupadas por dueño: para pintar el aro rojizo en la foto
   // principal del feed y abrir el visor al pulsar.
   Map<String, List<Story>> _storiesByOwner = const <String, List<Story>>{};
-  StreamSubscription<List<Story>>? _storiesSub;
+
+  /// Pool YA filtrado y ordenado por el pipeline completo (filtros duros,
+  /// ranking orgánico, Boost, modo viaje, Slow Dating, IA, "te dio like").
+  ///
+  /// Se guarda aparte de [_profiles] porque Discover ya no muestra perfiles
+  /// sino HISTORIAS: [_profiles] es este pool cruzado con quien tiene alguna
+  /// historia viva. Al llegar historias nuevas por el stream basta con volver a
+  /// cruzar, sin repetir todo el pipeline (que hace lecturas de red).
+  List<SeedProfile> _rankedPool = const <SeedProfile>[];
+  StreamSubscription<Map<String, List<Story>>>? _storiesSub;
   // Stories ya vistas (por id) en esta sesión: el aro pasa a gris pero se puede
   // reabrir cuantas veces se quiera.
   final Set<String> _seenStoryIds = <String>{};
@@ -495,14 +504,24 @@ class _FeedScreenState extends State<FeedScreen> {
     final String myUid = widget.user?.uid ?? '';
     if (svc == null) return;
     _storiesSub?.cancel();
-    _storiesSub = svc.observeLiveStories(excludeUid: myUid).listen(
-      (List<Story> stories) {
+    // TODAS las historias vivas de cada persona, no solo la más reciente:
+    // `observeLiveStories` colapsa a una por dueño porque nació con el límite
+    // de una historia por usuario, y el muro necesita apilarlas y pasarlas una
+    // a una en el visor.
+    _storiesSub = svc
+        .observeLiveStoriesByOwner(
+      excludeUid: myUid,
+      excludedOwners: _excluded,
+    )
+        .listen(
+      (Map<String, List<Story>> byOwner) {
         if (!mounted) return;
-        final Map<String, List<Story>> grouped = <String, List<Story>>{};
-        for (final Story s in stories) {
-          (grouped[s.ownerUid] ??= <Story>[]).add(s);
-        }
-        setState(() => _storiesByOwner = grouped);
+        setState(() {
+          _storiesByOwner = byOwner;
+          // Alguien acaba de publicar (o se le caducó): el muro se rehace sin
+          // volver a pedir el pool, que cuesta varias lecturas de red.
+          _applyStoryWall();
+        });
       },
       onError: (Object _) {/* sin stories: el feed sigue igual */},
     );
@@ -753,8 +772,10 @@ class _FeedScreenState extends State<FeedScreen> {
         _dislikedUids = disliked;
         _activeBoostsByUid = activeBoosts;
         _aiSearch = aiState;
-        _profiles = filtered;
+        _rankedPool = filtered;
+        _profiles = const <SeedProfile>[];
         _index = 0;
+        _applyStoryWall();
         _pendingAd = false;
         _rewindHistory = const <_FeedRewindAction>[];
         _rewinding = false;
@@ -774,6 +795,30 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   String get _uid => widget.user?.uid ?? '';
+
+  /// Cruza el pool ordenado con quien tiene historias vivas.
+  ///
+  /// El ORDEN lo pone el pipeline del feed, no las historias: así el muro
+  /// respeta filtros, distancia, Boost pagado, modo viaje, Slow Dating y las
+  /// búsquedas con IA exactamente igual que antes. Lo único que cambia es que
+  /// quien no tiene nada que contar no ocupa sitio.
+  void _applyStoryWall() {
+    final String? currentId =
+        (_index >= 0 && _index < _profiles.length) ? _profiles[_index].id : null;
+    final List<SeedProfile> wall = _rankedPool
+        .where((SeedProfile p) => (_storiesByOwner[p.id]?.isNotEmpty ?? false))
+        .toList(growable: false);
+
+    // Si la persona que se estaba viendo sigue en el muro, no se salta de sitio
+    // al llegar historias nuevas.
+    int nextIndex = 0;
+    if (currentId != null) {
+      final int found = wall.indexWhere((SeedProfile p) => p.id == currentId);
+      if (found >= 0) nextIndex = found;
+    }
+    _profiles = wall;
+    _index = nextIndex.clamp(0, wall.isEmpty ? 0 : wall.length);
+  }
 
   /// Un anuncio cada N perfiles vistos (nunca al inicio).
   static const int _adFrequency = 7;

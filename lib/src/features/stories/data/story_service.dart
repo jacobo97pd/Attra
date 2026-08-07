@@ -129,6 +129,25 @@ class StoryService {
   Stream<Story?> observeMyLiveStory(String uid) =>
       _repository.observeMyLiveStory(uid);
 
+  /// Stories vivas agrupadas por dueño (para el muro apilado de Discover).
+  Stream<Map<String, List<Story>>> observeLiveStoriesByOwner({
+    String excludeUid = '',
+    Set<String> excludedOwners = const <String>{},
+  }) =>
+      _repository.observeLiveStoriesByOwner(
+        excludeUid: excludeUid,
+        excludedOwners: excludedOwners,
+      );
+
+  /// Todas las stories vivas del propio usuario (hasta el máximo permitido).
+  Stream<List<Story>> observeMyLiveStories(String uid) =>
+      _repository.observeMyLiveStories(uid);
+
+  /// Máximo de historias vivas por usuario. Debe coincidir con
+  /// MAX_ACTIVE_STORIES de functions/src/stories.ts: el servidor es quien manda,
+  /// esto solo evita que la UI ofrezca subir una que se va a rechazar.
+  static const int maxActiveStories = 5;
+
   Stream<Story?> observeStoryById(String id) =>
       _repository.observeStoryById(id);
 
