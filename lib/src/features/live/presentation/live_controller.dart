@@ -10,7 +10,9 @@ import '../data/live_moderation_sampler.dart';
 import '../data/live_rtc_config.dart';
 import '../data/live_rtc_session.dart';
 import '../data/live_service.dart';
+import '../domain/live_block_notice.dart';
 import '../domain/live_constants.dart';
+import '../domain/live_rules.dart';
 import '../domain/live_session.dart';
 import '../domain/live_strikes.dart';
 
@@ -21,6 +23,9 @@ enum LivePhase {
 
   /// Comprobando sanciones y pidiendo cámara/micro.
   preparing,
+
+  /// Normas en pantalla, esperando aceptación. La cámara sigue APAGADA.
+  rules,
 
   /// Sin cámara o sin micro: la pantalla explica por qué hacen falta.
   permissionDenied,
@@ -88,6 +93,13 @@ class LiveController extends ChangeNotifier {
   LiveStrikes _strikes = const LiveStrikes.clean('');
   LiveStrikes get strikes => _strikes;
 
+  LiveBlockNotice? _block;
+
+  /// Sanción vigente cuando [phase] es [LivePhase.blocked]. La UI la necesita
+  /// para distinguir el bloqueo temporal (hay que esperar) del permanente (no
+  /// hay nada que esperar) sin tener que interpretar el texto del mensaje.
+  LiveBlockNotice? get blockNotice => _block;
+
   ProfileSummary? _peer;
   ProfileSummary? get peer => _peer;
 
@@ -129,6 +141,16 @@ class LiveController extends ChangeNotifier {
   bool get isLive =>
       _phase == LivePhase.active || _phase == LivePhase.connecting;
 
+  /// ¿Hay que impedir que la pantalla se apague?
+  ///
+  /// Incluye la sala de espera además de la llamada: ahí la cámara YA está
+  /// encendida y seguimos en la cola, así que un apagado de pantalla nos
+  /// emparejaría con alguien mientras el móvil duerme y le gastaría el turno.
+  bool get keepsScreenAwake =>
+      _phase == LivePhase.searching ||
+      _phase == LivePhase.connecting ||
+      _phase == LivePhase.active;
+
   StreamSubscription<LiveSession?>? _sessionSub;
   StreamSubscription<LiveStrikes>? _strikesSub;
   StreamSubscription<LiveVerdict?>? _verdictSub;
@@ -147,9 +169,64 @@ class LiveController extends ChangeNotifier {
   bool _disposed = false;
   bool _closingSession = false;
 
+  /// ¿Hemos llegado a pedir sitio en la cola?
+  ///
+  /// Con la pantalla de normas delante hay una salida —"ahora no"— que antes no
+  /// existía: se abandona sin haber entrado nunca en la cola. Sin esta marca,
+  /// cada cancelación gastaba una llamada a `leaveLiveQueue` para borrar algo
+  /// que no existe. Se marca ANTES de llamar a `joinLiveQueue`, no después: si
+  /// la llamada falla a medias podríamos haber quedado apuntados igualmente, y
+  /// quedarse en la cola es mucho peor que una llamada de más.
+  bool _joinedQueue = false;
+
   // --- Ciclo de vida público ---
 
+  /// Primer paso al abrir la pantalla. NO enciende la cámara.
+  ///
+  /// Orden deliberado —sanción, luego normas, luego permisos— porque cada paso
+  /// invalida al siguiente:
+  /// - A quien está vetado no tiene sentido hacerle leer unas normas ni
+  ///   pedirle la cámara para acabar diciéndole que no puede entrar.
+  /// - Las normas van ANTES del diálogo de permisos del sistema: quien acepta
+  ///   la cámara tiene que saber ya que lo que emita se analiza y qué pasa si
+  ///   incumple. Enseñarlo después es justo lo que la guideline 1.2 considera
+  ///   insuficiente.
+  Future<void> prepareEntry() async {
+    if (_disposed) return;
+    if (_phase != LivePhase.idle &&
+        _phase != LivePhase.ended &&
+        _phase != LivePhase.error) {
+      return;
+    }
+    _reset();
+    _set(LivePhase.preparing, message: '');
+
+    _strikes = await _service.fetchStrikes(_uid);
+    if (_disposed) return;
+    if (_applyBlockIfSanctioned(_strikes)) return;
+
+    if (LiveRulesConsent.accepted) {
+      await start();
+      return;
+    }
+    _set(LivePhase.rules);
+  }
+
+  /// El usuario ha leído y aceptado las normas: a partir de aquí sí se pide la
+  /// cámara. La aceptación vale para toda la ejecución de la app (ver
+  /// [LiveRulesConsent]), no para siempre.
+  Future<void> acceptRules() async {
+    if (_disposed || _phase != LivePhase.rules) return;
+    LiveRulesConsent.accept();
+    _set(LivePhase.idle);
+    await start();
+  }
+
   /// Entra al vivo: comprueba sanciones, entra en la cola y espera pareja.
+  ///
+  /// Da por hecho que las normas ya están aceptadas: el camino público es
+  /// [prepareEntry]. Se mantiene el chequeo de sanciones porque `searchAgain()`
+  /// vuelve por aquí y entre llamada y llamada pueden haberte sancionado.
   Future<void> start() async {
     if (_disposed) return;
     if (_phase != LivePhase.idle &&
@@ -165,10 +242,7 @@ class LiveController extends ChangeNotifier {
     // emparejar; esto solo evita un mensaje de error genérico.
     _strikes = await _service.fetchStrikes(_uid);
     if (_disposed) return;
-    if (_strikes.isBlockedAt(DateTime.now())) {
-      _set(LivePhase.blocked, message: _blockMessage(_strikes));
-      return;
-    }
+    if (_applyBlockIfSanctioned(_strikes)) return;
 
     _strikesSub = _service.watchStrikes(_uid).listen(_onStrikes);
 
@@ -193,13 +267,14 @@ class LiveController extends ChangeNotifier {
     }
 
     try {
+      _joinedQueue = true;
       final LiveQueueTicket ticket = await _service.joinQueue();
       if (_disposed) return;
       if (ticket.isBlocked) {
-        _set(LivePhase.blocked,
-            message: ticket.permanentlyBlocked
-                ? _permanentBlockText
-                : _temporaryBlockText(ticket.blockedUntil));
+        _applyBlock(LiveBlockNotice(
+          permanent: ticket.permanentlyBlocked,
+          until: ticket.permanentlyBlocked ? null : ticket.blockedUntil,
+        ));
         return;
       }
       if (ticket.isPaired) {
@@ -219,7 +294,7 @@ class LiveController extends ChangeNotifier {
       _scheduleMatchPolling();
     } on LiveServiceException catch (error) {
       if (error.isBlocked) {
-        _set(LivePhase.blocked, message: error.message);
+        await _applyBackendBlock();
       } else {
         _failWith(error.message);
       }
@@ -268,9 +343,11 @@ class LiveController extends ChangeNotifier {
     _notify();
     await preview?.dispose();
 
-    try {
-      await _service.leaveQueue();
-    } catch (_) {/* si falla, el backend caduca la entrada por `joinedAt` */}
+    if (_joinedQueue) {
+      try {
+        await _service.leaveQueue();
+      } catch (_) {/* si falla, el backend caduca la entrada por `joinedAt` */}
+    }
   }
 
   /// Cuelga: cierra la sesión y pasa a pedir veredicto.
@@ -285,6 +362,16 @@ class LiveController extends ChangeNotifier {
     await _closeSession(LiveEndReason.left);
   }
 
+  /// ¿Se puede denunciar cerrando la sesión, o hay que ir por el flujo normal
+  /// de reportes?
+  ///
+  /// `endLiveSession` solo crea el reporte MIENTRAS la sesión sigue viva: el
+  /// backend aplica "el primer cierre gana" y el segundo es un no-op, así que
+  /// llamarlo sobre una sesión ya cerrada se traga la denuncia en silencio.
+  /// Quien reporte desde el veredicto o el resumen debe usar `reportUser`
+  /// ([SafetyActions]), que escribe en la MISMA cola de moderación.
+  bool get canReportThroughSession => _session?.isLive == true;
+
   /// Denuncia al otro y corta la sesión en un solo paso.
   ///
   /// Va por `endLiveSession(reason: 'reported')` en lugar de por `reportUser`
@@ -292,10 +379,18 @@ class LiveController extends ChangeNotifier {
   /// crea el reporte en la MISMA cola de moderación que `reportUser`, cierra
   /// la sesión para ambos y escribe dislike en los dos sentidos para que no
   /// se vuelvan a cruzar. Llamar a las dos crearía un reporte duplicado.
-  Future<void> reportPeer(String reason, {String details = ''}) async {
+  ///
+  /// Devuelve si la denuncia LLEGÓ al backend por este camino.
+  ///
+  /// `false` (sesión ya cerrada, o el cierre falló) significa que quien llama
+  /// debe reenviarla por `reportUser`. Ante la duda se reenvía: un reporte
+  /// duplicado lo descarta moderación en un vistazo, uno perdido no lo
+  /// recupera nadie.
+  Future<bool> reportPeer(String reason, {String details = ''}) async {
     final LiveSession? current = _session;
-    if (current == null) return;
+    if (current == null) return false;
     _moderationNotice = '';
+    bool delivered = false;
     if (current.isLive) {
       try {
         await _service.endSession(
@@ -304,6 +399,7 @@ class LiveController extends ChangeNotifier {
           reportReason: reason,
           details: details,
         );
+        delivered = true;
       } catch (_) {
         // Aunque falle el aviso al backend, cerramos en local: nadie tiene
         // que seguir viendo a quien acaba de denunciar.
@@ -311,6 +407,21 @@ class LiveController extends ChangeNotifier {
     }
     _endReason ??= LiveEndReason.reported;
     await _finishSession(LiveEndReason.reported);
+    return delivered;
+  }
+
+  /// Se ha reportado o bloqueado a la otra persona DESPUÉS de que la sesión
+  /// terminara (desde el veredicto o el resumen).
+  ///
+  /// Cierra el recorrido en el resumen: seguir pidiendo "¿te ha interesado?"
+  /// sobre alguien a quien se acaba de denunciar sería absurdo, y con
+  /// `endReason: reported` el resumen tampoco ofrece buscar a otra persona de
+  /// inmediato.
+  void handleReportedAfterSession() {
+    if (_disposed) return;
+    _moderationNotice = '';
+    _endReason = LiveEndReason.reported;
+    _set(LivePhase.ended);
   }
 
   /// Corta la sesión sin denunciar (p. ej. tras bloquear a la otra persona,
@@ -535,10 +646,7 @@ class LiveController extends ChangeNotifier {
         return;
       }
     }
-    if (strikes.isBlockedAt(now) && !isLive) {
-      _set(LivePhase.blocked, message: _blockMessage(strikes));
-      return;
-    }
+    if (!isLive && _applyBlockIfSanctioned(strikes)) return;
     _notify();
   }
 
@@ -602,9 +710,11 @@ class LiveController extends ChangeNotifier {
     }
 
     // Ya no estamos en cola; salir es idempotente y barato.
-    try {
-      await _service.leaveQueue();
-    } catch (_) {/* sin consecuencias: la entrada caduca sola */}
+    if (_joinedQueue) {
+      try {
+        await _service.leaveQueue();
+      } catch (_) {/* sin consecuencias: la entrada caduca sola */}
+    }
   }
 
   Future<void> _disposeRtc() async {
@@ -658,7 +768,7 @@ class LiveController extends ChangeNotifier {
         // Un sondeo fallido NO saca al usuario de la pantalla: puede ser un
         // corte de red pasajero. Salvo que el backend diga que está vetado.
         if (error is LiveServiceException && error.isBlocked) {
-          _set(LivePhase.blocked, message: error.message);
+          unawaited(_applyBackendBlock());
         }
       }).whenComplete(() => _polling = false),
     );
@@ -675,6 +785,40 @@ class LiveController extends ChangeNotifier {
     } catch (_) {
       // El nombre es decorativo: sin él la llamada funciona igual.
     }
+  }
+
+  // --- Sanciones que impiden entrar ---
+
+  /// Pinta la pantalla de veto si [strikes] veta AHORA. Devuelve si lo hizo,
+  /// para que quien llama sepa que debe abandonar su flujo.
+  bool _applyBlockIfSanctioned(LiveStrikes strikes) {
+    final LiveBlockNotice? notice =
+        LiveBlockNotice.fromStrikes(strikes, DateTime.now());
+    if (notice == null) return false;
+    _applyBlock(notice);
+    return true;
+  }
+
+  void _applyBlock(LiveBlockNotice notice) {
+    _block = notice;
+    _set(LivePhase.blocked, message: _blockText(notice));
+  }
+
+  /// El backend nos ha cerrado la puerta (`permission-denied` de
+  /// `assertLiveNotBlocked`).
+  ///
+  /// PORQUÉ releemos las sanciones en vez de mostrar `error.message`: el texto
+  /// de la excepción es de servidor —pensado para logs, y a veces en inglés— y
+  /// no distingue 24 h de para siempre. Leyendo `liveStrikes/{uid}` podemos
+  /// contarlo con nuestras palabras. Si el documento no se deja leer, seguimos
+  /// bloqueando (el backend manda) pero en neutro, sin inventarnos un plazo.
+  Future<void> _applyBackendBlock() async {
+    if (_disposed) return;
+    final LiveStrikes strikes = await _service.fetchStrikes(_uid);
+    if (_disposed) return;
+    _strikes = strikes;
+    if (_applyBlockIfSanctioned(strikes)) return;
+    _applyBlock(LiveBlockNotice.unknown);
   }
 
   // --- Mensajes ---
@@ -696,9 +840,9 @@ class LiveController extends ChangeNotifier {
     return 'El directo está bloqueado $minutes min por contenido inapropiado.';
   }
 
-  String _blockMessage(LiveStrikes strikes) {
-    if (strikes.permanentlyBlocked) return _permanentBlockText;
-    return _temporaryBlockText(strikes.blockedUntil);
+  String _blockText(LiveBlockNotice notice) {
+    if (notice.permanent) return _permanentBlockText;
+    return _temporaryBlockText(notice.until);
   }
 
   String _strikeMessage(LiveStrikeDecision decision, LiveStrikes strikes) {
@@ -719,6 +863,8 @@ class LiveController extends ChangeNotifier {
 
   void _reset() {
     _session = null;
+    _block = null;
+    _joinedQueue = false;
     _startingSession = false;
     _polling = false;
     _closingSession = false;

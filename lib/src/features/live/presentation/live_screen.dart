@@ -16,9 +16,12 @@ import '../../safety/presentation/safety_actions.dart';
 import '../data/live_local_media.dart';
 import '../data/live_rtc_session.dart';
 import '../data/live_service.dart';
+import '../domain/live_block_notice.dart';
 import '../domain/live_session.dart';
 import 'live_controller.dart';
+import 'live_rules_view.dart';
 import 'live_verdict_swipe.dart';
+import 'live_wakelock.dart';
 
 /// Pantalla del FEED EN VIVO: sala de espera + videollamada 1:1 + veredicto.
 ///
@@ -57,18 +60,26 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     profileSummaryRepository: widget.profileSummaryRepository,
   );
 
+  /// Impide que el sistema apague la pantalla mientras hay directo. Sin esto la
+  /// llamada se cortaba sola: pantalla apagada → app en `paused` →
+  /// `handleAppBackgrounded()` cierra la sesión.
+  final LiveWakelock _wakelock = LiveWakelock();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onChanged);
-    // Arranca solo: entrar aquí ES la intención de participar. La cámara no se
-    // enciende hasta que hay pareja (ver LiveController).
-    unawaited(_controller.start());
+    // NO arranca la cámara: `prepareEntry` comprueba primero si estás
+    // sancionado y después enseña las normas. La cámara solo se enciende tras
+    // aceptarlas (ver LiveController.prepareEntry).
+    unawaited(_controller.prepareEntry());
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    unawaited(_wakelock.update(keepAwake: _controller.keepsScreenAwake));
+    setState(() {});
   }
 
   @override
@@ -86,21 +97,34 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onChanged);
     _controller.dispose();
+    // Suelta el bloqueo pase lo que pase: salir del directo con la pantalla
+    // clavada encendida se comería la batería sin explicación.
+    unawaited(_wakelock.release());
     super.dispose();
   }
 
-  /// Reportar / Bloquear durante la llamada.
+  /// Reportar / Bloquear a la otra persona. Disponible DURANTE la llamada y
+  /// también después, en el veredicto y en el resumen.
   ///
-  /// El bloqueo usa el flujo compartido (`SafetyActions.block`, que ya llama a
-  /// `blockUser`). La denuncia, en cambio, va por `endLiveSession` porque el
-  /// backend crea el reporte en la MISMA cola que `reportUser` Y ADEMÁS cierra
-  /// la sesión y escribe los dislikes de golpe; usar los dos caminos crearía
-  /// un reporte duplicado. La lista de motivos es la compartida
-  /// ([ReportReason]), no una copia.
+  /// PORQUÉ los dos momentos: el caso que hay que cubrir es justo el peor —
+  /// alguien te enseña algo y cuelga—. Si la denuncia dependiera de que la
+  /// sesión siga viva, ese caso se quedaría sin denunciar.
+  ///
+  /// Y por eso hay DOS caminos de reporte, no uno:
+  /// - Sesión viva: `endLiveSession(reason: 'reported')`, porque el backend
+  ///   crea el reporte en la MISMA cola que `reportUser` Y ADEMÁS cierra la
+  ///   sesión y escribe los dislikes de golpe. Llamar también a `reportUser`
+  ///   duplicaría el reporte.
+  /// - Sesión ya cerrada: `SafetyActions.report` (→ `reportUser`). El cierre
+  ///   del backend es "el primero gana", así que reutilizar `endLiveSession`
+  ///   aquí se habría tragado la denuncia sin decir nada.
+  ///
+  /// La lista de motivos es la compartida ([ReportReason]), no una copia.
   Future<void> _report() async {
     final String? peerUid = _controller.peerUid;
     if (peerUid == null || peerUid.isEmpty) return;
     final String name = _controller.peer?.displayName ?? 'esta persona';
+    final bool live = _controller.canReportThroughSession;
 
     final _LiveSafetyChoice? choice =
         await showModalBottomSheet<_LiveSafetyChoice>(
@@ -114,8 +138,10 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
               key: const ValueKey<String>('live-safety-report'),
               leading: const Icon(Icons.flag_outlined),
               title: const Text('Reportar'),
-              subtitle:
-                  const Text('Cortamos la sesión y lo revisa nuestro equipo'),
+              subtitle: Text(live
+                  ? 'Cortamos la sesión y lo revisa nuestro equipo'
+                  : 'Lo revisa nuestro equipo aunque la sesión ya haya '
+                      'terminado'),
               onTap: () =>
                   Navigator.of(sheetContext).pop(_LiveSafetyChoice.report),
             ),
@@ -135,13 +161,20 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
     if (choice == null || !mounted) return;
 
     if (choice == _LiveSafetyChoice.block) {
-      await SafetyActions.block(
+      final SafetyActionResult result = await SafetyActions.block(
         context,
         matchService: widget.matchService,
         uid: peerUid,
         displayName: name,
       );
-      await _controller.handleReported();
+      if (result != SafetyActionResult.blocked) return;
+      if (_controller.canReportThroughSession) {
+        await _controller.handleReported();
+      } else {
+        // Ya no hay sesión que cerrar, pero tampoco tiene sentido seguir
+        // preguntando "¿te ha interesado?" por alguien recién bloqueado.
+        _controller.handleReportedAfterSession();
+      }
       return;
     }
 
@@ -172,15 +205,55 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
         ),
       ),
     );
-    if (reason == null) return;
+    if (reason == null || !mounted) return;
 
-    await _controller.reportPeer(reason.wireName);
+    // El camino se decide AQUÍ y no al abrir la hoja: el tope de 3 minutos
+    // sigue corriendo mientras se elige el motivo, así que la sesión puede
+    // haber vencido por el camino. `reportPeer` devuelve si la denuncia llegó
+    // de verdad; si no, se reenvía por `reportUser`.
+    if (_controller.canReportThroughSession &&
+        await _controller.reportPeer(reason.wireName)) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content:
+              Text('Gracias. Nuestro equipo lo revisa en menos de 24 horas.'),
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(
-        content: Text('Gracias. Nuestro equipo lo revisa en menos de 24 horas.'),
-      ),
-    );
+    await _sendReportAfterSession(peerUid, reason);
+  }
+
+  /// Denuncia con la sesión ya cerrada: va por `reportUser`, la MISMA cola de
+  /// moderación que usa el resto de la app.
+  ///
+  /// No se reutiliza `SafetyActions.report` porque volvería a preguntar el
+  /// motivo, que aquí ya está elegido; sí se copia su contrato de cara al
+  /// usuario (mismo texto de confirmación y mismo aviso de fallo).
+  Future<void> _sendReportAfterSession(String peerUid, ReportReason reason) async {
+    final ScaffoldMessengerState? messenger =
+        ScaffoldMessenger.maybeOf(context);
+    try {
+      await widget.matchService.reportUser(
+        reportedUid: peerUid,
+        reason: reason.wireName,
+      );
+      messenger?.showSnackBar(
+        const SnackBar(
+          content:
+              Text('Gracias. Nuestro equipo lo revisa en menos de 24 horas.'),
+        ),
+      );
+      _controller.handleReportedAfterSession();
+    } catch (_) {
+      messenger?.showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo enviar el reporte. Inténtalo otra vez.'),
+        ),
+      );
+    }
   }
 
   Future<void> _openAppSettings() async {
@@ -213,6 +286,11 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
       case LivePhase.idle:
       case LivePhase.preparing:
         return const _WaitingView(title: 'Preparando el directo…');
+      case LivePhase.rules:
+        return LiveRulesView(
+          onAccept: () => unawaited(_controller.acceptRules()),
+          onCancel: () => Navigator.of(context).maybePop(),
+        );
       case LivePhase.searching:
         return _WaitingView(
           title: 'Buscando a alguien…',
@@ -232,12 +310,13 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
           onHangUp: () => unawaited(_controller.hangUp()),
         );
       case LivePhase.verdict:
-        return _VerdictView(controller: _controller);
+        return _VerdictView(controller: _controller, onReport: _report);
       case LivePhase.ended:
         return _EndedView(
           controller: _controller,
           onSearchAgain: () => unawaited(_controller.searchAgain()),
           onClose: () => Navigator.of(context).maybePop(),
+          onReport: _report,
           onOpenChat: widget.onOpenChat,
         );
       case LivePhase.permissionDenied:
@@ -247,10 +326,8 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
           onOpenSettings: _openAppSettings,
         );
       case LivePhase.blocked:
-        return _NoticeView(
-          icon: Icons.gpp_maybe_outlined,
-          title: 'Directo no disponible',
-          message: _controller.message,
+        return _BlockedView(
+          notice: _controller.blockNotice ?? LiveBlockNotice.unknown,
           onClose: () => Navigator.of(context).maybePop(),
         );
       case LivePhase.error:
@@ -485,15 +562,7 @@ class _CallView extends StatelessWidget {
               // Botón de denuncia SIEMPRE presente durante la llamada: es la
               // salida de emergencia y no puede estar escondida en un menú
               // secundario.
-              TextButton.icon(
-                key: const ValueKey<String>('live-report'),
-                onPressed: () => unawaited(onReport()),
-                icon: const Icon(Icons.flag_outlined, color: Colors.white),
-                label: const Text(
-                  'Reportar',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
+              _ReportTextButton(onPressed: onReport),
             ],
           ),
         ),
@@ -815,6 +884,27 @@ class _ScrimBottom extends StatelessWidget {
   }
 }
 
+/// Botón de denuncia. Uno solo para las tres pantallas donde aparece
+/// (llamada, veredicto y resumen) para que se vea y se lea igual en las tres:
+/// si el botón de emergencia cambia de sitio y de forma según la fase, deja de
+/// reconocerse justo cuando hace falta.
+class _ReportTextButton extends StatelessWidget {
+  const _ReportTextButton({required this.onPressed, this.label = 'Reportar'});
+
+  final Future<void> Function() onPressed;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      key: const ValueKey<String>('live-report'),
+      onPressed: () => unawaited(onPressed()),
+      icon: const Icon(Icons.flag_outlined, color: Colors.white),
+      label: Text(label, style: const TextStyle(color: Colors.white)),
+    );
+  }
+}
+
 class _CircleButton extends StatelessWidget {
   const _CircleButton({
     super.key,
@@ -859,9 +949,10 @@ class _CircleButton extends StatelessWidget {
 // --- Veredicto tras la llamada ---
 
 class _VerdictView extends StatelessWidget {
-  const _VerdictView({required this.controller});
+  const _VerdictView({required this.controller, required this.onReport});
 
   final LiveController controller;
+  final Future<void> Function() onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -871,7 +962,13 @@ class _VerdictView extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Column(
         children: <Widget>[
-          const SizedBox(height: AppSpacing.xl),
+          // La denuncia sigue accesible aquí: el momento típico para querer
+          // denunciar es justo cuando la llamada acaba de terminar, y hasta
+          // ahora esta pantalla solo dejaba decir "me interesa" o "paso".
+          Align(
+            alignment: Alignment.centerRight,
+            child: _ReportTextButton(onPressed: onReport),
+          ),
           Text(
             '¿Te ha interesado $name?',
             textAlign: TextAlign.center,
@@ -933,12 +1030,14 @@ class _EndedView extends StatelessWidget {
     required this.controller,
     required this.onSearchAgain,
     required this.onClose,
+    required this.onReport,
     this.onOpenChat,
   });
 
   final LiveController controller;
   final VoidCallback onSearchAgain;
   final VoidCallback onClose;
+  final Future<void> Function() onReport;
   final void Function(String chatId, String peerUid)? onOpenChat;
 
   @override
@@ -1012,6 +1111,19 @@ class _EndedView extends StatelessWidget {
             ),
           const SizedBox(height: AppSpacing.md),
           AttraGhostButton(label: 'Salir', onPressed: onClose),
+          // Denunciar DESPUÉS de colgar. Es el caso que más importa cubrir:
+          // quien enseña algo y corta la llamada contaba justamente con que
+          // ya no se le pudiera denunciar. `endReason: reported` significa que
+          // ya se hizo, así que ahí no se vuelve a ofrecer.
+          if (peerUid != null &&
+              peerUid.isNotEmpty &&
+              controller.endReason != LiveEndReason.reported) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _ReportTextButton(
+              onPressed: onReport,
+              label: 'Reportar a esta persona',
+            ),
+          ],
         ],
       ),
     );
@@ -1109,7 +1221,111 @@ class _PermissionView extends StatelessWidget {
   }
 }
 
-// --- Avisos genéricos (bloqueo / error) ---
+// --- Sanción: no puedes entrar al directo ---
+
+/// Explica el veto CON NUESTRAS PALABRAS.
+///
+/// PORQUÉ una pantalla propia y no el aviso genérico: el backend rechaza a los
+/// sancionados con un `permission-denied` y antes se pintaba ese texto tal
+/// cual, que ni distingue las 24 h de para siempre ni dice qué se puede hacer.
+/// Son dos situaciones distintas: en una hay que esperar (y conviene saber
+/// cuánto, y que a la siguiente ya no hay vuelta atrás) y en la otra no hay
+/// nada que esperar, así que ofrecer "reintentar" sería mentir.
+class _BlockedView extends StatelessWidget {
+  const _BlockedView({required this.notice, required this.onClose});
+
+  final LiveBlockNotice notice;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime now = DateTime.now();
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(
+            notice.permanent ? Icons.block : Icons.hourglass_bottom_rounded,
+            size: 56,
+            color: Colors.white,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            _title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            _body(now),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // El resto de la app sigue funcionando: decirlo evita que la sanción
+          // del directo se lea como "me han echado de Attra".
+          Text(
+            'El resto de Attra funciona con normalidad: feed, chats y matches '
+            'siguen ahí.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xxl),
+          AttraPrimaryButton(label: 'Entendido', onPressed: onClose),
+        ],
+      ),
+    );
+  }
+
+  String get _title {
+    if (notice.permanent) return 'Ya no puedes entrar al directo';
+    if (notice.durationUnknown) return 'Directo no disponible';
+    return 'Directo bloqueado temporalmente';
+  }
+
+  String _body(DateTime now) {
+    if (notice.permanent) {
+      return 'Has incumplido las normas del directo varias veces, así que has '
+          'perdido el acceso de forma permanente. No se levanta con el tiempo: '
+          'la decisión la revisa nuestro equipo de moderación.';
+    }
+    if (notice.durationUnknown) {
+      return 'Ahora mismo no puedes entrar al directo por una sanción de '
+          'moderación. Vuelve a intentarlo más tarde.';
+    }
+    return 'Se ha detectado contenido inapropiado en tu cámara. Podrás volver '
+        'a entrar ${_remainingText(now)}, sin hacer nada: el bloqueo se '
+        'levanta solo. Si vuelve a pasar, la pérdida de acceso es permanente.';
+  }
+
+  /// Redondea a favor del usuario (arriba) para no prometer un "en 1 h" que en
+  /// realidad son 1 h 59 min.
+  String _remainingText(DateTime now) {
+    final Duration left = notice.remaining(now);
+    if (left <= Duration.zero) return 'en unos minutos';
+    if (left.inHours >= 1) {
+      final int hours =
+          left.inMinutes % 60 == 0 ? left.inHours : left.inHours + 1;
+      return 'dentro de $hours h';
+    }
+    final int minutes = left.inMinutes < 1 ? 1 : left.inMinutes + 1;
+    return 'dentro de $minutes min';
+  }
+}
+
+// --- Avisos genéricos (error) ---
 
 class _NoticeView extends StatelessWidget {
   const _NoticeView({

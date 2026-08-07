@@ -84,6 +84,15 @@ dependencies:
   # almacenable en servidor. La contrapartida es que la moderación tiene que
   # ocurrir en el cliente (ver LiveModerationSampler).
   flutter_webrtc: ^0.12.6
+  # Mantiene la pantalla encendida MIENTRAS hay videollamada en vivo. El
+  # proyecto no tenia ninguna dependencia equivalente (se reviso pubspec antes
+  # de anadirla) y Flutter no expone keep-screen-on de serie. PORQUE hace
+  # falta: el temporizador de inactividad del sistema no sabe que estas en una
+  # llamada, asi que a los 30 s apagaba la pantalla, la app pasaba a segundo
+  # plano y LiveController cortaba la sesion a media conversacion. No requiere
+  # permisos ni cambios en Android/iOS (usa FLAG_KEEP_SCREEN_ON e
+  # isIdleTimerDisabled). Ver LiveWakelock.
+  wakelock_plus: ^1.4.0
 
 dev_dependencies:
   flutter_test:

@@ -54,10 +54,31 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   /// responde, para no enviar dos likes con un doble gesto.
   bool _busy = false;
 
+  /// Acción YA decidida pero todavía animándose (los 240 ms del deslizamiento).
+  ///
+  /// `_busy` solo se levanta cuando termina la animación, así que durante ese
+  /// cuarto de segundo los botones seguían activos: tocar "Paso" y acto seguido
+  /// "Me gusta" cancelaba la primera animación, disparaba su acción, avanzaba de
+  /// persona y el like acababa cayendo sobre la SIGUIENTE, a la que el usuario
+  /// no había visto nada.
+  bool _actionPending = false;
+
+  /// Entrada bloqueada: ya hay una acción decidida (animándose o en vuelo).
+  bool get _locked => _busy || _actionPending;
+
   late final AnimationController _swipeAnim;
   Animation<double>? _swipeTween;
+
+  /// Identifica la animación de deslizamiento en curso. `reset()` CANCELA la
+  /// anterior y su `whenCompleteOrCancel` se dispara igual: sin este contador,
+  /// una animación abortada ejecutaba su acción sobre otra persona.
+  int _swipeSeq = 0;
   double _dx = 0;
   double _screenWidth = 360;
+
+  /// Story que se está reproduciendo ahora mismo. El índice no vale como ancla:
+  /// la lista de la persona cambia sola cuando una de sus historias caduca.
+  String? _currentStoryId;
 
   Story? get _story {
     final List<Story> stories = _person?.stories ?? const <Story>[];
@@ -126,15 +147,31 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
       return;
     }
     final bool samePerson = next.uid == _person?.uid;
+    // Reanclaje por storyId: a la MISMA persona se le puede caducar una historia
+    // mientras se la estás viendo. Con el índice a pelo, la lista se encogía por
+    // debajo, `_storyIndex` pasaba a señalar otra historia mientras seguía
+    // sonando la anterior, la barra de segmentos mentía y al acabar el vídeo se
+    // saltaba a la siguiente persona sin haber enseñado la última.
+    final int anchored = samePerson
+        ? next.stories.indexWhere((Story s) => s.storyId == _currentStoryId)
+        : -1;
     setState(() {
       _person = next;
-      if (!samePerson) _storyIndex = 0;
+      if (!samePerson) {
+        _storyIndex = 0;
+      } else if (anchored >= 0) {
+        _storyIndex = anchored;
+      } else if (_storyIndex >= next.stories.length) {
+        _storyIndex = next.stories.isEmpty ? 0 : next.stories.length - 1;
+      }
     });
-    // Con una acción en vuelo NO se arranca la historia nueva: el diálogo de
-    // match y el revelado del perfil se abren después, y si no, la siguiente
-    // persona se ponía a sonar por detrás de la celebración. Lo arranca [_act]
-    // cuando termina.
-    if (!samePerson && !_busy) _load();
+    // Se recarga si cambia la persona o si la historia que sonaba ya no está. Si
+    // sigue estando (el caso normal: el stream emite hasta cuando alguien, en
+    // cualquier parte, ve una historia ajena) NO se toca el reproductor.
+    // Con una acción decidida NO se arranca nada: el diálogo de match y el
+    // revelado del perfil se abren después, y si no, la siguiente persona se
+    // ponía a sonar por detrás de la celebración. Lo arranca [_act] al terminar.
+    if (anchored < 0 && !_locked) _load();
   }
 
   Future<void> _load() async {
@@ -149,6 +186,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
       _lastImageTick = null;
     });
     final Story? story = _story;
+    _currentStoryId = story?.storyId;
     if (story == null) return;
     widget.controller.onStoriesSeen(<Story>[story]);
 
@@ -228,7 +266,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   void _next() {
-    if (_busy) return;
+    if (_locked) return;
     final BlindWallPerson? person = _person;
     if (person == null) return;
     if (_storyIndex < person.stories.length - 1) {
@@ -247,7 +285,8 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   /// propósito: a esa ya se le mandó un like o un pase, y "des-verla" no
   /// desharía la acción (para eso está el rewind del feed, con su gate de plan).
   void _prev() {
-    if (_busy || _storyIndex == 0) {
+    if (_locked) return;
+    if (_storyIndex == 0) {
       // En la primera historia el toque izquierdo la reinicia, que es lo que
       // espera quien se ha perdido algo.
       _load();
@@ -271,12 +310,19 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   void _runTo(double target, {VoidCallback? onDone}) {
+    final int seq = ++_swipeSeq;
     _swipeTween = Tween<double>(begin: _dx, end: target).animate(
       CurvedAnimation(parent: _swipeAnim, curve: Curves.easeOut),
     );
     _swipeAnim
       ..reset()
-      ..forward().whenCompleteOrCancel(() => onDone?.call());
+      ..forward().whenCompleteOrCancel(() {
+        // Solo la ÚLTIMA animación lanzada ejecuta su acción: `reset()` cancela
+        // la anterior y dispara su callback igualmente, y esa acción iba a caer
+        // sobre la persona equivocada.
+        if (seq != _swipeSeq || !mounted) return;
+        onDone?.call();
+      });
   }
 
   /// Ejecuta una acción del feed y libera la entrada pase lo que pase. Si la
@@ -292,6 +338,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
       if (mounted) {
         setState(() {
           _busy = false;
+          _actionPending = false;
           _dx = 0;
         });
         // Arranca lo que toque: la historia de la persona siguiente si la acción
@@ -304,11 +351,15 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   Future<void> _like() async {
-    if (_busy) return;
+    if (_locked) return;
+    // La entrada se bloquea AQUÍ, no en `_act`: entre el gate y el final de la
+    // animación hay casi medio segundo en el que se podía decidir otra cosa.
+    setState(() => _actionPending = true);
     // Mismo gate que la tarjeta del feed (límite de conversaciones pendientes).
     final bool allowed = await widget.controller.beforeLike();
     if (!mounted) return;
     if (!allowed) {
+      setState(() => _actionPending = false);
       _runTo(0);
       return;
     }
@@ -317,23 +368,24 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   void _pass() {
-    if (_busy) return;
+    if (_locked) return;
+    setState(() => _actionPending = true);
     _runTo(-_screenWidth * 1.2,
         onDone: () => unawaited(_act(widget.controller.onPass)));
   }
 
   void _superAttra() {
-    if (_busy) return;
+    if (_locked) return;
     unawaited(_act(widget.controller.onSuperAttra));
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    if (_busy) return;
+    if (_locked) return;
     setState(() => _dx += details.delta.dx);
   }
 
   void _onDragEnd(DragEndDetails details) {
-    if (_busy) return;
+    if (_locked) return;
     if (_dx.abs() <= _swipeThreshold) {
       _runTo(0);
       return;
@@ -616,7 +668,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
             icon: Icons.close_rounded,
             label: 'Paso',
             color: Colors.white,
-            onTap: _busy ? null : _pass,
+            onTap: _locked ? null : _pass,
           ),
           _ActionButton(
             key: const ValueKey<String>('blind-viewer-attra'),
@@ -624,14 +676,14 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
             label: 'Super Attra',
             color: AppColors.gold,
             big: true,
-            onTap: _busy ? null : _superAttra,
+            onTap: _locked ? null : _superAttra,
           ),
           _ActionButton(
             key: const ValueKey<String>('blind-viewer-like'),
             icon: Icons.favorite_rounded,
             label: 'Me gusta',
             color: AppColors.attraRed,
-            onTap: _busy ? null : () => unawaited(_like()),
+            onTap: _locked ? null : () => unawaited(_like()),
           ),
         ],
       ),

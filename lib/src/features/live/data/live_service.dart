@@ -499,9 +499,15 @@ class LiveService {
   /// una clave que caducan en horas (ver [LiveTurnCredentials] y
   /// functions/src/liveTurn.ts). Devuelve `null` cuando todavía no hay relé
   /// contratado; quien llama es [LiveTurnCache], que cachea y hace el backoff.
-  Future<LiveTurnCredentials?> fetchTurnCredentials() async {
-    final Map<String, dynamic> data =
-        await _call('getLiveTurnCredentials', <String, dynamic>{});
+  /// El backend ya no emite relé a cualquiera que esté autenticado: exige una
+  /// sesión de vivo real en la que participes. Sin eso, una cuenta desechable
+  /// podía pedir credenciales en bucle y usar el relé —que se paga por GB—
+  /// como proxy genérico sin entrar jamás al vídeo.
+  Future<LiveTurnCredentials?> fetchTurnCredentials(String sessionId) async {
+    final Map<String, dynamic> data = await _call(
+      'getLiveTurnCredentials',
+      <String, dynamic>{'sessionId': sessionId},
+    );
     return LiveTurnCredentials.fromCallable(data);
   }
 

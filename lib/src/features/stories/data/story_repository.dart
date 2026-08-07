@@ -72,22 +72,46 @@ class StoryRepository {
     return _stories
         .where('status', isEqualTo: 'active')
         .snapshots()
-        .map((QuerySnapshot<Map<String, dynamic>> snap) {
-      final Map<String, List<Story>> byOwner = <String, List<Story>>{};
-      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
-        final Story s = Story.fromMap(d.id, d.data());
-        if (!s.isLive) continue;
-        if (s.ownerUid == excludeUid) continue;
-        if (excludedOwners.contains(s.ownerUid)) continue;
-        (byOwner[s.ownerUid] ??= <Story>[]).add(s);
-      }
-      for (final List<Story> group in byOwner.values) {
-        group.sort((Story a, Story b) =>
-            (a.createdAt?.millisecondsSinceEpoch ?? 0)
-                .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
-      }
-      return byOwner;
-    });
+        .map((QuerySnapshot<Map<String, dynamic>> snap) => groupWallStories(
+              snap.docs.map(
+                  (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                      Story.fromMap(d.id, d.data())),
+              excludeUid: excludeUid,
+              excludedOwners: excludedOwners,
+            ));
+  }
+
+  /// Agrupa por dueño las stories que pueden alimentar el MURO de Discover.
+  ///
+  /// Aquí NO entra `visibility: matches`: el muro es descubrimiento por
+  /// definición y quien elige "Solo matches" en el editor espera exactamente
+  /// eso. Antes el único filtro por match lo hacía la tira de aros
+  /// (`StoriesBar`), que desapareció con el muro; las reglas dejan leer
+  /// /stories a cualquier usuario autenticado, así que este filtro es el ÚNICO
+  /// que hay: sin él la historia privada se le reproducía a pantalla completa a
+  /// desconocidos. Las "Solo matches" siguen viéndose por la ruta de Chats, que
+  /// sí parte de los matches.
+  ///
+  /// Estática y pura para poder fijarla con un test: es una regla de
+  /// privacidad, no un detalle de la consulta.
+  static Map<String, List<Story>> groupWallStories(
+    Iterable<Story> stories, {
+    String excludeUid = '',
+    Set<String> excludedOwners = const <String>{},
+  }) {
+    final Map<String, List<Story>> byOwner = <String, List<Story>>{};
+    for (final Story s in stories) {
+      if (!s.isLive) continue;
+      if (s.visibility != StoryVisibility.discovery) continue;
+      if (s.ownerUid == excludeUid) continue;
+      if (excludedOwners.contains(s.ownerUid)) continue;
+      (byOwner[s.ownerUid] ??= <Story>[]).add(s);
+    }
+    for (final List<Story> group in byOwner.values) {
+      group.sort((Story a, Story b) => (a.createdAt?.millisecondsSinceEpoch ?? 0)
+          .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
+    }
+    return byOwner;
   }
 
   /// Todas las stories vivas del propio usuario, de más antigua a más reciente.

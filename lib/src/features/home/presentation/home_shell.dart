@@ -31,6 +31,8 @@ import '../../feed/data/ranking_signals_repository.dart';
 import '../../feed/domain/ranking_config.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../feed/presentation/travel_sheet.dart';
+import '../../live/domain/live_flags.dart';
+import '../../live/presentation/live_entry.dart';
 import '../../notifications/data/notification_router.dart';
 import '../../notifications/data/notification_service.dart';
 import '../../notifications/presentation/notifications_screen.dart';
@@ -492,6 +494,12 @@ class _HomeShellState extends State<HomeShell> {
               )
             : const _AttraTitleLogo(),
         actions: <Widget>[
+          // FEED EN VIVO: único punto de entrada de la app. Detrás de
+          // `feature_live_enabled` (OFF por defecto, como se hizo con
+          // SafeDate): con la flag apagada este widget no se construye y el
+          // directo es literalmente inalcanzable.
+          if (_liveFlags.active && uid.isNotEmpty)
+            LiveEntryButton(onTap: _openLive),
           if (widget.notificationService != null && uid.isNotEmpty)
             NotificationBell(
               service: widget.notificationService!,
@@ -808,6 +816,32 @@ class _HomeShellState extends State<HomeShell> {
   /// Config remota de SafeDate (todo OFF por defecto; fallback seguro).
   SafeDateFlags get _safeDateFlags => SafeDateFlags.fromMap(
       _entitlementController?.flags.rawConfig ?? const <String, dynamic>{});
+
+  /// Config remota del directo (OFF por defecto; fallback seguro).
+  LiveFlags get _liveFlags => LiveFlags.fromMap(
+      _entitlementController?.flags.rawConfig ?? const <String, dynamic>{});
+
+  /// Abre el directo (vídeo 1:1 con desconocidos).
+  ///
+  /// Al hacer match desde ahí, el chat ya existe (lo crea el backend con el
+  /// mismo `writeMatchAndChat` que el resto de la app): cerramos el directo y
+  /// llevamos a Chats. No abrimos la conversación concreta porque
+  /// `ChatDetailScreen` se monta desde la lista con su propio contexto, y
+  /// duplicar aquí ese cableado sería otra copia que mantener.
+  void _openLive() {
+    final String uid = widget.user?.uid ?? '';
+    if (uid.isEmpty) return;
+    openLiveScreen(
+      context,
+      uid: uid,
+      matchService: widget.matchService,
+      profileSummaryRepository: widget.profileSummaryRepository,
+      onOpenChat: (String _, String __) {
+        Navigator.of(context).maybePop();
+        if (mounted) setState(() => _destination = _HomeDestination.chats);
+      },
+    );
+  }
 
   /// Abre el centro de Attra SafeDate (solo si el master switch está ON).
   void _openSafeDate() {

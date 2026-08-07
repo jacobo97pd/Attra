@@ -306,6 +306,14 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
       } else if (r.status == 'no_balance') {
         _snack('Saldo insuficiente: un ${_labelOf(type)} cuesta '
             '${_boostsLabel(cost)}. Compra más abajo.');
+      } else if (r.status == 'needs_story') {
+        // El backend NO ha cobrado: con el muro de historias encendido,
+        // Discover solo enseña a quien tiene una historia viva, y un Boost se
+        // gasta por tiempo. Activarlo sin historia habría quemado el reloj
+        // entero sin una sola impresión.
+        _snack('Publica una historia antes de impulsarte: en Descubrir solo '
+            'se ve a quien está contando algo, así que el Boost se gastaría '
+            'sin que nadie te viera.');
       } else {
         _snack('No se pudo activar el Boost.');
       }

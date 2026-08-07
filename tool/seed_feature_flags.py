@@ -48,6 +48,17 @@ FLAGS = {
     "date_plans_auto_nudge_enabled": ("booleanValue", True),
     "date_plans_kill_switch": ("booleanValue", False),
     "date_plans_free_limit": ("integerValue", "1"),
+    # --- FEED EN VIVO (video 1:1 con desconocidos) -----------------------
+    # DARK LAUNCH: se siembra explicitamente en FALSE, igual que se hizo con
+    # SafeDate. No basta con no escribir la clave: sin sembrarla no hay forma
+    # de encenderla ni de auditar desde la consola que esta apagada, y este es
+    # justo el tipo de funcion (contenido generado por usuarios en directo, la
+    # guideline 1.2 por la que Apple ya rechazo la app) que hay que poder
+    # demostrar apagada. Con esto en false no existe ni el punto de entrada.
+    "feature_live_enabled": ("booleanValue", False),
+    # Corte de emergencia independiente del master switch: permite apagar el
+    # directo en caliente sin perder la configuracion de lanzamiento.
+    "feature_live_kill_switch": ("booleanValue", False),
     "weeklyFreeAttras": ("integerValue", "0"),
     # --- Pack mensual incluido en cada plan (grants.ts) ------------------
     # Free pasa de 0 a 1 Attra/mes: es el gancho de conversion, sin probar el

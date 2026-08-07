@@ -91,6 +91,50 @@ async function superboostCostBoosts(): Promise<number> {
   return value;
 }
 
+/// ¿Puede este perfil recibir impresiones AHORA MISMO en Discover?
+///
+/// Cuando el muro de historias esta encendido, Discover solo pinta a quien
+/// tiene una historia viva (buildStoryWall en el cliente filtra el resto). Un
+/// Boost se consume POR TIEMPO, no por impresiones entregadas: activarlo sin
+/// historia publicada quemaba el reloj entero sin enseñar el perfil ni una vez.
+/// Dinero cobrado a cambio de nada, y de forma invisible para el usuario.
+///
+/// Se comprueba aqui, ANTES de cobrar, en vez de reponer al impulsado en el
+/// muro: colar un perfil sin historia en un muro de historias romperia el
+/// visor a ciegas, que es justo el producto.
+async function canBeBoostedNow(uid: string): Promise<boolean> {
+  let wallActive = false;
+  try {
+    const snap = await db.collection("config").doc("featureFlags").get();
+    const data = snap.data() ?? {};
+    wallActive = data.storiesEnabled === true;
+  } catch {
+    // Si no se puede leer el flag se asume el feed clasico y se deja pasar: el
+    // fallo seguro aqui es NO bloquear una compra legitima.
+    return true;
+  }
+  if (!wallActive) return true;
+
+  // Sin `expiresAt` en la consulta no hace falta indice compuesto (dos
+  // igualdades las resuelve Firestore con indices de campo). El tope de
+  // historias por usuario es 5, asi que el filtro de caducidad en memoria es
+  // sobre un puñado de documentos.
+  const stories = await col.stories
+    .where("ownerUid", "==", uid)
+    .where("status", "==", "active")
+    .limit(10)
+    .get();
+  const nowMs = Date.now();
+  return stories.docs.some((d) => {
+    const expiresAt = d.data()?.expiresAt;
+    const ms =
+      expiresAt && typeof expiresAt.toMillis === "function"
+        ? expiresAt.toMillis()
+        : 0;
+    return ms > nowMs;
+  });
+}
+
 function boostCostFor(type: BoostType, superboostCost: number): number {
   return type === "superboost" ? superboostCost : 1;
 }
@@ -254,6 +298,20 @@ export const activateBoost = onCall({ region: REGION }, async (request) => {
   // bloqueo del cobro.
   const superboostCost = await superboostCostBoosts();
   const cost = boostCostFor(requestedType, superboostCost);
+
+  // Puerta ANTES de la transaccion: no tiene sentido bloquear el documento del
+  // monedero para acabar rechazando. Y sobre todo, no se cobra.
+  if (!(await canBeBoostedNow(uid))) {
+    return {
+      success: false,
+      boostId: null,
+      status: "needs_story",
+      startedAt: null,
+      expiresAt: null,
+      remainingBoosts: null,
+      requiredBoosts: cost,
+    };
+  }
 
   return db.runTransaction(async (tx) => {
     const [userSnap, activeSnap] = await Promise.all([

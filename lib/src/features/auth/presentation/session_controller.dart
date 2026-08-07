@@ -39,6 +39,7 @@ import '../data/auth_service.dart';
 import '../data/user_repository.dart';
 import '../domain/app_user.dart';
 import 'session_state.dart';
+import '../../live/data/live_rtc_config.dart';
 
 class SessionController extends ChangeNotifier {
   SessionController({
@@ -611,6 +612,12 @@ class SessionController extends ChangeNotifier {
 
     try {
       _clearPhoneFlow();
+      // La caché de TURN es un singleton de PROCESO y la credencial lleva el
+      // uid dentro (`<caducidad>:<uid>`). Sin tirarla, quien entre después en
+      // un móvil compartido se autenticaría en el relé como el usuario que
+      // acaba de salir: su consumo se imputaría a otro, y un bloqueo por abuso
+      // caería sobre la persona equivocada.
+      LiveTurnCache.instance.invalidate();
       await _authService.signOut();
     } on AuthFailure catch (error) {
       _emit(

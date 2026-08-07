@@ -143,14 +143,35 @@ class LiveRtcSession {
     // constructor de `RTCPeerConnection` y la recolección de candidatos arranca
     // con la oferta. Pedirlas después no serviría de nada. La caché hace que
     // esto sea una llamada de red cada varias horas, no en cada sesión.
-    final LiveTurnCredentials? turn =
-        turnOverride ?? await _turnCache.obtain(_service.fetchTurnCredentials);
+    final LiveTurnCredentials? turn = turnOverride ??
+        await _turnCache.obtain(
+          () => _service.fetchTurnCredentials(sessionId),
+        );
     // La petición es de red: el usuario puede haber colgado mientras tanto.
     if (_disposed) return;
 
-    final RTCPeerConnection pc = await createPeerConnection(
-      LiveIceConfig.build(turn: turn),
-    );
+    // Si el relé viene mal configurado, se REINTENTA SIN ÉL en vez de tumbar
+    // la llamada. Una URL malformada (un `transport=tls` donde tocaba `tcp`,
+    // un `turn:usuario@host` pegado del panel del proveedor) hace fallar el
+    // constructor de RTCPeerConnection, y sin este respaldo eso se llevaba por
+    // delante el 100% de las videollamadas: también las que hoy funcionan solo
+    // con STUN. Sería estrictamente peor que no tener TURN, y encima cada
+    // fallo quema el turno de cola de los dos participantes.
+    RTCPeerConnection pc;
+    try {
+      pc = await createPeerConnection(LiveIceConfig.build(turn: turn));
+    } catch (error) {
+      if (turn == null) rethrow;
+      debugPrint(
+        '[live] el relé TURN no es utilizable ($error): se reintenta solo '
+        'con STUN. Revisa LIVE_TURN_URLS en el backend.',
+      );
+      // Se tira la credencial: si la URL es mala, volver a pedir la misma en
+      // la siguiente sesión repetiría el fallo.
+      _turnCache.invalidate();
+      if (_disposed) return;
+      pc = await createPeerConnection(LiveIceConfig.build());
+    }
     _pc = pc;
 
     // Unified Plan: se añaden PISTAS, no streams.

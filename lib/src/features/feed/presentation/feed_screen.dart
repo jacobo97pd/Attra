@@ -30,8 +30,10 @@ import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_game_screen.dart';
 import '../../stories/data/story_service.dart';
 import '../../stories/domain/story.dart';
+import '../../stories/domain/story_wall.dart';
 import '../../stories/presentation/blind_story_viewer_screen.dart';
 import '../../stories/presentation/blind_wall_controller.dart';
+import '../../stories/presentation/my_story_button.dart';
 import '../../stories/presentation/profile_reveal_screen.dart';
 import '../../stories/presentation/story_stack_card.dart';
 import '../../../theme/app_colors.dart';
@@ -269,6 +271,20 @@ class _FeedScreenState extends State<FeedScreen> {
   /// PERFILES: justo lo que el muro a ciegas evita.
   bool _storiesLoaded = false;
 
+  /// El flag remoto `storiesEnabled` ya ha contestado. La barrera del "a ciegas"
+  /// tiene que esperarlo: mientras el `get()` está en vuelo `_storyWallActive`
+  /// es false, y si el pool gana la carrera se pintaba la ficha COMPLETA (bio,
+  /// trabajo, estudios, verificación…) de la primera persona.
+  bool _storiesFlagResolved = false;
+
+  /// El stream de historias está CAÍDO, que no es lo mismo que "nadie ha
+  /// publicado": un error termina la suscripción de Firestore, así que sin
+  /// reintento Discover se quedaba vacío el resto de la sesión mientras el
+  /// estado vacío mentía sobre la causa.
+  bool _storiesUnavailable = false;
+  int _storiesRetries = 0;
+  Timer? _storiesRetryTimer;
+
   // Stories vivas agrupadas por dueño: es lo que decide QUIÉN entra en el muro
   // y cuántas hojas tiene su pila.
   Map<String, List<Story>> _storiesByOwner = const <String, List<Story>>{};
@@ -281,6 +297,19 @@ class _FeedScreenState extends State<FeedScreen> {
   /// historia viva. Al llegar historias nuevas por el stream basta con volver a
   /// cruzar, sin repetir todo el pipeline (que hace lecturas de red).
   List<SeedProfile> _rankedPool = const <SeedProfile>[];
+
+  /// Uids ya decididos en esta sesión (like, pase, Attra o "vistas todas sus
+  /// historias"). El muro se recompone con CADA snapshot del stream global de
+  /// historias y, sin esta memoria, el índice caía a 0 y volvía a enseñar —y a
+  /// dejar swipear otra vez— a quien ya se había decidido.
+  final Set<String> _consumed = <String>{};
+
+  /// Último perfil por el que se ha contado impresión. La recomposición del muro
+  /// es constante (basta con que alguien, en cualquier parte, vea una historia):
+  /// sin esta guarda cada snapshot mandaba otra llamada de impresión de Boost
+  /// por red para el mismo perfil.
+  String _impressedUid = '';
+
   StreamSubscription<Map<String, List<Story>>>? _storiesSub;
   Timer? _storiesTimeout;
   // Stories ya vistas (por id) en esta sesión: la pila del muro se atenúa pero
@@ -364,6 +393,7 @@ class _FeedScreenState extends State<FeedScreen> {
     widget.metrics?.flush();
     _storiesSub?.cancel();
     _storiesTimeout?.cancel();
+    _storiesRetryTimer?.cancel();
     _blindWall?.dispose();
     super.dispose();
   }
@@ -521,14 +551,21 @@ class _FeedScreenState extends State<FeedScreen> {
   bool get _storyWallActive => _storiesEnabled && widget.storyService != null;
 
   Future<void> _loadStoriesFlag() async {
-    final bool enabled = await widget.storyService?.storiesEnabled() ?? false;
+    // Con timeout: la barrera del "a ciegas" espera a este flag, así que un
+    // `get()` que tarda en volver (arranque en frío, red mala) dejaría Discover
+    // en el esqueleto. Sin flag se cae al feed de perfiles, que es el default.
+    final bool enabled = await (widget.storyService?.storiesEnabled() ??
+            Future<bool>.value(false))
+        .timeout(const Duration(seconds: 6), onTimeout: () => false);
     if (!mounted) return;
     setState(() {
       _storiesEnabled = enabled;
+      _storiesFlagResolved = true;
       // El flag llega DESPUÉS de la primera carga: hay que rehacer el muro o el
       // pool ya cargado se quedaría pintado como feed de perfiles.
       _applyStoryWall();
     });
+    _afterWallChanged();
     if (enabled) _bindStories();
   }
 
@@ -550,30 +587,80 @@ class _FeedScreenState extends State<FeedScreen> {
     _storiesTimeout = Timer(const Duration(seconds: 8), () {
       if (mounted && !_storiesLoaded) setState(() => _storiesLoaded = true);
     });
+    _storiesRetryTimer?.cancel();
     _storiesSub = svc
         .observeLiveStoriesByOwner(
       excludeUid: myUid,
+      // Prefiltro barato, NO la red de seguridad: la suscripción se abre una vez
+      // y se queda con el `_excluded` de ese instante (vacío mientras `_load`
+      // hace sus lecturas), y `_load` lo reemplaza además por otro Set. El
+      // filtro que de verdad manda es el de `_applyStoryWall`.
       excludedOwners: _excluded,
     )
         .listen(
       (Map<String, List<Story>> byOwner) {
         if (!mounted) return;
         _storiesTimeout?.cancel();
+        _storiesRetries = 0;
         setState(() {
           _storiesByOwner = byOwner;
           _storiesLoaded = true;
+          _storiesUnavailable = false;
           // Alguien acaba de publicar (o se le caducó): el muro se rehace sin
           // volver a pedir el pool, que cuesta varias lecturas de red.
           _applyStoryWall();
         });
+        _afterWallChanged();
       },
       onError: (Object _) {
-        // Sin historias no hay muro. Se marca como cargado igualmente: si no, la
-        // pantalla se queda en el esqueleto para siempre.
+        // Un error TERMINA la suscripción de Firestore. Antes esto se trataba
+        // como definitivo (solo `_storiesLoaded = true`) y un fallo pasajero
+        // —token que se refresca, `resource-exhausted`, un bache de red— dejaba
+        // Discover vacío hasta reiniciar la app, porque nada volvía a llamar a
+        // `_bindStories`. Ahora se reintenta con espera creciente y el estado
+        // vacío dice la verdad.
         _storiesTimeout?.cancel();
-        if (mounted) setState(() => _storiesLoaded = true);
+        _storiesSub?.cancel();
+        _storiesSub = null;
+        if (!mounted) return;
+        setState(() {
+          _storiesLoaded = true;
+          _storiesUnavailable = true;
+        });
+        _scheduleStoriesRetry();
       },
     );
+  }
+
+  /// Reintento con espera creciente (2, 4, 8, 16 y 32 s) de la suscripción de
+  /// historias. La cuenta se reinicia con el primer snapshot bueno.
+  void _scheduleStoriesRetry() {
+    _storiesRetryTimer?.cancel();
+    _storiesRetries = (_storiesRetries + 1).clamp(1, 5);
+    final Duration wait = Duration(seconds: 1 << _storiesRetries);
+    _storiesRetryTimer = Timer(wait, () {
+      if (mounted && _storyWallActive && _storiesSub == null) _bindStories();
+    });
+  }
+
+  /// Recarga el muro ENTERO: pool y suscripción de historias. El botón de
+  /// "Recargar" solo llamaba a `_load()`, que no resuscribe el stream, así que
+  /// con el stream caído se podía pulsar indefinidamente sin que cambiara nada.
+  void _reloadWall() {
+    if (_storyWallActive && _storiesSub == null) _bindStories();
+    _load();
+  }
+
+  /// Cierra un recálculo del muro hecho FUERA de `_load`: precarga la siguiente
+  /// portada y cuenta la impresión de quien queda a la vista.
+  ///
+  /// `_load` solo puede contar la impresión de lo que ya hay pintado, y con el
+  /// muro activo no hay nadie hasta que llega el primer snapshot de historias:
+  /// la impresión del perfil en cabeza —que es justo donde el Boost pagado
+  /// coloca a quien lo compró— no se registraba nunca.
+  void _afterWallChanged() {
+    _precacheNext();
+    _recordCurrentImpression();
   }
 
   /// True si TODAS las historias vivas de [ownerUid] ya se han visto (la pila se
@@ -898,14 +985,21 @@ class _FeedScreenState extends State<FeedScreen> {
         _rankedPool = filtered;
         _profiles = const <SeedProfile>[];
         _index = 0;
+        // Pool nuevo: lo ya decidido vuelve a decidirlo el servidor (`excluded`
+        // se acaba de releer), así que la memoria de sesión arranca limpia. Sin
+        // esto, la segunda vuelta no podría reponer a quien pasaste.
+        _consumed.clear();
+        _impressedUid = '';
         _applyStoryWall();
         _pendingAd = false;
         _rewindHistory = const <_FeedRewindAction>[];
         _rewinding = false;
         _loading = false;
       });
-      _precacheNext();
-      _recordCurrentImpression();
+      // El stream se cae con cualquier error y no se resuscribe solo: "Recargar"
+      // tiene que poder revivir el muro, no solo el pool.
+      if (_storyWallActive && _storiesSub == null) _bindStories();
+      _afterWallChanged();
     } catch (error) {
       if (!mounted) {
         return;
@@ -921,35 +1015,27 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// Cruza el pool ordenado con quien tiene historias vivas.
   ///
-  /// El ORDEN lo pone el pipeline del feed, no las historias: así el muro
-  /// respeta filtros, distancia, Boost pagado, modo viaje, Slow Dating y las
-  /// búsquedas con IA exactamente igual que antes. Lo único que cambia es que
-  /// quien no tiene nada que contar no ocupa sitio.
+  /// La regla vive en [buildStoryWall] (función pura y testeable). Aquí solo se
+  /// le pasa el estado del feed. Con el muro apagado (flag remoto en off o sin
+  /// servicio de historias) NO se filtra por historias: Discover se degrada al
+  /// feed de perfiles, porque una pantalla vacía para todo el mundo es una
+  /// pantalla rota, no una decisión de producto.
   void _applyStoryWall() {
-    // Sin muro activo (flag apagado o sin servicio de historias) no hay nada que
-    // cruzar: filtrar dejaría Discover vacío PARA SIEMPRE, que es una pantalla
-    // rota, no una decisión de producto. Se degrada al feed de perfiles.
-    if (!_storyWallActive) {
-      _profiles = _rankedPool;
-      _index = _index.clamp(0, _rankedPool.isEmpty ? 0 : _rankedPool.length);
-      return;
-    }
-    final String? currentId = (_index >= 0 && _index < _profiles.length)
-        ? _profiles[_index].id
-        : null;
-    final List<SeedProfile> wall = _rankedPool
-        .where((SeedProfile p) => (_storiesByOwner[p.id]?.isNotEmpty ?? false))
-        .toList(growable: false);
-
-    // Si la persona que se estaba viendo sigue en el muro, no se salta de sitio
-    // al llegar historias nuevas.
-    int nextIndex = 0;
-    if (currentId != null) {
-      final int found = wall.indexWhere((SeedProfile p) => p.id == currentId);
-      if (found >= 0) nextIndex = found;
-    }
-    _profiles = wall;
-    _index = nextIndex.clamp(0, wall.isEmpty ? 0 : wall.length);
+    final StoryWall wall = buildStoryWall(
+      rankedPool: _rankedPool,
+      storiesByOwner: _storiesByOwner,
+      wallActive: _storyWallActive,
+      // Bloquear a alguien tiene que sacarlo del muro (Guideline 1.2), y el muro
+      // se recompone desde `_rankedPool` en cada snapshot: si el filtro solo
+      // estuviera en la suscripción, el bloqueado reaparecía segundos después.
+      excludedUids: _excluded,
+      consumedUids: _consumed,
+      currentUid: (_index >= 0 && _index < _profiles.length)
+          ? _profiles[_index].id
+          : null,
+    );
+    _profiles = wall.profiles;
+    _index = wall.index;
   }
 
   /// Un anuncio cada N perfiles vistos (nunca al inicio).
@@ -977,6 +1063,11 @@ class _FeedScreenState extends State<FeedScreen> {
             ? <_FeedRewindAction>[..._rewindHistory, action]
             : <_FeedRewindAction>[action];
       }
+      // Decidido (like, pase, Attra o vistas todas sus historias): no puede
+      // volver a salir cuando el muro se recomponga.
+      if (_index >= 0 && _index < _profiles.length) {
+        _consumed.add(_profiles[_index].id);
+      }
       _index += 1;
       if (showAd) {
         _swipesSinceAd = 0;
@@ -998,8 +1089,13 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// Registra como "mostrado" el perfil actualmente visible (impresión).
   void _recordCurrentImpression() {
-    if (_uid.isEmpty || _index >= _profiles.length) return;
+    if (_uid.isEmpty || _index < 0 || _index >= _profiles.length) return;
     final SeedProfile profile = _profiles[_index];
+    // El muro se recompone con cada snapshot del stream global de historias: sin
+    // esta guarda, cada uno mandaba otra impresión de Boost (una llamada de red)
+    // por la misma persona sin que hubiera cambiado nada en pantalla.
+    if (profile.id == _impressedUid) return;
+    _impressedUid = profile.id;
     widget.metrics?.recordImpression(_uid, profile.id);
     if (_activeBoostsByUid.containsKey(profile.id)) {
       widget.boostService
@@ -1086,17 +1182,26 @@ class _FeedScreenState extends State<FeedScreen> {
         if (_profiles.isEmpty) {
           _index = 0;
         } else {
+          // Manda el UID, no la posición guardada: el muro se recompone solo
+          // (historias que caducan, bloqueos) y el índice de entonces puede
+          // apuntar ya a otra persona.
+          final int found = _profiles
+              .indexWhere((SeedProfile p) => p.id == action.targetUid);
           final int maxIndex = _profiles.length - 1;
-          _index = action.index < 0
-              ? 0
-              : action.index > maxIndex
-                  ? maxIndex
-                  : action.index;
+          _index = found >= 0
+              ? found
+              : action.index < 0
+                  ? 0
+                  : action.index > maxIndex
+                      ? maxIndex
+                      : action.index;
         }
         _rewindHistory = _rewindHistory
             .sublist(0, _rewindHistory.length - 1)
             .toList(growable: false);
         _excluded = <String>{..._excluded}..remove(action.targetUid);
+        // Deshecha la acción, deja de estar decidido: puede volver a salir.
+        _consumed.remove(action.targetUid);
         _rewinding = false;
       });
       _precacheNext();
@@ -1472,8 +1577,17 @@ class _FeedScreenState extends State<FeedScreen> {
       ),
       onPressed: widget.onOpenTravel,
     );
-    // La tira de historias ya no vive aquí: el MURO es Discover, así que una
-    // fila de aros encima del muro era el mismo contenido dos veces.
+    // La tira de aros ya no vive aquí: el MURO es Discover, así que una fila de
+    // aros encima del muro era el mismo contenido dos veces. Lo que SÍ tiene que
+    // seguir estando es la forma de publicar: la tira era el único sitio desde
+    // el que se abría el editor de historias y, sin él, un muro que solo enseña
+    // a quien tiene historia viva se vacía solo en 72 h.
+    final String uid = widget.user?.uid ?? '';
+    final StoryService? storyService = widget.storyService;
+    final Widget? myStoryButton =
+        (_storiesEnabled && storyService != null && uid.isNotEmpty)
+            ? MyStoryButton(currentUid: uid, storyService: storyService)
+            : null;
     return SafeArea(
       bottom: false,
       child: Row(
@@ -1490,6 +1604,7 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
           ),
+          if (myStoryButton != null) myStoryButton,
           travelButton,
           filterButton,
         ],
@@ -1686,8 +1801,13 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildContent(BuildContext context) {
     // Con el muro activo, el pool no vale de nada hasta que llegan las
     // historias: pintarlo antes enseñaría un instante el feed de PERFILES, que
-    // es justo lo que el "a ciegas" evita.
-    if (_loading || (_storyWallActive && !_storiesLoaded)) {
+    // es justo lo que el "a ciegas" evita. Mientras el flag remoto no ha
+    // contestado tampoco se puede pintar: `_storyWallActive` es false hasta
+    // entonces, así que si el pool ganaba la carrera se enseñaba la ficha
+    // completa (bio, trabajo, estudios, altura, verificación, distancia).
+    if (_loading ||
+        !_storiesFlagResolved ||
+        (_storyWallActive && !_storiesLoaded)) {
       return const AttraProfileCardSkeleton();
     }
     if (_error != null) {
@@ -1703,6 +1823,20 @@ class _FeedScreenState extends State<FeedScreen> {
     // se reinicia el indice (los perfiles vistos no deben reaparecer); solo
     // "Recargar" vuelve a consultar y re-excluye lo ya likeado/pasado/matcheado.
     if (_profiles.isEmpty || _index >= _profiles.length) {
+      // El stream de historias se cayó antes de traer nada: el muro no está
+      // vacío, es que no se ha podido leer. Va lo PRIMERO porque cualquier otro
+      // mensaje de aquí (filtro IA, "nadie está contando nada") culparía a quien
+      // no es y encima ofrecía un botón que no arreglaba nada.
+      if (_storyWallActive && _storiesUnavailable && _storiesByOwner.isEmpty) {
+        return AttraEmptyState(
+          icon: Icons.cloud_off_rounded,
+          title: 'No hemos podido cargar las historias',
+          message:
+              'Puede ser la conexión. Lo reintentamos solos cada pocos segundos; si tienes prisa, prueba tú.',
+          actionLabel: 'Reintentar',
+          onAction: _reloadWall,
+        );
+      }
       // Feed vacío CON búsqueda IA aplicada: la causa es el filtro, no la falta
       // de gente. Se explica y se ofrece quitarlo (antes: mensaje genérico).
       final _AiSearchState? ai = _aiSearch;
@@ -1739,7 +1873,7 @@ class _FeedScreenState extends State<FeedScreen> {
             title: 'Nadie está contando nada ahora mismo',
             message: wallMessage,
             primaryLabel: 'Recargar',
-            onPrimary: _load,
+            onPrimary: _reloadWall,
             secondaryLabel: 'Dar una segunda vuelta',
             onSecondary: _enterSecondRound,
           );
@@ -1749,7 +1883,7 @@ class _FeedScreenState extends State<FeedScreen> {
           title: 'Nadie está contando nada ahora mismo',
           message: wallMessage,
           actionLabel: 'Recargar',
-          onAction: _load,
+          onAction: _reloadWall,
         );
       }
       // Feed vacío con pases guardados: ofrece la segunda vuelta.
@@ -1833,14 +1967,21 @@ class _FeedScreenState extends State<FeedScreen> {
       displayName: profile.displayName,
     );
     if (!mounted || result != SafetyActionResult.blocked) return;
-    // Bloqueado: fuera del feed inmediatamente. Se reconstruye la lista en vez
-    // de mutarla porque `_profiles` puede ser una lista no modificable.
+    // Bloqueado: fuera del feed inmediatamente. No basta con sacarlo de
+    // `_profiles`: el muro se recompone desde `_rankedPool` en cada snapshot de
+    // historias —basta con que el propio usuario vea la siguiente, que
+    // incrementa `viewsCount`— y el bloqueado volvía a aparecer segundos
+    // después. Se reconstruyen las listas en vez de mutarlas porque pueden ser
+    // no modificables.
     setState(() {
-      _profiles = _profiles
+      _excluded = <String>{..._excluded, profile.id};
+      _consumed.add(profile.id);
+      _rankedPool = _rankedPool
           .where((SeedProfile p) => p.id != profile.id)
           .toList(growable: false);
-      if (_index > _profiles.length) _index = _profiles.length;
+      _applyStoryWall();
     });
+    _afterWallChanged();
   }
 }
 

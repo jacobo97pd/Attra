@@ -33,6 +33,7 @@
 /// cliente, porque aquí ya no queda ninguna credencial compilada.
 library;
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 /// Credenciales TURN efímeras emitidas por el backend.
@@ -152,6 +153,15 @@ class LiveTurnCache {
   /// que activar TURN en el backend se note sin reinstalar la app.
   static const Duration failureBackoff = Duration(minutes: 10);
 
+  /// Espera tras un fallo TRANSITORIO. Un arranque en frío lento, un blip de
+  /// red o un `unavailable` de Firestore no dicen nada sobre si hay relé, y
+  /// castigarlos con los 10 minutos largos dejaba al usuario sin TURN durante
+  /// unas tres sesiones enteras (duran 3 min): se emparejaba, no conectaba
+  /// tras NAT simétrico y se le echaba la culpa a "algunas redes móviles",
+  /// por una avería nuestra. Es el patrón que ya ha causado regresiones aquí:
+  /// tratar lo transitorio como permanente.
+  static const Duration transientBackoff = Duration(seconds: 10);
+
   LiveTurnCredentials? _cached;
   Future<LiveTurnCredentials?>? _inFlight;
   DateTime? _retryNotBefore;
@@ -200,8 +210,21 @@ class LiveTurnCache {
       }
       _noRelay('el backend no tiene relé configurado');
       return null;
+    } on FirebaseFunctionsException catch (error) {
+      // `permission-denied` es una respuesta FIRME: o estás sancionado o no
+      // tienes sesión. Reintentar en 10 s no cambiaría nada.
+      _noRelay(
+        'la función rechazó la petición (${error.code})',
+        backoff: error.code == 'permission-denied'
+            ? failureBackoff
+            : transientBackoff,
+      );
+      return null;
     } catch (error) {
-      _noRelay('fallo al pedir credenciales: $error');
+      _noRelay(
+        'fallo al pedir credenciales: $error',
+        backoff: transientBackoff,
+      );
       return null;
     }
   }
@@ -209,9 +232,9 @@ class LiveTurnCache {
   /// Registra el fallo UNA vez por ventana de backoff: es información de
   /// operación (explica por qué fallan conexiones en móvil), no ruido por
   /// llamada.
-  void _noRelay(String reason) {
+  void _noRelay(String reason, {Duration backoff = failureBackoff}) {
     _cached = null;
-    _retryNotBefore = _clock().add(failureBackoff);
+    _retryNotBefore = _clock().add(backoff);
     if (_warned) return;
     _warned = true;
     debugPrint(

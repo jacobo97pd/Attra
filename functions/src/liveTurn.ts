@@ -57,7 +57,10 @@
 ///
 /// CONTROL DE COSTE: el TTL corto y la puerta de `assertLiveNotBlocked` limitan
 /// el reparto, pero el tope REAL de gasto se pone en el propio coturn
-/// (`user-quota`, `total-quota`, `max-bps`). No lo puede poner esta funcion.
+/// (`total-quota`, `max-bps`). OJO: `user-quota` NO sirve de tope aqui, porque
+/// coturn contabiliza por STRING de username y el nuestro lleva la caducidad
+/// dentro (`<caducidad>:<uid>`), asi que cada emision crea un "usuario" nuevo y
+/// la cuota por usuario no acumula nunca. El tope de verdad es esta funcion.
 ///
 /// DEGRADACION: si no hay secreto/URLs configurados esta funcion NO falla:
 /// devuelve `configured:false` y el cliente sigue con STUN a secas. Asi el vivo
@@ -65,9 +68,10 @@
 /// eso implica, y activarlo es rellenar dos variables.
 import { onCall } from "firebase-functions/v2/https";
 import { createHmac } from "node:crypto";
+import { HttpsError } from "firebase-functions/v2/https";
 import { REGION } from "./firebase";
-import { requireAuthUid } from "./common";
-import { assertLiveNotBlocked } from "./liveModeration";
+import { requireAuthUid, requireStringArg } from "./common";
+import { assertLiveNotBlocked, liveCol } from "./liveModeration";
 
 /// Nombres de las variables de entorno. Se exportan para que el mensaje de
 /// aviso y los tests no los repitan como literales sueltos.
@@ -77,14 +81,16 @@ export const LIVE_TURN_TTL_ENV = "LIVE_TURN_TTL_SECONDS";
 
 /// TTL por defecto y limites duros.
 ///
-/// Por debajo de 1 h el movil pediria credenciales varias veces por sesion de
-/// espera en cola; por encima de 4 h una credencial filtrada (log, captura de
-/// trafico de un cliente comprometido) valdria demasiado tiempo. La caducidad
-/// se comprueba al AUTENTICAR: una llamada ya establecida no se corta cuando
-/// vence, asi que no hace falta margen para la duracion de la sesion.
-export const LIVE_TURN_DEFAULT_TTL_SECONDS = 2 * 60 * 60;
-export const LIVE_TURN_MIN_TTL_SECONDS = 60 * 60;
-export const LIVE_TURN_MAX_TTL_SECONDS = 4 * 60 * 60;
+/// Una sesion de vivo dura LIVE_SESSION_MAX_MS = 3 MINUTOS. El TTL anterior
+/// (2 h por defecto, minimo 1 h) sobrevivia a la sesion cuarenta veces, y con
+/// ello a la sancion: alguien podia pedir credenciales, llevarse el tercer
+/// strike y seguir con rele de pago casi dos horas, porque la caducidad se
+/// comprueba al AUTENTICAR y `assertLiveNotBlocked` ya no vuelve a mirarse.
+/// 15 minutos cubren la sesion entera mas reconexiones y reintentos con
+/// muchisimo margen, y acotan a eso la ventana de una credencial filtrada.
+export const LIVE_TURN_DEFAULT_TTL_SECONDS = 15 * 60;
+export const LIVE_TURN_MIN_TTL_SECONDS = 5 * 60;
+export const LIVE_TURN_MAX_TTL_SECONDS = 60 * 60;
 
 /// Tope de URLs aceptadas. WebRTC prueba TODAS las que le des durante la
 /// recoleccion ICE: una lista larga alarga el establecimiento de una llamada
@@ -214,6 +220,35 @@ export const getLiveTurnCredentials = onCall(
     // regalarle ancho de banda de pago a quien acabamos de expulsar. Misma
     // puerta que usa el emparejador (joinLiveQueue/findLiveMatch).
     await assertLiveNotBlocked(uid);
+
+    // ATADO A UNA SESION REAL. Sin esto bastaba con registrarse (una cuenta de
+    // Google desechable vale) y llamar en bucle para usar el rele como proxy
+    // UDP/TCP generico facturado por GB, sin entrar jamas al vivo: quien nunca
+    // se empareja nunca recibe strikes, asi que `assertLiveNotBlocked` no le
+    // frena. Y agotar el `total-quota` del rele no solo cuesta dinero, deja sin
+    // video a los usuarios legitimos.
+    //
+    // Exigir la sesion mueve el coste de entrada a lo que ya esta defendido:
+    // para tener sesion hay que pasar por la cola, y la cola si comprueba
+    // sanciones, bloqueos y descartes previos.
+    const sessionId = requireStringArg(request.data?.sessionId, "sessionId");
+    const sessionSnap = await liveCol.sessions.doc(sessionId).get();
+    const sessionData = sessionSnap.data();
+    const members: unknown = sessionData?.users;
+    const isMember =
+      Array.isArray(members) && members.some((u) => u === uid);
+    if (!sessionSnap.exists || !isMember) {
+      throw new HttpsError(
+        "permission-denied",
+        "No tienes una sesion de video en vivo activa."
+      );
+    }
+    if ((sessionData?.status ?? "") === "ended") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Esa sesion de video ya ha terminado."
+      );
+    }
 
     const secret = (process.env[LIVE_TURN_SECRET_ENV] ?? "").trim();
     const urls = parseTurnUrls(process.env[LIVE_TURN_URLS_ENV]);
