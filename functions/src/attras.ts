@@ -1,5 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue } from "firebase-admin/firestore";
+import { createHash } from "node:crypto";
+import {
+  DocumentReference,
+  FieldValue,
+  Transaction,
+} from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { directedId, pairId } from "./ids";
 import { ContextMessageParams, writeContextMessage, writeMatchAndChat } from "./match";
@@ -27,6 +32,114 @@ interface AttraResult {
     | "insufficient_attras";
   matchId?: string;
   chatId?: string;
+}
+
+/// De donde sale el gasto. Solo para auditoria del ledger: el cobro es el mismo.
+export type AttraSpendSource = "attra_send" | "story_reply";
+
+/// Estado del monedero leido DENTRO de la transaccion y listo para gastar.
+///
+/// Se parte en dos (leer / cobrar) porque Firestore exige TODAS las lecturas de
+/// una transaccion antes de la primera escritura, y quien cobra normalmente
+/// tiene que leer otras cosas (like inverso, match, entitlement) en el mismo
+/// bloque.
+export interface AttraSpendState {
+  uid: string;
+  /// Saldo autoritativo (`attraWallets`), no el espejo de `users`.
+  balance: number;
+  /// Este MISMO gasto ya se cobro (mismo `spendKey`): reintento del usuario o
+  /// reenvio del cliente. Ni se vuelve a cobrar ni se rechaza la accion.
+  alreadyCharged: boolean;
+  /// Se puede seguir adelante: hay saldo, o ya estaba pagado.
+  canSpend: boolean;
+  walletRef: DocumentReference;
+  ledgerRef: DocumentReference;
+}
+
+/// El saldo de Attras vive en TRES sitios que hay que mover a la vez:
+///   1. `attraWallets/{uid}.balance` — autoritativo, el que decide si hay saldo.
+///   2. `users/{uid}.attrasBalance` — espejo, de donde lo lee la app.
+///   3. `attraLedger/{id}` — apunte auditable del gasto.
+/// Tocar solo uno los desincroniza: ya paso (las rutas de abono escribian el
+/// espejo y las de gasto no, asi que el numero que veia el usuario no bajaba
+/// nunca). Por eso el gasto pasa SIEMPRE por `readAttraSpend` +
+/// `commitAttraSpend` en vez de copiar el bloque: `replyToStory` se copio a
+/// medias y acabo regalando Attras (escribia el like de tipo "attra" sin mirar
+/// el monedero ni descontar nada).
+///
+/// `spendKey` = clave logica de la accion que se cobra (p.ej. "esta story, este
+/// usuario"). Si se pasa, el apunte del ledger lleva id determinista y un
+/// segundo intento se detecta como `alreadyCharged`. `sendAttra` NO la usa a
+/// proposito: alli el doble cobro ya lo corta el propio like (el segundo envio
+/// ve un like "attra" activo y sale por `already_liked`), y una clave por par
+/// haria gratis el Attra de quien vuelve a intentarlo despues de que le
+/// cancelaran el like.
+export async function readAttraSpend(
+  tx: Transaction,
+  uid: string,
+  spendKey: string | null = null
+): Promise<AttraSpendState> {
+  const walletRef = col.wallets.doc(uid);
+  const ledgerRef = spendKey
+    ? col.ledger.doc(
+        `spend_${createHash("sha256").update(spendKey).digest("hex")}`
+      )
+    : col.ledger.doc();
+  const [walletSnap, ledgerSnap] = await Promise.all([
+    tx.get(walletRef),
+    spendKey ? tx.get(ledgerRef) : Promise.resolve(null),
+  ]);
+  const balance = Number(walletSnap.data()?.balance ?? 0);
+  const alreadyCharged = ledgerSnap?.exists === true;
+  return {
+    uid,
+    balance,
+    alreadyCharged,
+    canSpend: alreadyCharged || balance >= 1,
+    walletRef,
+    ledgerRef,
+  };
+}
+
+/// Descuenta 1 Attra escribiendo los tres sitios. No-op si ya estaba cobrado.
+/// El `canSpend` lo comprueba quien llama (para poder devolver
+/// "insufficient_attras" sin abortar la transaccion); aqui solo queda la red de
+/// seguridad para que un fallo de orden nunca deje saldo negativo.
+export function commitAttraSpend(
+  tx: Transaction,
+  spend: AttraSpendState,
+  params: {
+    targetUid: string;
+    source: AttraSpendSource;
+    relatedStoryId?: string | null;
+  }
+): void {
+  if (spend.alreadyCharged) return;
+  if (spend.balance < 1) {
+    throw new HttpsError("failed-precondition", "No te quedan Attras.");
+  }
+
+  const now = FieldValue.serverTimestamp();
+  tx.set(
+    spend.walletRef,
+    { balance: FieldValue.increment(-1), updatedAt: now },
+    { merge: true }
+  );
+  tx.set(
+    col.users.doc(spend.uid),
+    { attrasBalance: Math.max(0, spend.balance - 1), updatedAt: now },
+    { merge: true }
+  );
+  tx.set(spend.ledgerRef, {
+    uid: spend.uid,
+    type: "send",
+    amount: -1,
+    balanceAfter: spend.balance - 1,
+    targetUserId: params.targetUid,
+    source: params.source,
+    relatedStoryId: params.relatedStoryId ?? null,
+    createdAt: now,
+  });
 }
 
 function hasContent(c: ContextMessageParams): boolean {
@@ -77,8 +190,6 @@ export const sendAttra = onCall(
   }
 
   const likeFwdRef = col.likes.doc(directedId(fromUid, toUid));
-  const walletRef = col.wallets.doc(fromUid);
-  const ledgerRef = col.ledger.doc();
   const attraSendRef = col.attraSends.doc();
 
   return db.runTransaction(async (tx): Promise<AttraResult> => {
@@ -87,7 +198,7 @@ export const sendAttra = onCall(
       seedSnap,
       blockAB,
       blockBA,
-      walletSnap,
+      spend,
       likeFwd,
       likeInv,
       matchSnap,
@@ -100,7 +211,7 @@ export const sendAttra = onCall(
         tx.get(db.collection("seed_profiles").doc(toUid)),
         tx.get(col.blocks.doc(directedId(fromUid, toUid))),
         tx.get(col.blocks.doc(directedId(toUid, fromUid))),
-        tx.get(walletRef),
+        readAttraSpend(tx, fromUid),
         tx.get(likeFwdRef),
         tx.get(col.likes.doc(directedId(toUid, fromUid))),
         tx.get(col.matches.doc(pairId(fromUid, toUid))),
@@ -134,38 +245,12 @@ export const sendAttra = onCall(
       return { outcome: "already_liked" };
     }
 
-    const balance = (walletSnap.data()?.balance ?? 0) as number;
-    if (balance < 1) {
+    if (!spend.canSpend) {
       return { outcome: "insufficient_attras" };
     }
 
-    // Consumo transaccional + ledger.
-    tx.set(
-      walletRef,
-      { balance: FieldValue.increment(-1), updatedAt: FieldValue.serverTimestamp() },
-      { merge: true }
-    );
-    // El saldo vive en DOS sitios: `attraWallets` (autoritativo) y el espejo
-    // `users/{uid}.attrasBalance`, que es de donde lo lee la app. Solo las
-    // rutas de ABONO escribian el espejo, asi que al gastar Attras el numero
-    // que ve el usuario no bajaba nunca: seguia ofreciendo "Enviar Attra" con
-    // saldo real 0 y cada intento fallaba con insufficient_attras.
-    tx.set(
-      col.users.doc(fromUid),
-      {
-        attrasBalance: Math.max(0, balance - 1),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-    tx.set(ledgerRef, {
-      uid: fromUid,
-      type: "send",
-      amount: -1,
-      balanceAfter: balance - 1,
-      targetUserId: toUid,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    // Consumo transaccional + ledger (monedero, espejo y apunte a la vez).
+    commitAttraSpend(tx, spend, { targetUid: toUid, source: "attra_send" });
 
     // Like destacado con foto/comentario.
     tx.set(

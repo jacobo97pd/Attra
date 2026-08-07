@@ -77,6 +77,13 @@ dependencies:
   local_auth: ^2.3.0
   # Abrir enlaces externos (p. ej. el Instagram del perfil).
   url_launcher: ^6.3.0
+  # FEED EN VIVO: vídeo 1:1 peer-to-peer (WebRTC). El vídeo NUNCA pasa por
+  # nuestros servidores; la señalización va por Firestore
+  # (liveSessions/{id}/signals/{uid}). Ver LiveService.
+  # PORQUÉ p2p y no un SFU: menos latencia, menos coste y ningún medio
+  # almacenable en servidor. La contrapartida es que la moderación tiene que
+  # ocurrir en el cliente (ver LiveModerationSampler).
+  flutter_webrtc: ^0.12.6
 
 dev_dependencies:
   flutter_test:

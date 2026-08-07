@@ -188,10 +188,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       final StoryReplyResult r =
           await widget.storyService.replyToStory(id, asAttra: asAttra);
       if (!mounted) return;
+      // Sin saldo el backend no manda nada (ni degrada el Attra a like): hay
+      // que deshacer la estrella optimista o el visor mentiría diciendo que la
+      // reacción salió.
+      if (r.insufficientAttras) {
+        setState(() => _reactions.remove(id));
+        _snack('Te has quedado sin Attras ⭐ Consigue más para enviarlo.');
+        return;
+      }
       _snack(switch (r.outcome) {
         'matched' => '¡Match! Ya podéis chatear 🎉',
-        'message' => asAttra ? 'Enviaste un Attra ⭐' : 'Le diste like ❤️',
-        _ => asAttra
+        // Con match ya hecho la reacción viaja como mensaje al chat: no cuesta
+        // un Attra, así que tampoco se anuncia como tal.
+        'message' => r.chargedAttra ? 'Enviaste un Attra ⭐' : 'Respuesta enviada 💬',
+        _ => r.chargedAttra
             ? 'Attra enviado ⭐ Si te corresponde, haréis match.'
             : 'Like enviado ❤️ Si te corresponde, haréis match.',
       });

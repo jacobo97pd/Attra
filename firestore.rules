@@ -489,5 +489,90 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;
     }
+
+    // ── FEED EN VIVO (vídeo 1:1 con desconocidos) ───────────────────────────
+    // El vídeo va peer-to-peer y el servidor NO lo ve, así que TODO lo que
+    // decide con quién hablas, cuánto dura y quién queda sancionado es
+    // backend-autoritativo (Cloud Functions con Admin SDK). Desde el cliente
+    // solo se abren dos huecos, y los dos son mínimos:
+    //   1. la señalización WebRTC (tiene que ir cliente↔cliente y en vivo),
+    //   2. el veredicto PROPIO.
+    // Nadie puede escribir la cola, crear una sesión, tocar la del otro ni
+    // rebajarse un strike.
+
+    // Cola de espera: el dueño solo LEE su estado ('waiting'/'paired'). Entrar
+    // y salir pasa por joinLiveQueue/leaveLiveQueue, que leen los criterios del
+    // PERFIL REAL: si el cliente pudiera escribir aquí, se declararía el género,
+    // la edad o el país que le conviniera para colarse en otras colas.
+    match /liveQueue/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // Expediente de sanciones del vivo. El dueño lo LEE (la UI necesita
+    // explicar por qué no puede entrar); escribirlo es exclusivo del backend:
+    // si no, un cliente modificado se borraría los strikes.
+    match /liveStrikes/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /liveSessions/{sessionId} {
+      function liveSession() {
+        return get(/databases/$(database)/documents/liveSessions/$(sessionId)).data;
+      }
+      function isLiveParticipant() {
+        return isParticipant(liveSession().get('users', []));
+      }
+      // Una sesión terminada está MUERTA: ya no se puede señalizar en ella.
+      // Esto es lo que hace efectivo el corte por moderación — si no, los dos
+      // clientes seguirían renegociando la conexión por su cuenta.
+      function liveSessionIsOpen() {
+        return liveSession().get('status', '') != 'ended';
+      }
+
+      allow read: if isParticipant(resource.data.get('users', []));
+      allow write: if false;
+
+      // Señalización WebRTC (SDP + candidatos ICE). Cada participante escribe
+      // SOLO su documento (el id es su uid): así nadie puede suplantar la
+      // oferta del otro ni inyectar candidatos en su nombre.
+      match /signals/{signalUid} {
+        allow read: if isLiveParticipant();
+        allow create, update: if isOwner(signalUid)
+          && isLiveParticipant()
+          && liveSessionIsOpen()
+          && request.resource.data.keys().hasOnly([
+               'uid', 'role', 'type', 'sdp', 'candidates',
+               'createdAt', 'updatedAt'
+             ]);
+        allow delete: if isOwner(signalUid) && isLiveParticipant();
+      }
+
+      // Veredicto propio (izquierda = paso / derecha = me interesa). El camino
+      // bueno es la callable submitLiveVerdict: es la que crea el match+chat,
+      // el like o el dislike. Esta regla solo permite dejar constancia del voto
+      // PROPIO; nunca el del otro, y no se puede cambiar una vez escrito
+      // (sin update no hay forma de convertir un 'pass' en 'like' a posteriori).
+      match /verdicts/{verdictUid} {
+        allow read: if isLiveParticipant();
+        // Ojo: aquí NO se exige que la sesión siga abierta — el veredicto se
+        // pide justo DESPUÉS de colgar, con la sesión ya 'ended'.
+        allow create: if isOwner(verdictUid)
+          && isLiveParticipant()
+          && request.resource.data.get('verdict', '') in ['like', 'pass'];
+        allow update, delete: if false;
+      }
+
+      // Estado del rate limit de moderación y auditoría de fotogramas: SOLO
+      // backend. Si el cliente pudiera tocar el contador, desactivaría su
+      // propia moderación (o falsearía la del otro).
+      match /moderation/{callerUid} {
+        allow read, write: if false;
+      }
+      match /moderationEvents/{eventId} {
+        allow read, write: if false;
+      }
+    }
   }
 }

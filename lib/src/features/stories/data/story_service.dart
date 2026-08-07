@@ -19,10 +19,36 @@ class StoryServiceException implements Exception {
 }
 
 class StoryReplyResult {
-  const StoryReplyResult({required this.outcome, this.chatId});
-  final String outcome; // message | matched | liked
+  const StoryReplyResult({
+    required this.outcome,
+    this.chatId,
+    this.chargedAttra = false,
+  });
+
+  /// message | matched | liked | insufficient_attras
+  final String outcome;
   final String? chatId;
+
+  /// La respuesta salió como Attra pagado. No coincide siempre con lo que pidió
+  /// la UI: la estrella sobre alguien con quien ya hay chat solo manda un
+  /// mensaje y no cuesta nada, así que no se puede anunciar "Attra enviado".
+  final bool chargedAttra;
+
   bool get isMatch => outcome == 'matched';
+
+  /// El Attra NO se envió: el monedero estaba a cero. El backend no degrada a
+  /// like normal en silencio, así que aquí no se ha registrado nada.
+  bool get insufficientAttras => outcome == 'insufficient_attras';
+
+  /// `chargedAttra` se lee estricto (`== true`): un backend antiguo que no lo
+  /// mande no puede acabar anunciando un Attra que nadie ha cobrado.
+  factory StoryReplyResult.fromMap(Map<String, dynamic> map) {
+    return StoryReplyResult(
+      outcome: (map['outcome'] as String?) ?? 'liked',
+      chatId: map['chatId'] as String?,
+      chargedAttra: map['chargedAttra'] == true,
+    );
+  }
 }
 
 class _ProcessedStoryImage {
@@ -262,10 +288,7 @@ class StoryService {
       'text': text,
       'asAttra': asAttra,
     });
-    return StoryReplyResult(
-      outcome: (data['outcome'] as String?) ?? 'liked',
-      chatId: data['chatId'] as String?,
-    );
+    return StoryReplyResult.fromMap(data);
   }
 
   Future<void> deleteStory(String storyId) async {

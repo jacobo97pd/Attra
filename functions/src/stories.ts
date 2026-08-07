@@ -5,12 +5,16 @@ import { getStorage } from "firebase-admin/storage";
 import { REGION, STORAGE_BUCKET, db } from "./firebase";
 import { directedId, pairId } from "./ids";
 import { writeMatchAndChat } from "./match";
+import { commitAttraSpend, readAttraSpend } from "./attras";
+import { MAX_COMMENT_LENGTH, moderateComment } from "./moderation";
 import {
   col,
   existsBlockBetween,
+  isUserContactable,
   requireAuthUid,
   requireStringArg,
   resolvePublicDisplayName,
+  senderPrioritySnapshot,
 } from "./common";
 
 // 72 h: Discover pasa a ser un muro de historias, asi que una ventana de 24 h
@@ -252,7 +256,19 @@ export const viewStory = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
-export const replyToStory = onCall({ region: REGION }, async (request) => {
+interface StoryReplyResult {
+  outcome: "message" | "matched" | "liked" | "insufficient_attras";
+  chatId?: string;
+  /// La respuesta queda registrada como Attra pagado (recien cobrado, o ya
+  /// cobrado en un intento anterior / por un Attra activo previo). El cliente
+  /// no puede deducirlo de lo que pidio: pulsar la estrella sobre alguien con
+  /// quien ya hay chat solo manda un mensaje, y no se cobra nada.
+  chargedAttra: boolean;
+}
+
+export const replyToStory = onCall(
+  { region: REGION },
+  async (request): Promise<StoryReplyResult> => {
   const fromUid = requireAuthUid(request.auth);
   const storyId = requireStringArg(request.data?.storyId, "storyId");
   const text = (typeof request.data?.text === "string" ? request.data.text : "")
@@ -263,11 +279,21 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
   const storySnap = await col.stories.doc(storyId).get();
   if (!storySnap.exists)
     throw new HttpsError("not-found", "La story no existe.");
-  const toUid = (storySnap.data()?.ownerUid ?? "") as string;
+  const story = storySnap.data() ?? {};
+  const toUid = (story.ownerUid ?? "") as string;
   if (!toUid || toUid === fromUid) {
     throw new HttpsError(
       "invalid-argument",
       "No puedes responder a tu propia story.",
+    );
+  }
+  // Una story borrada o caducada ya no admite respuesta. Importa sobre todo
+  // ahora que la reaccion con Attra CUESTA: nadie debe pagar por reaccionar a
+  // algo que ya no existe (el cliente puede tenerla cacheada en el visor).
+  if ((story.status ?? "active") !== "active") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Esta story ya no esta disponible.",
     );
   }
   if (await existsBlockBetween(fromUid, toUid)) {
@@ -277,13 +303,58 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
     );
   }
 
+  // Cuando todavia no hay chat, el texto de la respuesta se guarda como
+  // COMENTARIO del like, que es contenido que ve el receptor en su bandeja:
+  // pasa por la misma moderacion que sendLike/sendAttra. Se recorta antes de
+  // moderar porque el limite del comentario (180) es mucho menor que el del
+  // mensaje (2000) y "rechazado por largo" aqui solo seria un callejon sin
+  // salida para quien escribe de mas.
+  const mod = moderateComment(text.slice(0, MAX_COMMENT_LENGTH));
+  if (mod.status === "rejected") {
+    throw new HttpsError(
+      "invalid-argument",
+      "Este mensaje no cumple nuestras normas.",
+    );
+  }
+
   const chatId = pairId(fromUid, toUid);
-  const result = await db.runTransaction(async (tx) => {
-    const chatSnap = await tx.get(col.chats.doc(chatId));
+  const likeRef = col.likes.doc(directedId(fromUid, toUid));
+  // Idempotencia del cobro: la misma story respondida por el mismo usuario se
+  // cobra UNA vez, aunque el cliente reintente tras un timeout o el usuario
+  // vuelva a pulsar la estrella.
+  const spendKey = `story_reply:${storyId}:${fromUid}`;
+
+  const result = await db.runTransaction(
+    async (tx): Promise<StoryReplyResult> => {
+    // Todas las lecturas primero: Firestore no admite leer despues de escribir
+    // dentro de una transaccion.
+    const [chatSnap, ownerSnap, seedSnap, likeFwd, invSnap, entSnap, spend] =
+      await Promise.all([
+        tx.get(col.chats.doc(chatId)),
+        tx.get(col.users.doc(toUid)),
+        tx.get(db.collection("seed_profiles").doc(toUid)),
+        tx.get(likeRef),
+        tx.get(col.likes.doc(directedId(toUid, fromUid))),
+        tx.get(col.entitlements.doc(fromUid)),
+        asAttra ? readAttraSpend(tx, fromUid, spendKey) : Promise.resolve(null),
+      ]);
+
+    // Misma puerta que sendLike/sendAttra: baneado/borrado no es contactable.
+    // Las stories de un usuario expulsado tardan en desaparecer del muro.
+    if (!isUserContactable(ownerSnap) && !seedSnap.exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Ese perfil no esta disponible.",
+      );
+    }
+
     const chatActive =
       chatSnap.exists && (chatSnap.data()?.status ?? "active") === "active";
 
     if (chatActive) {
+      // Ya hay match: la reaccion es un mensaje mas. Un Attra no compra nada
+      // aqui (no hay bandeja que destacar), asi que NO se cobra; el cliente lo
+      // ve en `chargedAttra` y no anuncia un Attra que nadie ha pagado.
       const now = FieldValue.serverTimestamp();
       const msgRef = col.chats.doc(chatId).collection("messages").doc();
       tx.set(msgRef, {
@@ -306,21 +377,51 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
       tx.update(col.stories.doc(storyId), {
         repliesCount: FieldValue.increment(1),
       });
-      return { outcome: "message", chatId };
+      return { outcome: "message", chatId, chargedAttra: false };
     }
 
-    const likeRef = col.likes.doc(directedId(fromUid, toUid));
-    const invSnap = await tx.get(col.likes.doc(directedId(toUid, fromUid)));
+    // Si ya hay un Attra activo hacia esta persona, este esta pagado: mandar
+    // otro no cobra (misma regla que el `already_liked` de sendAttra) y, sobre
+    // todo, una respuesta normal posterior NO puede degradar el like a "like"
+    // y tirar a la basura el Attra que ya se cobro.
+    const fwd = likeFwd.data() ?? {};
+    const activeAttra =
+      likeFwd.exists &&
+      (fwd.status ?? "active") === "active" &&
+      (fwd.type ?? "like") === "attra";
+    const isAttraLike = asAttra || activeAttra;
+
+    if (asAttra && !activeAttra) {
+      if (!spend || !spend.canSpend) {
+        // Sin saldo NO se degrada en silencio a like normal: el usuario pidio
+        // un Attra y tiene que enterarse de que no ha salido. Se sale ANTES de
+        // escribir nada para no dejar un like a medias.
+        return { outcome: "insufficient_attras", chargedAttra: false };
+      }
+      commitAttraSpend(tx, spend, {
+        targetUid: toUid,
+        source: "story_reply",
+        relatedStoryId: storyId,
+      });
+    }
+
     tx.set(
       likeRef,
       {
         fromUid,
         toUid,
-        type: asAttra ? "attra" : "like",
+        type: isAttraLike ? "attra" : "like",
         status: "active",
+        // Si se cobra como Attra tiene que LUCIR como Attra en la bandeja del
+        // receptor (es lo que ordena `received_like_priority`); sin esto
+        // cobrabamos el destacado y entregabamos un like raso.
+        ...senderPrioritySnapshot(entSnap.data(), isAttraLike ? "attra" : "like"),
         targetType: "story",
         relatedStoryId: storyId,
-        commentText: text.length > 0 ? text : null,
+        commentText: mod.status === "none" ? null : mod.cleanText,
+        commentStatus: mod.status === "none" ? "none" : "active",
+        commentModerationStatus:
+          mod.status === "none" ? "approved" : mod.status,
         createdAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -336,18 +437,18 @@ export const replyToStory = onCall({ region: REGION }, async (request) => {
         uidA: fromUid,
         uidB: toUid,
         createdBy: fromUid,
-        action: asAttra ? "attra" : "like",
-        hasAttra: asAttra,
-        attraSenderUid: asAttra ? fromUid : null,
+        action: isAttraLike ? "attra" : "like",
+        hasAttra: isAttraLike,
+        attraSenderUid: isAttraLike ? fromUid : null,
         origin: {
           originLikeId: directedId(fromUid, toUid),
           originTargetType: "profile",
-          originCommentText: text.length > 0 ? text : null,
+          originCommentText: mod.status === "none" ? null : mod.cleanText,
         },
       });
-      return { outcome: "matched", chatId: refs.chatId };
+      return { outcome: "matched", chatId: refs.chatId, chargedAttra: asAttra };
     }
-    return { outcome: "liked" };
+    return { outcome: "liked", chargedAttra: asAttra };
   });
 
   return result;

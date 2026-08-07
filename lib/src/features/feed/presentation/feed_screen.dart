@@ -21,6 +21,7 @@ import '../../match/presentation/photo_response_sheet.dart';
 import '../../match/presentation/prompt_response_sheet.dart';
 import '../../profile/domain/profile_summary.dart';
 import '../../profile/domain/profile_state.dart';
+import '../../profile/presentation/profile_view_screen.dart';
 import '../../safety/presentation/safety_actions.dart';
 import '../../social/domain/intent_mode.dart';
 import '../../monetization/data/boost_service.dart';
@@ -29,8 +30,10 @@ import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_game_screen.dart';
 import '../../stories/data/story_service.dart';
 import '../../stories/domain/story.dart';
-import '../../stories/presentation/stories_bar.dart';
-import '../../stories/presentation/story_viewer_screen.dart';
+import '../../stories/presentation/blind_story_viewer_screen.dart';
+import '../../stories/presentation/blind_wall_controller.dart';
+import '../../stories/presentation/profile_reveal_screen.dart';
+import '../../stories/presentation/story_stack_card.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
@@ -260,8 +263,14 @@ class _FeedScreenState extends State<FeedScreen> {
   Set<String> _dislikedUids = const <String>{};
   Map<String, ActiveBoost> _activeBoostsByUid = const <String, ActiveBoost>{};
   bool _storiesEnabled = false;
-  // Stories vivas agrupadas por dueño: para pintar el aro rojizo en la foto
-  // principal del feed y abrir el visor al pulsar.
+
+  /// Ya ha llegado el primer evento del stream de historias. Sin esto, entre que
+  /// el pool está listo y llegan las historias se pintaba un instante el feed de
+  /// PERFILES: justo lo que el muro a ciegas evita.
+  bool _storiesLoaded = false;
+
+  // Stories vivas agrupadas por dueño: es lo que decide QUIÉN entra en el muro
+  // y cuántas hojas tiene su pila.
   Map<String, List<Story>> _storiesByOwner = const <String, List<Story>>{};
 
   /// Pool YA filtrado y ordenado por el pipeline completo (filtros duros,
@@ -273,9 +282,18 @@ class _FeedScreenState extends State<FeedScreen> {
   /// cruzar, sin repetir todo el pipeline (que hace lecturas de red).
   List<SeedProfile> _rankedPool = const <SeedProfile>[];
   StreamSubscription<Map<String, List<Story>>>? _storiesSub;
-  // Stories ya vistas (por id) en esta sesión: el aro pasa a gris pero se puede
-  // reabrir cuantas veces se quiera.
+  Timer? _storiesTimeout;
+  // Stories ya vistas (por id) en esta sesión: la pila del muro se atenúa pero
+  // se puede reabrir cuantas veces se quiera.
   final Set<String> _seenStoryIds = <String>{};
+
+  /// Puente con el visor a ciegas. El visor NO habla con el backend: le devuelve
+  /// las acciones a este estado, que es quien tiene el gate de likes, las
+  /// métricas, el rewind y los anuncios. Se crea perezosamente (solo si el muro
+  /// llega a abrirse) y vive mientras viva el feed.
+  BlindWallController? _blindWall;
+  bool _blindViewerOpen = false;
+
   bool _rewinding = false;
   List<_FeedRewindAction> _rewindHistory = const <_FeedRewindAction>[];
   FeedFilters _filters = const FeedFilters();
@@ -345,6 +363,8 @@ class _FeedScreenState extends State<FeedScreen> {
     // Vuelca impresiones pendientes (no perder telemetría al cerrar).
     widget.metrics?.flush();
     _storiesSub?.cancel();
+    _storiesTimeout?.cancel();
+    _blindWall?.dispose();
     super.dispose();
   }
 
@@ -491,14 +511,29 @@ class _FeedScreenState extends State<FeedScreen> {
     return aliases[s] ?? s;
   }
 
+  /// Muro de historias activo.
+  ///
+  /// Con `storiesEnabled` APAGADO (que es el default) Discover sigue siendo el
+  /// feed de perfiles de toda la vida. Si el muro se aplicara igualmente, la
+  /// pantalla estaría vacía para todo el mundo hasta que alguien encendiera el
+  /// flag: el rediseño no puede depender de una bandera remota para que la app
+  /// tenga un Discover usable.
+  bool get _storyWallActive => _storiesEnabled && widget.storyService != null;
+
   Future<void> _loadStoriesFlag() async {
     final bool enabled = await widget.storyService?.storiesEnabled() ?? false;
-    if (mounted) setState(() => _storiesEnabled = enabled);
+    if (!mounted) return;
+    setState(() {
+      _storiesEnabled = enabled;
+      // El flag llega DESPUÉS de la primera carga: hay que rehacer el muro o el
+      // pool ya cargado se quedaría pintado como feed de perfiles.
+      _applyStoryWall();
+    });
     if (enabled) _bindStories();
   }
 
-  /// Escucha las stories vivas y las agrupa por dueño para resaltar la foto
-  /// principal de quien tiene historia (aro rojizo + visor al pulsar).
+  /// Escucha las historias vivas agrupadas por dueño: es lo que define el muro
+  /// (quién aparece) y el grosor de cada pila (cuántas tiene).
   void _bindStories() {
     final StoryService? svc = widget.storyService;
     final String myUid = widget.user?.uid ?? '';
@@ -508,6 +543,13 @@ class _FeedScreenState extends State<FeedScreen> {
     // `observeLiveStories` colapsa a una por dueño porque nació con el límite
     // de una historia por usuario, y el muro necesita apilarlas y pasarlas una
     // a una en el visor.
+    // Red de seguridad: si el stream no contesta (sin red, reglas, permisos),
+    // el muro se marca como "cargado" igualmente. Sin esto Discover se quedaba
+    // en el esqueleto para siempre y no había forma de saber que estaba roto.
+    _storiesTimeout?.cancel();
+    _storiesTimeout = Timer(const Duration(seconds: 8), () {
+      if (mounted && !_storiesLoaded) setState(() => _storiesLoaded = true);
+    });
     _storiesSub = svc
         .observeLiveStoriesByOwner(
       excludeUid: myUid,
@@ -516,43 +558,124 @@ class _FeedScreenState extends State<FeedScreen> {
         .listen(
       (Map<String, List<Story>> byOwner) {
         if (!mounted) return;
+        _storiesTimeout?.cancel();
         setState(() {
           _storiesByOwner = byOwner;
+          _storiesLoaded = true;
           // Alguien acaba de publicar (o se le caducó): el muro se rehace sin
           // volver a pedir el pool, que cuesta varias lecturas de red.
           _applyStoryWall();
         });
       },
-      onError: (Object _) {/* sin stories: el feed sigue igual */},
+      onError: (Object _) {
+        // Sin historias no hay muro. Se marca como cargado igualmente: si no, la
+        // pantalla se queda en el esqueleto para siempre.
+        _storiesTimeout?.cancel();
+        if (mounted) setState(() => _storiesLoaded = true);
+      },
     );
   }
 
-  /// True si TODAS las stories vivas de [ownerUid] ya se han visto (aro gris).
+  /// True si TODAS las historias vivas de [ownerUid] ya se han visto (la pila se
+  /// atenúa, pero se puede reabrir sin límite).
   bool _ownerStoriesSeen(String ownerUid) {
     final List<Story>? stories = _storiesByOwner[ownerUid];
     if (stories == null || stories.isEmpty) return false;
     return stories.every((Story s) => _seenStoryIds.contains(s.storyId));
   }
 
-  void _openStoryFor(String ownerUid) {
-    final StoryService? svc = widget.storyService;
-    final List<Story>? stories = _storiesByOwner[ownerUid];
-    if (svc == null || stories == null || stories.isEmpty) return;
-    // Marca como vistas (el aro pasa a gris); se puede reabrir sin límite.
-    setState(() {
-      for (final Story s in stories) {
-        _seenStoryIds.add(s.storyId);
+  /// Marca historias como vistas y avisa al backend (contador de vistas).
+  ///
+  /// El repintado va POST-FRAME porque esto lo llama el visor mientras se está
+  /// construyendo: un setState en ese momento revienta con "called during
+  /// build".
+  void _markStoriesSeen(List<Story> stories) {
+    bool changed = false;
+    for (final Story s in stories) {
+      if (_seenStoryIds.add(s.storyId)) {
+        changed = true;
+        widget.storyService?.viewStory(s.storyId).catchError((_) {});
       }
+    }
+    if (!changed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
     });
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => StoryViewerScreen(
-        stories: stories,
-        initialIndex: 0,
-        currentUid: widget.user?.uid ?? '',
-        storyService: svc,
-      ),
-    ));
   }
+
+  /// Persona que el visor a ciegas debe estar enseñando: la del índice actual
+  /// del feed. Solo nombre, edad e historias; el resto es la recompensa.
+  BlindWallPerson? get _currentBlindPerson {
+    if (_index < 0 || _index >= _profiles.length) return null;
+    final SeedProfile profile = _profiles[_index];
+    final List<Story> stories =
+        _storiesByOwner[profile.id] ?? const <Story>[];
+    if (stories.isEmpty) return null;
+    return BlindWallPerson(
+      uid: profile.id,
+      displayName: profile.displayName,
+      age: profile.age,
+      stories: stories,
+    );
+  }
+
+  /// Vuelca el estado del feed al visor. Se llama post-frame en cada build: el
+  /// controlador ignora los volcados que no cambian nada.
+  void _syncBlindWall() {
+    final BlindWallController? wall = _blindWall;
+    if (wall == null) return;
+    final BlindWallPerson? person = _currentBlindPerson;
+    wall.sync(
+      person: person,
+      // El visor se cierra solo cuando toca anuncio intercalado o cuando se
+      // acaba el muro: son estados del FEED, no del visor.
+      shouldClose: _pendingAd || person == null,
+    );
+  }
+
+  void _openBlindViewer() {
+    if (_blindViewerOpen || _currentBlindPerson == null) return;
+    final BlindWallController wall = _blindWall ??= BlindWallController(
+      beforeLike: () async => !await _pendingBlocks(isAttra: false),
+      onLike: () async {
+        final SeedProfile? p = _profileAtIndex();
+        if (p != null) await _onLikeProfile(p);
+      },
+      onPass: () async {
+        final SeedProfile? p = _profileAtIndex();
+        if (p != null) await _onPass(p);
+      },
+      onSuperAttra: () async {
+        final SeedProfile? p = _profileAtIndex();
+        if (p != null) await _onSuperAttra(p);
+      },
+      // Ver todas sus historias no es ni like ni pase: solo avanza (y cuenta la
+      // impresión, igual que pasar de tarjeta).
+      onSkip: _advance,
+      onStoriesSeen: _markStoriesSeen,
+      onSafety: () {
+        final SeedProfile? p = _profileAtIndex();
+        if (p != null) unawaited(_openSafetyMenu(p));
+      },
+    );
+    wall.sync(person: _currentBlindPerson, shouldClose: false);
+    _blindViewerOpen = true;
+    // Fundido corto en vez del deslizamiento de página: el visor es Discover a
+    // pantalla completa, no otra pantalla a la que "se navega".
+    Navigator.of(context)
+        .push(PageRouteBuilder<void>(
+          opaque: true,
+          transitionDuration: const Duration(milliseconds: 160),
+          pageBuilder: (_, __, ___) => BlindStoryViewerScreen(controller: wall),
+          transitionsBuilder:
+              (_, Animation<double> animation, __, Widget child) =>
+                  FadeTransition(opacity: animation, child: child),
+        ))
+        .whenComplete(() => _blindViewerOpen = false);
+  }
+
+  SeedProfile? _profileAtIndex() =>
+      (_index >= 0 && _index < _profiles.length) ? _profiles[_index] : null;
 
   @override
   void didUpdateWidget(FeedScreen oldWidget) {
@@ -803,10 +926,10 @@ class _FeedScreenState extends State<FeedScreen> {
   /// búsquedas con IA exactamente igual que antes. Lo único que cambia es que
   /// quien no tiene nada que contar no ocupa sitio.
   void _applyStoryWall() {
-    // Sin servicio de historias no hay historias que cruzar: filtrar dejaría el
-    // muro vacío PARA SIEMPRE, que es una pantalla rota, no una decisión de
-    // producto. En ese caso se degrada al pool completo.
-    if (widget.storyService == null) {
+    // Sin muro activo (flag apagado o sin servicio de historias) no hay nada que
+    // cruzar: filtrar dejaría Discover vacío PARA SIEMPRE, que es una pantalla
+    // rota, no una decisión de producto. Se degrada al feed de perfiles.
+    if (!_storyWallActive) {
       _profiles = _rankedPool;
       _index = _index.clamp(0, _rankedPool.isEmpty ? 0 : _rankedPool.length);
       return;
@@ -896,6 +1019,18 @@ class _FeedScreenState extends State<FeedScreen> {
       for (int step = 1; step <= 2; step++) {
         final int n = _index + step;
         if (n >= _profiles.length) break;
+        if (_storyWallActive) {
+          // En el muro la portada NO es la foto de perfil sino la primera
+          // historia: precalentar la foto de perfil calentaría justo lo que no
+          // se va a ver (y encima es lo que se oculta a ciegas).
+          for (final Story s
+              in _storiesByOwner[_profiles[n].id] ?? const <Story>[]) {
+            final String url =
+                s.previewUrl.isNotEmpty ? s.previewUrl : s.imageUrl;
+            if (url.isNotEmpty) toWarm.add(url);
+          }
+          continue;
+        }
         toWarm.add(_profiles[n].primaryPhotoUrl);
         final List<String> g = _profiles[n].galleryUrls;
         if (g.length > 1) toWarm.add(g[1]);
@@ -1039,6 +1174,28 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  /// Super Attra desde el muro a ciegas.
+  ///
+  /// Es la MISMA acción que el Attra de la tarjeta de perfil: mismo gate de
+  /// pendientes, mismo saldo, mismo evento `attraSent`, mismo `sendAttra` y el
+  /// mismo borrado del historial de rewind (un Attra no se deshace). Lo único
+  /// que no lleva es `targetPhotoId`/comentario: a ciegas no hay una foto del
+  /// perfil que señalar, y mandar el id de una historia como si fuera una foto
+  /// de perfil dejaría likes apuntando a media que caduca en 72 h.
+  Future<void> _onSuperAttra(SeedProfile profile) async {
+    if (await _pendingBlocks(isAttra: true)) return;
+    if (!mounted) return;
+    if (widget.attrasBalance <= 0) {
+      _snack('No tienes Attras suficientes.');
+      return;
+    }
+    widget.metrics
+        ?.log(FeedMetricsService.attraSent, uid: _uid, targetUid: profile.id);
+    _advance(clearRewindHistory: true);
+    await _sendAndHandle(
+        () => widget.matchService.sendAttra(profile.id), profile);
+  }
+
   Future<void> _onRespondToPhoto(
     SeedProfile profile,
     AdditionalPhoto photo,
@@ -1168,6 +1325,13 @@ class _FeedScreenState extends State<FeedScreen> {
                 ? () => _playSpark(matchChatId, profile)
                 : null,
           );
+          // La recompensa del muro a ciegas: hasta aquí solo se han visto
+          // nombre, edad e historias. Solo se revela cuando el match viene del
+          // muro; en el feed de perfiles ya se había visto todo y este paso
+          // sobraría.
+          if (_storyWallActive && mounted) {
+            await _revealProfile(profile);
+          }
           break;
         case MatchOutcome.limitReached:
           _snack('Has alcanzado tu límite de likes de hoy.');
@@ -1188,6 +1352,27 @@ class _FeedScreenState extends State<FeedScreen> {
     } on MatchServiceException catch (error) {
       _snack(error.message);
     }
+  }
+
+  /// Revela el perfil completo tras un match nacido en el muro a ciegas.
+  Future<void> _revealProfile(SeedProfile profile) async {
+    await ProfileRevealScreen.show(
+      context,
+      name: profile.displayName,
+      age: profile.age,
+      photoUrl: profile.primaryPhotoUrl,
+      onOpenProfile: () {
+        // Se cierra la pantalla de revelado antes de abrir el perfil: si no,
+        // volver del perfil te devolvía al revelado, que ya no pinta nada.
+        Navigator.of(context).pop();
+        Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => ProfileViewScreen(
+            profile: profile,
+            matchService: widget.matchService,
+          ),
+        ));
+      },
+    );
   }
 
   /// Attra Spark (juego de 5 min) recién creado el match.
@@ -1233,23 +1418,6 @@ class _FeedScreenState extends State<FeedScreen> {
         metrics: widget.metrics,
       ),
     ));
-  }
-
-  Widget _storiesStrip() {
-    final StoryService? svc = widget.storyService;
-    final String uid = widget.user?.uid ?? '';
-    if (!_storiesEnabled || svc == null || uid.isEmpty) {
-      return const SizedBox(height: 48);
-    }
-    return StoriesBar(
-      currentUid: uid,
-      currentName: widget.user?.displayName ?? 'Tú',
-      currentPhotoUrl: widget.user?.photoUrl ?? '',
-      storyService: svc,
-      // Solo se ven historias de personas con las que hay match.
-      matchService: widget.matchService,
-      excludedOwners: _excluded,
-    );
   }
 
   Future<void> _openFilters() async {
@@ -1304,12 +1472,24 @@ class _FeedScreenState extends State<FeedScreen> {
       ),
       onPressed: widget.onOpenTravel,
     );
+    // La tira de historias ya no vive aquí: el MURO es Discover, así que una
+    // fila de aros encima del muro era el mismo contenido dos veces.
     return SafeArea(
       bottom: false,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Expanded(child: _storiesStrip()),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16),
+              child: Text(
+                _storyWallActive ? 'A ciegas' : 'Descubrir',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ),
+          ),
           travelButton,
           filterButton,
         ],
@@ -1484,6 +1664,12 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     final _AiSearchState? ai = _aiSearch;
+    // El visor a ciegas es una vista del estado del feed, no un estado aparte:
+    // se resincroniza en cada frame para que like, pase, rewind, bloqueo,
+    // historia caducada y anuncio le lleguen sin rutas paralelas.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncBlindWall();
+    });
     return Column(
       children: <Widget>[
         _feedHeader(),
@@ -1498,7 +1684,10 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildContent(BuildContext context) {
-    if (_loading) {
+    // Con el muro activo, el pool no vale de nada hasta que llegan las
+    // historias: pintarlo antes enseñaría un instante el feed de PERFILES, que
+    // es justo lo que el "a ciegas" evita.
+    if (_loading || (_storyWallActive && !_storiesLoaded)) {
       return const AttraProfileCardSkeleton();
     }
     if (_error != null) {
@@ -1534,6 +1723,33 @@ class _FeedScreenState extends State<FeedScreen> {
               'Ya has revisado a quienes pasaste. Vuelve al feed normal para descubrir gente nueva.',
           actionLabel: 'Volver al feed',
           onAction: _exitSecondRound,
+        );
+      }
+      // Muro vacío HABIENDO gente compatible: la causa no es que no haya
+      // perfiles, es que nadie ha publicado. Decirlo evita que el usuario crea
+      // que sus filtros están mal puestos.
+      if (_storyWallActive && _rankedPool.isNotEmpty) {
+        const String wallMessage =
+            'Aquí solo aparece quien tiene una historia viva: se descubre a la gente por lo que cuenta, no por su ficha. Las historias duran 72 h, así que vuelve en un rato.';
+        // La segunda vuelta sigue existiendo en el muro: a quien pasaste puede
+        // haberle caducado la historia que viste y haber publicado otra.
+        if (_dislikedUids.isNotEmpty) {
+          return _FeedEndState(
+            icon: Icons.auto_stories_outlined,
+            title: 'Nadie está contando nada ahora mismo',
+            message: wallMessage,
+            primaryLabel: 'Recargar',
+            onPrimary: _load,
+            secondaryLabel: 'Dar una segunda vuelta',
+            onSecondary: _enterSecondRound,
+          );
+        }
+        return AttraEmptyState(
+          icon: Icons.auto_stories_outlined,
+          title: 'Nadie está contando nada ahora mismo',
+          message: wallMessage,
+          actionLabel: 'Recargar',
+          onAction: _load,
         );
       }
       // Feed vacío con pases guardados: ofrece la segunda vuelta.
@@ -1572,6 +1788,11 @@ class _FeedScreenState extends State<FeedScreen> {
 
     final SeedProfile profile = _profiles[_index];
     final bool likedMe = _likedMeUids.contains(profile.id);
+    // En el muro la tarjeta es la PILA de historias de esa persona; fuera del
+    // muro (flag apagado) sigue siendo la tarjeta de perfil de siempre.
+    final List<Story> stories = _storyWallActive
+        ? (_storiesByOwner[profile.id] ?? const <Story>[])
+        : const <Story>[];
     return SafeArea(
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 220),
@@ -1583,9 +1804,9 @@ class _FeedScreenState extends State<FeedScreen> {
           key: const ValueKey<String>('feed-swipe-card'),
           profile: profile,
           likedMe: likedMe,
-          hasStory: _storiesByOwner.containsKey(profile.id),
+          stories: stories,
           storySeen: _ownerStoriesSeen(profile.id),
-          onOpenStory: () => _openStoryFor(profile.id),
+          onOpenStory: _openBlindViewer,
           onBeforeLike: () async => !await _pendingBlocks(isAttra: false),
           onLike: () => _onLikeProfile(profile),
           onPass: () => _onPass(profile),
@@ -1634,14 +1855,18 @@ class _SwipeCard extends StatefulWidget {
     required this.onRespondToPrompt,
     required this.onSafetyMenu,
     this.likedMe = false,
-    this.hasStory = false,
+    this.stories = const <Story>[],
     this.storySeen = false,
     this.onOpenStory,
   });
 
   final SeedProfile profile;
   final bool likedMe;
-  final bool hasStory;
+
+  /// Historias vivas de esta persona. Si NO está vacío, la tarjeta es la pila a
+  /// ciegas del muro; si está vacío, la tarjeta de perfil de siempre (que es lo
+  /// que se ve con el flag `storiesEnabled` apagado).
+  final List<Story> stories;
   final bool storySeen;
   final VoidCallback? onOpenStory;
 
@@ -1754,6 +1979,49 @@ class _SwipeCardState extends State<_SwipeCard>
         final double likeOpacity = (_dx / _threshold).clamp(0.0, 1.0);
         final double nopeOpacity = (-_dx / _threshold).clamp(0.0, 1.0);
 
+        // El cuerpo de la tarjeta: la PILA de historias en el muro, o el perfil
+        // completo cuando el muro no está activo. El resto de la tarjeta (swipe,
+        // sellos, botón de seguridad) es idéntico en ambos casos: así una misma
+        // acción no se comporta distinto según lo que se esté viendo.
+        final Widget body = widget.stories.isNotEmpty
+            ? StoryStackCard(
+                stories: widget.stories,
+                displayName: widget.profile.displayName,
+                age: widget.profile.age,
+                likedMe: widget.likedMe,
+                allSeen: widget.storySeen,
+                onTap: widget.onOpenStory ?? () {},
+              )
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  // Realce editorial para quien te dio like: borde limpio, sin
+                  // convertir una señal relacional en una alerta roja.
+                  border: widget.likedMe
+                      ? Border.all(color: context.colors.accent, width: 2)
+                      : null,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: Material(
+                    color: Theme.of(context).colorScheme.surface,
+                    child: _ProfileDetail(
+                      profile: widget.profile,
+                      likedMe: widget.likedMe,
+                      // El aro de "tiene historia" sobre la foto de perfil
+                      // pertenecía al mundo anterior (tira de stories + feed de
+                      // perfiles). Aquí ya no puede darse: si hay historias, la
+                      // tarjeta es la pila, no este perfil.
+                      hasStory: false,
+                      storySeen: widget.storySeen,
+                      onOpenStory: widget.onOpenStory,
+                      onRespondToPhoto: widget.onRespondToPhoto,
+                      onRespondToPrompt: widget.onRespondToPrompt,
+                    ),
+                  ),
+                ),
+              );
+
         // Drag SOLO horizontal -> el scroll vertical interno sigue funcionando.
         return GestureDetector(
           onHorizontalDragUpdate: _onDragUpdate,
@@ -1764,31 +2032,7 @@ class _SwipeCardState extends State<_SwipeCard>
               angle: angle,
               child: Stack(
                 children: <Widget>[
-                  // Realce editorial para quien te dio like: borde limpio, sin
-                  // convertir una señal relacional en una alerta roja.
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(28),
-                      border: widget.likedMe
-                          ? Border.all(color: context.colors.accent, width: 2)
-                          : null,
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: Material(
-                        color: Theme.of(context).colorScheme.surface,
-                        child: _ProfileDetail(
-                          profile: widget.profile,
-                          likedMe: widget.likedMe,
-                          hasStory: widget.hasStory,
-                          storySeen: widget.storySeen,
-                          onOpenStory: widget.onOpenStory,
-                          onRespondToPhoto: widget.onRespondToPhoto,
-                          onRespondToPrompt: widget.onRespondToPrompt,
-                        ),
-                      ),
-                    ),
-                  ),
+                  body,
                   // Guideline 1.2: acceso permanente a Reportar / Bloquear
                   // sobre la propia tarjeta del feed.
                   Positioned(

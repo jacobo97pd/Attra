@@ -152,6 +152,11 @@ export {
   // con sweepChatGames).
   sweepLiveSessions,
 } from "./live";
+// FEED EN VIVO — credenciales TURN EFIMERAS (rele para NAT simetrico). Sin
+// exportarla, el cliente recibe 'not-found' en cada intento, se queda solo con
+// STUN y las llamadas tras NAT simetrico (4G/5G, CGNAT, wifis corporativas) no
+// conectan NUNCA. Ver liveTurn.ts para las variables de entorno que la activan.
+export { getLiveTurnCredentials } from "./liveTurn";
 export {
   onLikeCreated,
   onMatchCreated,

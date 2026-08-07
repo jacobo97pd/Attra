@@ -28,10 +28,15 @@ Story _story(String owner, {required String id}) =>
     });
 
 /// Réplica de `_FeedScreenState._applyStoryWall`.
+///
+/// [wallActive] es `_storyWallActive`: el flag remoto `storiesEnabled` (que hoy
+/// viene APAGADO por defecto) más la existencia del servicio de historias.
 List<SeedProfile> buildWall({
   required List<SeedProfile> rankedPool,
   required Map<String, List<Story>> storiesByOwner,
+  bool wallActive = true,
 }) {
+  if (!wallActive) return rankedPool;
   return rankedPool
       .where((SeedProfile p) => (storiesByOwner[p.id]?.isNotEmpty ?? false))
       .toList(growable: false);
@@ -84,6 +89,37 @@ void main() {
         },
       );
       expect(wall.map((SeedProfile p) => p.id), <String>['a', 'c']);
+    });
+  });
+
+  group('Con el flag storiesEnabled apagado, Discover sigue siendo usable', () {
+    // `storiesEnabled` es false por defecto. Si el muro se aplicara igualmente,
+    // todo el mundo vería Discover vacío hasta que alguien encendiera el flag:
+    // el rediseño no puede dejar la app sin pantalla de descubrimiento porque
+    // una bandera remota esté apagada.
+    test('sin muro activo se cae al feed de perfiles completo', () {
+      final List<SeedProfile> pool = <SeedProfile>[
+        _profile('a'),
+        _profile('b'),
+      ];
+      final List<SeedProfile> wall = buildWall(
+        rankedPool: pool,
+        storiesByOwner: const <String, List<Story>>{},
+        wallActive: false,
+      );
+      expect(wall.map((SeedProfile p) => p.id), <String>['a', 'b']);
+    });
+
+    test('sin muro activo NO se filtra por historias', () {
+      final List<SeedProfile> wall = buildWall(
+        rankedPool: <SeedProfile>[_profile('a'), _profile('b')],
+        storiesByOwner: <String, List<Story>>{
+          'b': <Story>[_story('b', id: 's1')],
+        },
+        wallActive: false,
+      );
+      expect(wall.map((SeedProfile p) => p.id), <String>['a', 'b'],
+          reason: 'con el flag apagado el feed de perfiles va intacto');
     });
   });
 
