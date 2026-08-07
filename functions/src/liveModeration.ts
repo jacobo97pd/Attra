@@ -767,7 +767,11 @@ export const reviewLiveFrame = onCall(
     // el maxInstances global la moderacion se encolaria. Y encolarse aqui no es
     // lentitud: la politica es fallar cerrando, asi que un atasco corta
     // sesiones legitimas a mansalva.
-    maxInstances: 100,
+    // 40 y no mas: cada instancia declarada consume cuota de CPU de la region
+    // (CpuAllocPerProjectRegion), y pedir 100 aqui dejaba sin desplegar a esta
+    // misma funcion. Con el vivo en dark launch no hay trafico todavia; cuando
+    // se encienda, este es el numero que hay que revisar primero.
+    maxInstances: 40,
   },
   async (request) => {
     const callerUid = requireAuthUid(request.auth);

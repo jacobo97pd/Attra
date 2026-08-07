@@ -10,18 +10,25 @@ import { setGlobalOptions } from "firebase-functions/v2";
 // `cpu: "gcf_gen1"` (CPU fraccionada, como en gen1), y con CPU < 1 Cloud Run
 // EXIGE concurrency 1: por eso van juntos.
 //
-// `maxInstances` NO reserva CPU por adelantado (eso solo lo hace minInstances),
-// asi que limitarlo a 2 no ayudaba a la cuota y en cambio estrangulaba TODA la
-// app: con concurrency 1, cada funcion atendia como mucho 2 peticiones a la vez
-// (sendLike, verifyPurchase, los chats...). Con cuatro usuarios simultaneos ya
-// se encolaba. Se sube a un valor sensato; el techo real lo sigue marcando la
-// cuota de la region, no este numero.
+// `maxInstances` SI cuenta para la cuota: `CpuAllocPerProjectRegion` se calcula
+// sobre el TECHO de instancias declarado, no sobre el uso real, y con ~95
+// funciones en la region el numero se multiplica muy rapido (con 40 pedimos
+// 23320 de 20000 permitidos y fallaron tres funciones).
+//
+// Pero 2 era pasarse de frenada en el otro sentido: con concurrency 1, cada
+// funcion atendia como mucho DOS peticiones a la vez (sendLike, verifyPurchase,
+// los chats...), asi que con cuatro usuarios simultaneos ya se encolaba.
+//
+// 15 es el punto medio: 7 veces mas capacidad que antes y entra en la cuota con
+// margen para que reviewLiveFrame tenga el suyo propio (ver liveModeration.ts).
+// Si algun dia hace falta mas, se pide ampliacion de cuota de la region; subir
+// este numero a ciegas rompe el deploy.
 setGlobalOptions({
   region: "europe-west1",
   memory: "256MiB",
   cpu: "gcf_gen1",
   concurrency: 1,
-  maxInstances: 40,
+  maxInstances: 15,
 });
 
 export { sendLike, passProfile } from "./likes";
