@@ -5,16 +5,23 @@
 /// matches/chats/saldo directamente: pasa por aqui.
 import { setGlobalOptions } from "firebase-functions/v2";
 
-// El proyecto tiene muchas Functions v2 en la misma region. Con los defaults
-// actuales cada servicio Cloud Run reserva mas CPU y el deploy puede chocar con
-// la cuota regional. Estos defaults son conservadores para MVP y reducen la
-// presion de cuota sin cambiar la API publica de las funciones.
+// El proyecto tiene muchas Functions v2 en la misma region y el deploy chocaba
+// con la cuota regional de CPU de Cloud Run. La palanca que lo arregla es
+// `cpu: "gcf_gen1"` (CPU fraccionada, como en gen1), y con CPU < 1 Cloud Run
+// EXIGE concurrency 1: por eso van juntos.
+//
+// `maxInstances` NO reserva CPU por adelantado (eso solo lo hace minInstances),
+// asi que limitarlo a 2 no ayudaba a la cuota y en cambio estrangulaba TODA la
+// app: con concurrency 1, cada funcion atendia como mucho 2 peticiones a la vez
+// (sendLike, verifyPurchase, los chats...). Con cuatro usuarios simultaneos ya
+// se encolaba. Se sube a un valor sensato; el techo real lo sigue marcando la
+// cuota de la region, no este numero.
 setGlobalOptions({
   region: "europe-west1",
   memory: "256MiB",
   cpu: "gcf_gen1",
   concurrency: 1,
-  maxInstances: 2,
+  maxInstances: 40,
 });
 
 export { sendLike, passProfile } from "./likes";
@@ -125,6 +132,26 @@ export {
   productMetricsOnEvent,
   productMetricsFinalize,
 } from "./productMetrics";
+// FEED EN VIVO — moderacion del video 1:1. El video va peer-to-peer y el
+// servidor NO lo ve: cada cliente modera el flujo que RECIBE y lo manda aqui.
+// Sin estos exports no se despliega nada de moderacion y el vivo NO es
+// publicable.
+export { reviewLiveFrame, getLiveStrikeStatus } from "./liveModeration";
+// FEED EN VIVO — cola, emparejamiento, sesion y veredictos (la moderacion va
+// arriba, en liveModeration.ts).
+export {
+  joinLiveQueue,
+  leaveLiveQueue,
+  findLiveMatch,
+  startLiveSession,
+  submitLiveVerdict,
+  endLiveSession,
+  // Barrido por VENCIMIENTO del feed en vivo. Sin exportarlo aqui no se
+  // despliega: las sesiones se quedarian 'active' para siempre y las entradas
+  // de cola 'paired' impedirian volver a emparejar (mismo fallo que ya paso
+  // con sweepChatGames).
+  sweepLiveSessions,
+} from "./live";
 export {
   onLikeCreated,
   onMatchCreated,
