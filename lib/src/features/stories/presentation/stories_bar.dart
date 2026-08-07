@@ -4,7 +4,7 @@ import '../../match/data/match_service.dart';
 import '../../match/domain/user_match.dart';
 import '../data/story_service.dart';
 import '../domain/story.dart';
-import 'create_story_screen.dart';
+import 'story_composer_screen.dart';
 import 'story_ring.dart';
 import 'story_viewer_screen.dart';
 
@@ -46,7 +46,7 @@ class StoriesBar extends StatelessWidget {
   void _openCreate(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) =>
-          CreateStoryScreen(currentUid: currentUid, storyService: storyService),
+          StoryComposerScreen(currentUid: currentUid, storyService: storyService),
     ));
   }
 

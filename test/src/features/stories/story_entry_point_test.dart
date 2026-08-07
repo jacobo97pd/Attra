@@ -10,15 +10,19 @@ import 'package:flutter_test/flutter_test.dart';
 /// Nadie podía publicar, las historias caducan a las 72 h y Discover se habría
 /// quedado en "Nadie está contando nada ahora mismo" para siempre. El editor
 /// seguía compilando y ningún test se enteró.
+///
+/// El editor se sustituyó después por `StoryComposerScreen` (cámara al abrir,
+/// carrete deslizando hacia arriba), así que la regla se mantiene apuntando al
+/// compositor: lo que se vigila es que EXISTA una forma de publicar, no cuál.
 void main() {
-  test('se puede llegar a CreateStoryScreen desde alguna pantalla', () {
-    final List<String> users = _filesInstantiating('CreateStoryScreen')
-        .where((String path) => !path.endsWith('create_story_screen.dart'))
+  test('se puede llegar al compositor de historias desde alguna pantalla', () {
+    final List<String> users = _filesInstantiating('StoryComposerScreen')
+        .where((String path) => !path.endsWith('story_composer_screen.dart'))
         .toList(growable: false);
     expect(
       users,
       isNotEmpty,
-      reason: 'Nadie abre CreateStoryScreen: no hay forma de publicar una '
+      reason: 'Nadie abre el compositor: no hay forma de publicar una '
           'historia y el muro de Discover se vacía solo en 72 h.',
     );
   });
@@ -35,11 +39,11 @@ void main() {
     );
   });
 
-  test('MyStoryButton abre el editor y respeta el tope del servidor', () {
+  test('MyStoryButton abre el compositor y respeta el tope del servidor', () {
     final String button = File(
       'lib/src/features/stories/presentation/my_story_button.dart',
     ).readAsStringSync();
-    expect(button.contains('CreateStoryScreen('), isTrue);
+    expect(button.contains('StoryComposerScreen('), isTrue);
     expect(
       button.contains('StoryService.maxActiveStories'),
       isTrue,

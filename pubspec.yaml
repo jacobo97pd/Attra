@@ -93,6 +93,8 @@ dependencies:
   # permisos ni cambios en Android/iOS (usa FLAG_KEEP_SCREEN_ON e
   # isIdleTimerDisabled). Ver LiveWakelock.
   wakelock_plus: ^1.4.0
+  camera: ^0.12.0+2
+  photo_manager: ^3.11.0
 
 dev_dependencies:
   flutter_test:

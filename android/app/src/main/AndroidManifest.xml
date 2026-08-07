@@ -1,5 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Galeria del compositor de historias (deslizar hacia arriba desde la
+         camara). Desde Android 13 el acceso a fotos dejo de ir por
+         READ_EXTERNAL_STORAGE, que se conserva acotada a API<=32 para que los
+         moviles antiguos sigan viendo el carrete. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
     <!-- Grabación de voz para onboarding rápido, perfil y notas de chat. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.INTERNET"/>

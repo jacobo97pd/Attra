@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/story_service.dart';
 import '../domain/story.dart';
-import 'create_story_screen.dart';
+import 'story_composer_screen.dart';
 import 'story_viewer_screen.dart';
 
 enum _MyStoryAction { view, create }
@@ -12,7 +12,7 @@ enum _MyStoryAction { view, create }
 ///
 /// Existe porque el muro a ciegas se llevó por delante la tira de aros
 /// (`StoriesBar`), que era el único sitio desde el que se abría
-/// [CreateStoryScreen]. Sin esto, Discover —que solo enseña a quien tiene una
+/// [StoryComposerScreen]. Sin esto, Discover —que solo enseña a quien tiene una
 /// historia viva— se vaciaba solo: a las 72 h de encender `storiesEnabled`
 /// caducaba lo publicado, nadie podía publicar nada nuevo y la pantalla
 /// principal quedaba muerta para todo el mundo.
@@ -100,7 +100,7 @@ class MyStoryButton extends StatelessWidget {
   void _openCreate(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) =>
-          CreateStoryScreen(currentUid: currentUid, storyService: storyService),
+          StoryComposerScreen(currentUid: currentUid, storyService: storyService),
     ));
   }
 
