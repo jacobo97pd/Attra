@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.72+75
+version: 1.0.73+76
 
 environment:
   sdk: ^3.5.4
@@ -95,6 +95,16 @@ dependencies:
   wakelock_plus: ^1.4.0
   camera: ^0.12.0+2
   photo_manager: ^3.11.0
+  # Transcodifica imágenes con el decodificador NATIVO del móvil.
+  # PORQUE hace falta: `photo_manager.originFile` devuelve el fichero ORIGINAL
+  # del carrete y en iPhone eso es HEIC, que el paquete `image` de Dart no sabe
+  # leer (`decodeImage` devolvía null y no se podía publicar una historia desde
+  # la galería). El editor anterior no lo sufría porque `image_picker` convertía
+  # a JPEG por su cuenta.
+  # POR QUÉ esta y no las miniaturas de `photo_manager`: aquellas piden a iOS
+  # PHImageContentModeAspectFill, que RECORTA la foto para llenar la caja; esta
+  # escala con un único factor y conserva la proporción. Ver StoryImageConverter.
+  flutter_image_compress: ^2.4.0
 
 dev_dependencies:
   flutter_test:

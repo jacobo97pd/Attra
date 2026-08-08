@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,8 @@ import '../data/story_media_sources.dart';
 import '../data/story_service.dart';
 import '../domain/story.dart';
 import '../domain/story_composer.dart';
+import 'story_preview_screen.dart';
+import '../domain/story_errors.dart';
 
 /// Compositor de historias: la cámara SE ABRE al entrar y el carrete sube
 /// deslizando hacia arriba, sin cambiar de pantalla.
@@ -52,6 +55,9 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
   bool _galleryExhausted = false;
   int _page = 0;
 
+  /// Corta la grabación al llegar al tope de duración.
+  Timer? _recordLimit;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +66,7 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
 
   @override
   void dispose() {
+    _recordLimit?.cancel();
     _camera.dispose();
     super.dispose();
   }
@@ -86,29 +93,40 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
   Future<void> _openGallery() async {
     if (_galleryDenied || _galleryLoading || _galleryExhausted) return;
     setState(() => _galleryLoading = true);
-    final bool ok = await _gallery.ensurePermission();
-    if (!ok) {
-      if (mounted) {
-        setState(() {
-          _galleryDenied = true;
-          _galleryLoading = false;
-        });
+    // Todo el cuerpo va en try/finally: `ensurePermission` y `load` hablan por
+    // canal nativo y LANZAN (permiso "limitado" que se renegocia, PHPhotoLibrary
+    // que falla, plugin sin registrar tras cambiar los pods). Sin esto la
+    // excepción salía sin dueño, `_galleryLoading` se quedaba en true y la rueda
+    // giraba para siempre, con la guarda de arriba bloqueando cualquier
+    // reintento: la misma rueda infinita que se arregló al elegir la foto.
+    try {
+      final bool ok = await _gallery.ensurePermission();
+      if (!ok) {
+        if (mounted) setState(() => _galleryDenied = true);
+        return;
       }
-      return;
-    }
-    final List<GalleryItem> page =
-        await _gallery.load(page: _page, pageSize: 60);
-    if (!mounted) return;
-    setState(() {
-      _items.addAll(page);
-      _page++;
-      _galleryExhausted = page.isEmpty;
-      _galleryLoading = false;
-    });
-    for (final GalleryItem item in page) {
-      _gallery.thumbnail(item.id).then((Uint8List? bytes) {
-        if (mounted) setState(() => _thumbs[item.id] = bytes);
+      final List<GalleryItem> page =
+          await _gallery.load(page: _page, pageSize: 60);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(page);
+        _page++;
+        _galleryExhausted = page.isEmpty;
       });
+      for (final GalleryItem item in page) {
+        _gallery.thumbnail(item.id).then(
+          (Uint8List? bytes) {
+            if (mounted) setState(() => _thumbs[item.id] = bytes);
+          },
+          // Una miniatura que no llega deja su casilla gris; no puede tumbar la
+          // cuadrícula entera ni salir por la zona de errores de Flutter.
+          onError: (Object _) {},
+        );
+      }
+    } catch (_) {
+      if (mounted) _say('No hemos podido abrir tu galería. Inténtalo de nuevo.');
+    } finally {
+      if (mounted) setState(() => _galleryLoading = false);
     }
   }
 
@@ -135,7 +153,9 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _publishing = false);
-      _say('No hemos podido publicar tu historia. $error');
+      // Interpolar el error aquí es lo que enseñaba
+      // "StoryServiceException(null): No se pudo procesar la imagen".
+      _say(storyPublishFailureMessage(error));
     }
   }
 
@@ -156,9 +176,20 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
       _say(storyRejectionMessage(rejection));
       return;
     }
-    await _publish(
-      StoryDraft(file: file, type: type, videoDuration: videoDuration),
-    );
+    final StoryDraft draft =
+        StoryDraft(file: file, type: type, videoDuration: videoDuration);
+
+    // NADA se publica sin confirmar. Tocar una miniatura es el mismo gesto que
+    // harias solo para verla mas grande, y una historia es publica y dura 72 h.
+    final bool confirmed = await Navigator.of(context).push<bool>(
+          MaterialPageRoute<bool>(
+            fullscreenDialog: true,
+            builder: (_) => StoryPreviewScreen(draft: draft),
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+    await _publish(draft);
   }
 
   void _say(String message) {
@@ -176,17 +207,25 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
   Future<void> _onShutterHold() async {
     if (_publishing || !_camera.isReady) return;
     await _camera.startVideo();
+    // El temporizador que el comentario de antes daba por hecho y no existía:
+    // sin editor ya no hay recorte, así que seguir grabando pasado el tope solo
+    // servía para subir un vídeo que el servidor rechaza DESPUÉS de subirlo.
+    _recordLimit?.cancel();
+    _recordLimit = Timer(kStoryMaxVideoDuration, () {
+      unawaited(_onShutterRelease());
+    });
     if (mounted) setState(() {});
   }
 
   Future<void> _onShutterRelease() async {
+    _recordLimit?.cancel();
+    _recordLimit = null;
     if (!_camera.isRecording) return;
     final XFile? file = await _camera.stopVideo();
     if (mounted) setState(() {});
     if (file == null) return;
     // La duración real la pone el fichero; aquí no se conoce sin abrirlo, y el
-    // tope ya lo impone el propio gesto (no se puede grabar más de lo que se
-    // mantiene pulsado, y el temporizador lo corta).
+    // tope lo impone el temporizador de arriba.
     await _choose(file: file, type: StoryMediaType.video);
   }
 
@@ -353,8 +392,16 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
                     itemBuilder: (BuildContext context, int i) {
                       // Al llegar al final se pide la siguiente página: cargar
                       // el carrete entero de golpe agota la memoria en móviles
-                      // con miles de fotos.
-                      if (i == _items.length - 1) _openGallery();
+                      // con miles de fotos. Se programa para DESPUÉS del frame
+                      // porque `_openGallery` hace setState en su primera línea
+                      // y llamarlo desde aquí es hacerlo en pleno build: en
+                      // debug eso es la pantalla roja de "setState() called
+                      // during build" encima del carrete.
+                      if (i == _items.length - 1) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _openGallery();
+                        });
+                      }
                       return _GalleryTile(
                         item: _items[i],
                         thumbnail: _thumbs[_items[i].id],
@@ -371,22 +418,26 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
   }
 
   Future<void> _pickFromGallery(GalleryItem item) async {
-    // Se valida ANTES de descargar el fichero: si el vídeo es demasiado largo,
-    // bajarlo de iCloud para luego rechazarlo sería hacerle esperar para nada.
-    final StoryMediaRejection? rejection = checkStoryMedia(
-      type: item.type,
-      videoDuration: item.videoDuration,
-    );
-    if (rejection != null) {
-      _say(storyRejectionMessage(rejection));
-      return;
-    }
+    // Guarda de reentrada, igual que en `_publish` y `_onShutterTap`: el velo de
+    // `_publishing` no absorbe toques hasta el frame siguiente, así que dos
+    // dedos sobre dos casillas en el mismo frame entraban dos veces y acababan
+    // publicando DOS historias de un solo gesto (el segundo apagaba el velo
+    // mientras la primera subida seguía en curso).
+    if (_publishing) return;
     setState(() => _publishing = true);
-    final XFile? file = await _gallery.file(item.id);
+    // Validar, bajar el fichero y convertirlo si hace falta está en
+    // `pickStoryMedia` y no aquí: dentro de un State no se puede probar, y las
+    // tres formas de fallar (vídeo largo, fichero que no baja, formato que no se
+    // puede convertir) son justo lo que había que cubrir.
+    final StoryPickResult picked = await pickStoryMedia(_gallery, item);
     if (!mounted) return;
     setState(() => _publishing = false);
+    if (!picked.isReady) {
+      _say(picked.message!);
+      return;
+    }
     await _choose(
-      file: file,
+      file: picked.file,
       type: item.type,
       videoDuration: item.videoDuration,
     );

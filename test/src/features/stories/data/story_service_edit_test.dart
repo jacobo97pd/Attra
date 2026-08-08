@@ -30,6 +30,27 @@ void main() {
       expect(edit.durationSeconds(15), 15);
       expect(edit.thumbnailPositionMs, 12300);
       expect(edit.needsNativeProcessing, isTrue);
+      expect(edit.trimsTimeline, isTrue);
+    });
+
+    test('sin recorte NO se le pide recorte al plugin', () {
+      // Es lo que pasa siempre con el compositor nuevo, que ya no edita vídeo.
+      // El plugin de Android monta un TrimDataSource en cuanto recibe start o
+      // duration, y su tercer parámetro es el recorte contado desde el FINAL:
+      // con la duración entera lanza, el transcodificado se cancela y se acababa
+      // subiendo el vídeo del carrete sin comprimir.
+      const StoryVideoEdit edit = StoryVideoEdit();
+
+      expect(edit.trimsTimeline, isFalse);
+      expect(edit.needsNativeProcessing, isFalse);
+    });
+
+    test('silenciar no es recortar', () {
+      // Silenciar sí necesita al plugin, pero no tocar la línea de tiempo.
+      const StoryVideoEdit edit = StoryVideoEdit(muted: true);
+
+      expect(edit.needsNativeProcessing, isTrue);
+      expect(edit.trimsTimeline, isFalse);
     });
   });
 }

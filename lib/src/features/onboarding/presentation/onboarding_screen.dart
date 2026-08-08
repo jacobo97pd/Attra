@@ -290,12 +290,29 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
       final Uint8List raw = await photo.readAsBytes();
       // Des-espeja la selfie frontal (iOS suele guardarla reflejada) para que
-      // salga natural, como te ven los demás. Si falla, usa la original.
-      final Uint8List? unmirrored = _unmirrorSelfie(raw);
-      final Uint8List bytes = unmirrored ?? raw;
-      final String extension = unmirrored != null
-          ? 'jpg'
-          : _extractFileExtension(photo.name, photo.path);
+      // salga natural, como te ven los demás.
+      final Uint8List? unmirrored = unmirrorSelfieBytes(raw);
+      if (unmirrored == null) {
+        // Antes se subía la foto ORIGINAL con su extensión real y se seguía como
+        // si nada. Eso es un fallo mudo caro: si no la hemos podido decodificar
+        // (un HEIC, por ejemplo) se acababa subiendo etiquetada como image/jpeg
+        // y quedaba de foto de perfil, ilegible para media app. Y aunque el
+        // formato fuera bueno, la selfie se subía ESPEJADA, que es justo lo que
+        // esta función existe para evitar. Mejor pedir otra foto que dejar un
+        // perfil roto.
+        if (mounted) {
+          setState(() {
+            _localError = 'No hemos podido preparar esa foto. Vuelve a '
+                'intentarlo; si tu iPhone guarda en HEIC, en Ajustes → Cámara → '
+                'Formatos elige "Más compatible".';
+          });
+        }
+        return;
+      }
+      final Uint8List bytes = unmirrored;
+      // Siempre jpg: `unmirrorSelfieBytes` reencoda a JPEG, así que la extensión del
+      // fichero de origen ya no describe lo que se sube.
+      const String extension = 'jpg';
 
       final LiveSelfieDraftUpload upload = await widget.onUploadLiveSelfieDraft(
         liveSelfieBytes: bytes,
@@ -338,20 +355,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         _localError =
             'No se pudo tomar la selfie. Revisa permisos de camara. ($error)';
       });
-    }
-  }
-
-  /// Voltea horizontalmente la selfie (quita el efecto espejo de la cámara
-  /// frontal) y la re-codifica a JPEG. Devuelve null si no se pudo procesar
-  /// (entonces se usa la imagen original tal cual).
-  Uint8List? _unmirrorSelfie(Uint8List bytes) {
-    try {
-      final img.Image? decoded = img.decodeImage(bytes);
-      if (decoded == null) return null;
-      final img.Image flipped = img.flipHorizontal(decoded);
-      return Uint8List.fromList(img.encodeJpg(flipped, quality: 90));
-    } catch (_) {
-      return null;
     }
   }
 
@@ -614,15 +617,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       age -= 1;
     }
     return age;
-  }
-
-  String _extractFileExtension(String fileName, String filePath) {
-    final String source = fileName.isNotEmpty ? fileName : filePath;
-    final int dot = source.lastIndexOf('.');
-    if (dot == -1 || dot == source.length - 1) {
-      return 'jpg';
-    }
-    return source.substring(dot + 1).toLowerCase();
   }
 
   String _draftFingerprint(OnboardingDraft draft) {
@@ -3024,3 +3018,27 @@ const List<_OptionItem> _appearancePreferenceOptions = <_OptionItem>[
   _OptionItem(value: 'urban_style', label: 'Estilo urbano'),
   _OptionItem(value: 'sporty_vibe', label: 'Vibe deportiva'),
 ];
+
+/// Voltea horizontalmente la selfie (quita el efecto espejo de la cámara
+/// frontal) y la re-codifica a JPEG. Devuelve null si no se pudo procesar
+/// (entonces se pide otra foto en vez de subir algo que no hemos podido leer).
+///
+/// De primer nivel y pública a propósito: la pantalla de onboarding no se puede
+/// montar en un test, y esto decide qué acaba siendo la foto de perfil.
+Uint8List? unmirrorSelfieBytes(Uint8List bytes) {
+  try {
+    final img.Image? decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    // `bakeOrientation` antes de voltear: al vaciar el EXIF se pierde la
+    // etiqueta de orientación, y en Android `image_picker` entrega los píxeles
+    // sin rotar con la rotación solo en esa etiqueta. Sin esto la selfie de
+    // verificación quedaría tumbada.
+    final img.Image flipped = img.flipHorizontal(img.bakeOrientation(decoded));
+    // Fuera los metadatos: `encodeJpg` reescribe el EXIF que traía la foto, y
+    // ahí va el GPS. La selfie pública no tiene por qué llevar dónde se hizo.
+    flipped.exif = img.ExifData();
+    return Uint8List.fromList(img.encodeJpg(flipped, quality: 90));
+  } catch (_) {
+    return null;
+  }
+}

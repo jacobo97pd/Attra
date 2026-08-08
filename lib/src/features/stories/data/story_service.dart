@@ -8,14 +8,37 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../domain/story.dart';
+import '../domain/story_errors.dart';
 import 'story_repository.dart';
 
+/// Fallo del servicio de historias con texto TÉCNICO.
+///
+/// NO implementa [StoryUserFacingError] a propósito: marcar la clase entera como
+/// presentable declaraba "buenos para enseñar" mensajes que son un volcado, como
+/// `Error al subir: storage/retry-limit-exceeded - Max retry time exceeded` o el
+/// `INTERNAL` en inglés de una función. Esos caen en el genérico y el detalle se
+/// queda en los logs. Lo que sí se enseña va en [StoryUserMessageException].
 class StoryServiceException implements Exception {
   const StoryServiceException(this.message, {this.code});
   final String message;
   final String? code;
   @override
   String toString() => 'StoryServiceException($code): $message';
+}
+
+/// Fallo con un texto ESCRITO PARA LA PERSONA: dice qué pasó y qué hacer.
+class StoryUserMessageException extends StoryServiceException
+    implements StoryUserFacingError {
+  const StoryUserMessageException(super.message, {this.detail});
+
+  /// Volcado técnico. Va aparte del [message] para que acabe en los logs y no en
+  /// la cara de la persona.
+  final String? detail;
+
+  @override
+  String toString() => detail == null
+      ? 'StoryUserMessageException: $message'
+      : 'StoryUserMessageException: $message ($detail)';
 }
 
 class StoryReplyResult {
@@ -49,11 +72,6 @@ class StoryReplyResult {
       chargedAttra: map['chargedAttra'] == true,
     );
   }
-}
-
-class _ProcessedStoryImage {
-  const _ProcessedStoryImage(this.bytes);
-  final Uint8List bytes;
 }
 
 enum StoryImageFilter {
@@ -117,13 +135,25 @@ class StoryVideoEdit {
     return (coverPositionSeconds.clamp(0.0, 3600.0) * 1000).round();
   }
 
-  bool get needsNativeProcessing {
+  /// ¿Se recorta algo de verdad?
+  ///
+  /// Importa mucho más de lo que parece: el plugin de Android construye un
+  /// `TrimDataSource(source, startTime, duration)` en cuanto se le pasa
+  /// CUALQUIERA de los dos, y el tercer parámetro de la librería no es una
+  /// duración sino el recorte contado DESDE EL FINAL (`trimEndUs`). Mandarle la
+  /// duración entera con start=0 le sale `start + end >= duración` y lanza, el
+  /// transcodificado se cancela y el plugin devuelve null: se acababa subiendo
+  /// el vídeo del carrete tal cual, sin comprimir. Sin recorte no se le pasa
+  /// ninguno de los dos y Android sí comprime.
+  bool get trimsTimeline {
     final double source = sourceDurationSeconds;
     final bool trimsStart = trimStartSeconds > 0.05;
     final bool trimsEnd =
         source > 0 && trimEndSeconds > 0 && trimEndSeconds < source - 0.05;
-    return muted || trimsStart || trimsEnd;
+    return trimsStart || trimsEnd;
   }
+
+  bool get needsNativeProcessing => muted || trimsTimeline;
 }
 
 class StoryService {
@@ -138,8 +168,6 @@ class StoryService {
   final StoryRepository _repository;
   final FirebaseFunctions _functions;
   final FirebaseStorage _storage;
-
-  static const int _maxImageDimension = 1920;
 
   Future<bool> storiesEnabled() => _repository.storiesEnabled();
 
@@ -199,11 +227,13 @@ class StoryService {
     String thumbnailUrl = '';
 
     if (mediaType == StoryMediaType.image) {
-      final _ProcessedStoryImage processed =
-          _processImage(await media.readAsBytes(), imageEdit);
+      final Uint8List processed = processStoryImageBytes(
+        await media.readAsBytes(),
+        edit: imageEdit,
+      );
       imagePath = 'stories/$uid/$storyId/image.jpg';
       thumbnailPath = imagePath;
-      imageUrl = await _upload(imagePath, processed.bytes, 'image/jpeg');
+      imageUrl = await _upload(imagePath, processed, 'image/jpeg');
       thumbnailUrl = imageUrl;
     } else {
       Uint8List videoBytes;
@@ -212,43 +242,57 @@ class StoryService {
 
       if (kIsWeb) {
         if (videoEdit.needsNativeProcessing) {
-          throw const StoryServiceException(
-            'La edicion de video no esta disponible en web.',
+          throw const StoryUserMessageException(
+            'La edición de vídeo no está disponible en la versión web.',
           );
         }
         videoBytes = await media.readAsBytes();
       } else {
+        final bool trims = videoEdit.trimsTimeline;
         try {
           final MediaInfo? info = await VideoCompress.compressVideo(
             media.path,
             quality: VideoQuality.MediumQuality,
             deleteOrigin: false,
-            startTime: videoEdit.startSeconds,
-            duration: videoEdit.durationSeconds(durationSeconds),
+            // Sin recorte NO se manda ninguno de los dos: ver `trimsTimeline`.
+            // Mandarlos "por completar" hacía que en Android la compresión no
+            // llegara a ejecutarse nunca y se subiera el original del carrete.
+            startTime: trims ? videoEdit.startSeconds : null,
+            duration: trims ? videoEdit.durationSeconds(durationSeconds) : null,
             includeAudio: !videoEdit.muted,
           );
           final String path = info?.path ?? media.path;
           videoBytes = await XFile(path).readAsBytes();
           videoContentType = 'video/mp4';
+        } catch (e) {
+          if (videoEdit.needsNativeProcessing) {
+            throw StoryUserMessageException(
+              'No hemos podido preparar ese vídeo. Vuelve a intentarlo o elige '
+              'otro.',
+              detail: '$e',
+            );
+          }
+          videoBytes = await media.readAsBytes();
+        }
+        try {
           thumbBytes = await VideoCompress.getByteThumbnail(
             media.path,
             quality: 50,
             position: videoEdit.thumbnailPositionMs,
           );
-        } catch (e) {
-          if (videoEdit.needsNativeProcessing) {
-            throw StoryServiceException(
-              'No se pudo procesar el video editado: $e',
-            );
-          }
-          videoBytes = await media.readAsBytes();
+        } catch (_) {
+          // La miniatura va en su PROPIO try: compartiéndolo con la compresión,
+          // que fallara al sacar la portada tiraba el vídeo ya comprimido y
+          // subía el original en su lugar. Sin portada se publica igual.
         }
       }
 
       videoPath = 'stories/$uid/$storyId/video.mp4';
-      thumbnailPath = 'stories/$uid/$storyId/thumb.jpg';
       videoUrl = await _upload(videoPath, videoBytes, videoContentType);
       if (thumbBytes != null && thumbBytes.isNotEmpty) {
+        // La ruta solo se anuncia si de verdad se ha subido algo: si no, la
+        // historia quedaba apuntando a un objeto que no existe.
+        thumbnailPath = 'stories/$uid/$storyId/thumb.jpg';
         thumbnailUrl = await _upload(thumbnailPath, thumbBytes, 'image/jpeg');
       }
     }
@@ -309,68 +353,6 @@ class StoryService {
     }
   }
 
-  _ProcessedStoryImage _processImage(Uint8List bytes, StoryImageEdit edit) {
-    final img.Image? decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw const StoryServiceException('No se pudo procesar la imagen.');
-    }
-
-    img.Image out = img.bakeOrientation(decoded);
-    final int turns = edit.normalizedRotationTurns;
-    if (turns != 0) {
-      out = img.copyRotate(out, angle: turns * 90);
-    }
-    out = _cropImage(out, edit.normalizedCropZoom);
-    out = _applyImageFilter(out, edit.filter);
-
-    final int longest = out.width > out.height ? out.width : out.height;
-    if (longest > _maxImageDimension) {
-      out = out.width >= out.height
-          ? img.copyResize(out, width: _maxImageDimension)
-          : img.copyResize(out, height: _maxImageDimension);
-    }
-    return _ProcessedStoryImage(
-      Uint8List.fromList(img.encodeJpg(out, quality: 85)),
-    );
-  }
-
-  img.Image _cropImage(img.Image source, double zoom) {
-    if (zoom <= 1.01) return source;
-    final int width =
-        (source.width / zoom).round().clamp(1, source.width).toInt();
-    final int height =
-        (source.height / zoom).round().clamp(1, source.height).toInt();
-    final int x = ((source.width - width) / 2).round();
-    final int y = ((source.height - height) / 2).round();
-    return img.copyCrop(source, x: x, y: y, width: width, height: height);
-  }
-
-  img.Image _applyImageFilter(img.Image source, StoryImageFilter filter) {
-    return switch (filter) {
-      StoryImageFilter.none => source,
-      StoryImageFilter.warm => img.adjustColor(
-          source,
-          brightness: 1.04,
-          contrast: 1.04,
-          saturation: 1.12,
-          hue: 7,
-        ),
-      StoryImageFilter.cool => img.adjustColor(
-          source,
-          brightness: 1.02,
-          contrast: 1.03,
-          saturation: 0.98,
-          hue: -8,
-        ),
-      StoryImageFilter.mono => img.grayscale(source),
-      StoryImageFilter.punch => img.adjustColor(
-          source,
-          brightness: 1.04,
-          contrast: 1.16,
-          saturation: 1.24,
-        ),
-    };
-  }
 
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {
@@ -394,4 +376,130 @@ class StoryService {
     final String b = rng.nextInt(0x7FFFFFFF).toRadixString(16);
     return '${ts}_$a$b';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Procesado de la foto
+//
+// De primer nivel y público a propósito: `createStory` necesita Firestore,
+// Functions y Storage, así que dentro de la clase esto no se podía probar con
+// bytes de verdad y la única prueba posible del mensaje de "foto ilegible" era
+// una copia del texto escrita a mano, que seguiría en verde aunque el servicio
+// volviera al mensaje mudo de antes.
+// ---------------------------------------------------------------------------
+
+/// Lado mayor máximo de la foto que se publica (px).
+const int _maxStoryImageDimension = 1920;
+
+/// Texto único del "no se puede leer esta foto".
+///
+/// Es una constante y no un literal suelto para que la prueba pueda mirar EL
+/// mensaje que se enseña de verdad, y no una copia escrita a mano que seguiría
+/// en verde aunque alguien devolviera el "No se pudo procesar la imagen."
+const String storyUnreadableImageMessage =
+    'No hemos podido leer esta foto: puede estar dañada o en un formato que '
+    'no reconocemos. Prueba con otra, o haz una captura de pantalla de esta '
+    'y publica esa.';
+
+/// Deja la foto lista para subir: orientación, edición, tope de 1920 px, sin
+/// metadatos y en JPEG.
+///
+/// Lanza [StoryUserMessageException] con [storyUnreadableImageMessage] si no hay
+/// manera de leer los bytes.
+Uint8List processStoryImageBytes(
+  Uint8List bytes, {
+  StoryImageEdit edit = const StoryImageEdit(),
+}) {
+  final img.Image? decoded;
+  try {
+    decoded = img.decodeImage(bytes);
+  } catch (e) {
+    // `decodeImage` NO siempre devuelve null ante un fichero que no puede
+    // leer: los decodificadores de PNG, JPEG y TIFF LANZAN ImageException con
+    // datos truncados o comprimidos de una forma que no soportan (un JPEG a
+    // medio bajar de iCloud, por ejemplo). Sin este catch la excepción subía
+    // hasta el compositor, no la reconocía como presentable y se enseñaba
+    // "Revisa tu conexión": un problema permanente de fichero disfrazado de
+    // fallo de red, con la persona reintentando en bucle.
+    throw StoryUserMessageException(storyUnreadableImageMessage, detail: '$e');
+  }
+  if (decoded == null) {
+    // El caso habitual era HEIC de la cámara del iPhone, y de eso ya se
+    // encarga el carrete antes de llegar aquí (ver StoryImageConverter). Si
+    // aun así no se puede decodificar, el fichero está dañado o es un formato
+    // que no lee nadie: hay que decir qué pasa y qué se puede hacer, porque el
+    // mensaje anterior ("No se pudo procesar la imagen") dejaba a la persona
+    // sin nada que intentar.
+    throw const StoryUserMessageException(storyUnreadableImageMessage);
+  }
+
+  img.Image out = img.bakeOrientation(decoded);
+  final int turns = edit.normalizedRotationTurns;
+  if (turns != 0) {
+    out = img.copyRotate(out, angle: turns * 90);
+  }
+  out = _cropStoryImage(out, edit.normalizedCropZoom);
+  out = _applyStoryFilter(out, edit.filter);
+
+  final int longest = out.width > out.height ? out.width : out.height;
+  if (longest > _maxStoryImageDimension) {
+    // `interpolation` explícito: el valor por defecto de `copyResize` es
+    // `nearest`, que al reducir tira filas y columnas sin promediar y deja
+    // dentado y moiré en el pelo, las pestañas y los tejidos de rayas.
+    out = out.width >= out.height
+        ? img.copyResize(
+            out,
+            width: _maxStoryImageDimension,
+            interpolation: img.Interpolation.average,
+          )
+        : img.copyResize(
+            out,
+            height: _maxStoryImageDimension,
+            interpolation: img.Interpolation.average,
+          );
+  }
+  // Fuera los metadatos ANTES de codificar: `encodeJpg` reescribe el EXIF que
+  // traía la foto, y en el carrete eso incluye las coordenadas GPS de dónde se
+  // hizo. Una historia es pública, así que publicarla no puede publicar
+  // también la casa de quien la sube.
+  out.exif = img.ExifData();
+  return Uint8List.fromList(img.encodeJpg(out, quality: 85));
+}
+
+img.Image _cropStoryImage(img.Image source, double zoom) {
+  if (zoom <= 1.01) return source;
+  final int width =
+      (source.width / zoom).round().clamp(1, source.width).toInt();
+  final int height =
+      (source.height / zoom).round().clamp(1, source.height).toInt();
+  final int x = ((source.width - width) / 2).round();
+  final int y = ((source.height - height) / 2).round();
+  return img.copyCrop(source, x: x, y: y, width: width, height: height);
+}
+
+img.Image _applyStoryFilter(img.Image source, StoryImageFilter filter) {
+  return switch (filter) {
+    StoryImageFilter.none => source,
+    StoryImageFilter.warm => img.adjustColor(
+        source,
+        brightness: 1.04,
+        contrast: 1.04,
+        saturation: 1.12,
+        hue: 7,
+      ),
+    StoryImageFilter.cool => img.adjustColor(
+        source,
+        brightness: 1.02,
+        contrast: 1.03,
+        saturation: 0.98,
+        hue: -8,
+      ),
+    StoryImageFilter.mono => img.grayscale(source),
+    StoryImageFilter.punch => img.adjustColor(
+        source,
+        brightness: 1.04,
+        contrast: 1.16,
+        saturation: 1.24,
+      ),
+  };
 }

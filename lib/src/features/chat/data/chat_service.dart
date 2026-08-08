@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 
 import '../../chat_game/domain/chat_game.dart';
@@ -19,9 +20,12 @@ class ChatServiceException implements Exception {
   String toString() => 'ChatServiceException($code): $message';
 }
 
+/// Lado mayor maximo de una imagen de chat tras redimensionar (px).
+const int kMaxChatImageDimension = 1600;
+
 /// Resultado de procesar una imagen antes de subirla.
-class _ProcessedImage {
-  const _ProcessedImage({
+class ProcessedChatImage {
+  const ProcessedChatImage({
     required this.bytes,
     required this.width,
     required this.height,
@@ -31,6 +35,16 @@ class _ProcessedImage {
   final int height;
 }
 
+/// Recodifica unos bytes con el decodificador NATIVO del móvil.
+///
+/// Devuelve `null` si el sistema tampoco supo leerlos. Separado en un typedef
+/// para poder falsearlo: la implementación real habla por canal nativo y no
+/// existe en los tests.
+typedef ChatImageTranscoder = Future<Uint8List?> Function(
+  Uint8List bytes,
+  int maxSide,
+);
+
 /// Fachada de chat para la UI: enviar/leer/typing via Cloud Functions +
 /// streams de lectura via ChatRepository.
 class ChatService {
@@ -38,16 +52,16 @@ class ChatService {
     required ChatRepository repository,
     required FirebaseFunctions functions,
     required FirebaseStorage storage,
+    ChatImageTranscoder? transcodeImage,
   })  : _repository = repository,
         _functions = functions,
-        _storage = storage;
+        _storage = storage,
+        _transcodeImage = transcodeImage ?? _compressWithSystem;
 
   final ChatRepository _repository;
   final FirebaseFunctions _functions;
   final FirebaseStorage _storage;
-
-  /// Lado mayor maximo de una imagen tras redimensionar (px).
-  static const int _maxImageDimension = 1600;
+  final ChatImageTranscoder _transcodeImage;
 
   // --- Escrituras (backend) ---
 
@@ -66,8 +80,8 @@ class ChatService {
     return (data['messageId'] as String?) ?? '';
   }
 
-  /// Envia una FOTO: redimensiona + recomprime a JPEG (esto ELIMINA el EXIF al
-  /// re-codificar), sube a Storage en ruta segura por uid y crea el mensaje via
+  /// Envia una FOTO: redimensiona, VACIA EL EXIF (incluido el GPS) y recomprime
+  /// a JPEG, sube a Storage en ruta segura por uid y crea el mensaje via
   /// `sendMediaMessage` (que valida tamaño/MIME real del objeto). Devuelve el id.
   Future<String> sendImage({
     required String chatId,
@@ -75,7 +89,8 @@ class ChatService {
     required Uint8List bytes,
     String? fileName,
   }) async {
-    final _ProcessedImage processed = _processImage(bytes);
+    final ProcessedChatImage processed =
+        await processChatImageBytes(bytes, transcode: _transcodeImage);
     final String messageId = _genId();
     final String path = 'chats/$chatId/images/$senderUid/$messageId.jpg';
     final String url =
@@ -103,7 +118,8 @@ class ChatService {
     required Uint8List bytes,
     String? fileName,
   }) async {
-    final _ProcessedImage processed = _processImage(bytes);
+    final ProcessedChatImage processed =
+        await processChatImageBytes(bytes, transcode: _transcodeImage);
     final String messageId = _genId();
     final String path = 'chats/$chatId/bombs/$senderUid/$messageId.jpg';
     await _uploadToStorage(
@@ -170,25 +186,6 @@ class ChatService {
     }
   }
 
-  /// Redimensiona (lado mayor <= [_maxImageDimension]) y re-codifica a JPEG.
-  _ProcessedImage _processImage(Uint8List bytes) {
-    final img.Image? decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw const ChatServiceException('No se pudo procesar la imagen.');
-    }
-    img.Image out = decoded;
-    final int longest =
-        decoded.width > decoded.height ? decoded.width : decoded.height;
-    if (longest > _maxImageDimension) {
-      if (decoded.width >= decoded.height) {
-        out = img.copyResize(decoded, width: _maxImageDimension);
-      } else {
-        out = img.copyResize(decoded, height: _maxImageDimension);
-      }
-    }
-    final Uint8List jpeg = Uint8List.fromList(img.encodeJpg(out, quality: 80));
-    return _ProcessedImage(bytes: jpeg, width: out.width, height: out.height);
-  }
 
   String _genId() {
     final int ts = DateTime.now().millisecondsSinceEpoch;
@@ -427,5 +424,107 @@ class ChatService {
     } on FirebaseFunctionsException catch (error) {
       throw ChatServiceException(error.message ?? error.code, code: error.code);
     }
+  }
+}
+
+/// Recodificación real con el decodificador del sistema.
+///
+/// Solo se usa como SEGUNDO intento, cuando el paquete `image` no ha sabido leer
+/// los bytes: transcodificar siempre pasaría por JPEG capturas de pantalla que
+/// ahora salen intactas y las dejaría peor.
+Future<Uint8List?> _compressWithSystem(Uint8List bytes, int maxSide) async {
+  try {
+    final Uint8List out = await FlutterImageCompress.compressWithList(
+      bytes,
+      minWidth: maxSide,
+      minHeight: maxSide,
+      quality: 92,
+      format: CompressFormat.jpeg,
+      // Sin EXIF: es una foto que se le manda a otra persona y ahí viaja el GPS.
+      keepExif: false,
+    );
+    return out.isEmpty ? null : out;
+  } catch (_) {
+    // Que el sistema tampoco pueda (o que no haya canal nativo, como en los
+    // tests) no es un caso especial: es el mismo "no se puede leer esta foto".
+    return null;
+  }
+}
+
+/// Texto único del "no se puede leer esta foto".
+///
+/// Constante y no literal suelto para que la prueba pueda mirar EL mensaje que
+/// se enseña de verdad. El anterior ("No se pudo procesar la imagen.") no
+/// decía qué pasaba ni qué se podía hacer.
+const String chatUnreadableImageMessage =
+    'No hemos podido leer esta foto: puede estar dañada o en un formato que no '
+    'reconocemos. Prueba con otra o haz una captura de pantalla de esta.';
+
+/// Redimensiona (lado mayor <= [maxSide]), quita el EXIF y re-codifica a JPEG.
+///
+/// De primer nivel y pública a propósito: `ChatService` necesita Functions y
+/// Storage reales, así que dentro de la clase esto no se podía probar con bytes
+/// de verdad.
+Future<ProcessedChatImage> processChatImageBytes(
+  Uint8List bytes, {
+  required ChatImageTranscoder transcode,
+  int maxSide = kMaxChatImageDimension,
+}) async {
+  img.Image? decoded = _decodeChatImage(bytes);
+  if (decoded == null) {
+    // Segundo intento con el decodificador del SISTEMA. El paquete `image` de
+    // Dart no sabe leer HEIC/HEIF ni AVIF, y por aquí sí pueden llegar: en
+    // Android, `image_picker` devuelve el fichero ORIGINAL sin tocar cuando
+    // BitmapFactory no supo abrirlo (ImageResizer.resizeImageIfNeeded), que es
+    // lo que pasa con un HEIC recibido por WhatsApp o Drive. Es el mismo fallo
+    // que rompía las historias, y aquí acababa en "No se pudo procesar la
+    // imagen." sin salida posible.
+    final Uint8List? converted =
+        await transcode(bytes, maxSide);
+    if (converted != null) decoded = _decodeChatImage(converted);
+  }
+  if (decoded == null) {
+    throw const ChatServiceException(chatUnreadableImageMessage);
+  }
+
+  // `bakeOrientation` antes de nada: al vaciar el EXIF más abajo se pierde la
+  // etiqueta de orientación, así que hay que dejar los píxeles ya derechos o
+  // la foto llega girada. En Android pasa de verdad: `image_picker` entrega
+  // los píxeles sin rotar y la orientación solo en la etiqueta.
+  img.Image out = img.bakeOrientation(decoded);
+  final int longest = out.width > out.height ? out.width : out.height;
+  if (longest > maxSide) {
+    // `interpolation` explícito: `copyResize` usa `nearest` por defecto, que
+    // al reducir tira filas y columnas sin promediar y deja dentado y moiré.
+    out = out.width >= out.height
+        ? img.copyResize(
+            out,
+            width: maxSide,
+            interpolation: img.Interpolation.average,
+          )
+        : img.copyResize(
+            out,
+            height: maxSide,
+            interpolation: img.Interpolation.average,
+          );
+  }
+  // Fuera los metadatos. Re-codificar NO los quita por sí solo: `encodeJpg`
+  // vuelve a escribir el EXIF de la imagen decodificada, y el que trae una
+  // foto del carrete incluye las coordenadas GPS de dónde se hizo. Mandársela
+  // a alguien no puede ser mandarle también dónde vives.
+  out.exif = img.ExifData();
+  final Uint8List jpeg = Uint8List.fromList(img.encodeJpg(out, quality: 80));
+  return ProcessedChatImage(bytes: jpeg, width: out.width, height: out.height);
+}
+
+/// Decodifica sin morir en el intento.
+///
+/// `decodeImage` no siempre devuelve null cuando no puede: con datos
+/// truncados, los decodificadores de PNG, JPEG y TIFF LANZAN ImageException.
+img.Image? _decodeChatImage(Uint8List bytes) {
+  try {
+    return img.decodeImage(bytes);
+  } catch (_) {
+    return null;
   }
 }
