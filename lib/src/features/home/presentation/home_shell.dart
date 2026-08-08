@@ -13,6 +13,7 @@ import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
 import '../../anti_ghosting/data/pending_conversations_controller.dart';
 import '../../anti_ghosting/domain/anti_ghosting_config.dart';
+import '../../auth/data/location_refresh_service.dart';
 import '../../auth/domain/app_user.dart';
 import '../../chat/data/chat_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
@@ -190,12 +191,9 @@ class HomeShell extends StatefulWidget {
   final Future<void> Function(IntentMode mode)? onSetIntentMode;
 
   /// Persiste la ubicación del dispositivo (lat/lng + permiso) cuando el feed la
-  /// obtiene, para que la completitud del perfil llegue al 100%.
-  final Future<void> Function({
-    required double latitude,
-    required double longitude,
-    required String permissionStatus,
-  })? onSaveDeviceLocation;
+  /// obtiene o la refresca: escribe `users/{uid}.location` (con la marca de
+  /// frescura) y republica `discovery/{uid}`.
+  final PersistDeviceLocation? onSaveDeviceLocation;
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;

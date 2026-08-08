@@ -13,6 +13,7 @@ import '../../profile/domain/profile_trait.dart';
 import '../../profile/domain/public_identity.dart';
 import '../domain/app_user.dart';
 import 'user_document_defaults.dart';
+import '../domain/resolved_place.dart';
 
 class UserSyncResult {
   const UserSyncResult({required this.user, required this.isNewUser});
@@ -527,25 +528,80 @@ class UserRepository {
 
   /// Persiste la ubicación del dispositivo en `users/{uid}.location` (lat/lng +
   /// estado del permiso). Así la completitud del perfil reconoce que hay
-  /// ubicación y el feed calcula distancia. Re-sincroniza la completitud.
+  /// ubicación y el feed calcula distancia.
+  ///
+  /// `location.updatedAt` es la MARCA DE FRESCURA y no es decorativa: es lo que
+  /// permite saber si la ubicación es de hoy o de hace tres meses. Sin ella el
+  /// cliente solo podía preguntarse "¿hay coordenadas?", y por eso la ubicación
+  /// se quedaba congelada desde el registro. `location` ya está en
+  /// `allowedTopLevelKeys()` de firestore.rules, así que esto no toca reglas.
+  ///
+  /// `location.fixedAt` es cuándo se MIDIÓ la posición, que no es lo mismo que
+  /// cuándo se escribe: `updatedAt` es un `serverTimestamp()` y sin cobertura la
+  /// escritura se confirma horas después (una posición del kilómetro 300 quedaba
+  /// sellada como "medida ahora" al llegar a destino con WiFi, y la política la
+  /// daba por fresquísima). La frescura se decide con `fixedAt`.
+  ///
+  /// `permissionGranted` se escribía SOLO en el onboarding: Ajustes leía
+  /// `location.permissionGranted` y veía `false` aunque el permiso estuviera
+  /// concedido desde el feed. Va como opcional porque "no se pudo determinar" NO
+  /// es "denegado": escribir `unknown`/false por un fallo pasajero del canal
+  /// nativo volvería a romper Ajustes.
   Future<void> setDeviceLocation({
     required String uid,
     required double latitude,
     required double longitude,
-    required String permissionStatus,
+    required DateTime fixedAt,
+    String? permissionStatus,
+    bool? permissionGranted,
+    ResolvedPlace? place,
   }) async {
+    // Ciudad y pais viajan en la MISMA escritura que las coordenadas. Iban por
+    // libre: los escribia solo el selector manual del onboarding, asi que al
+    // hacer que las coordenadas se refrescaran solas quedaban desfasados. Y eso
+    // es peor que tenerlo todo rancio: cruzas una frontera, tus coordenadas
+    // dicen Lisboa y tu pais sigue diciendo España, la regla de pais te enseña
+    // españoles y la de radio los descarta a todos. Ademas dejas de ser visible
+    // para los de alrededor, porque el pais que publicas es de otro sitio.
+    //
+    // Si no se pudo resolver (sin red, geocodificador pasado de tasa) NO se
+    // toca nada: se conserva el sitio anterior entero.
+    final Map<String, dynamic> profilePlace = <String, dynamic>{
+      if (place != null && place.isUsable) ...<String, dynamic>{
+        if (place.city.isNotEmpty) 'currentCity': place.city,
+        'currentCountryName': place.countryName,
+        if (place.countryIso2.isNotEmpty)
+          'currentCountryIso2': place.countryIso2,
+      },
+    };
     await _usersCollection.doc(uid).set(
           _withRequiredUserFields(uid, <String, dynamic>{
+            if (profilePlace.isNotEmpty) 'profile': profilePlace,
             'location': <String, dynamic>{
               'latitude': latitude,
               'longitude': longitude,
-              'permissionStatus': permissionStatus,
+              if (permissionStatus != null) 'permissionStatus': permissionStatus,
+              if (permissionGranted != null)
+                'permissionGranted': permissionGranted,
+              'fixedAt': Timestamp.fromDate(fixedAt.toUtc()),
               'updatedAt': FieldValue.serverTimestamp(),
             },
             'updatedAt': FieldValue.serverTimestamp(),
           }),
           SetOptions(merge: true),
         );
+    // Republicar `discovery/{uid}` es imprescindible: guardar la ubicación nueva
+    // en `users` sin republicar deja a los demás viéndote donde estabas, que es
+    // exactamente el síntoma que se venía a arreglar.
+    //
+    // Quien lo hace DE VERDAD es el trigger de backend `onUserWrittenSyncDiscovery`
+    // (Admin SDK, ignora las reglas), que se dispara con la escritura de arriba.
+    // La republicación desde el cliente que hace `refreshProfileCompletion` es
+    // best-effort y para dos estados muy comunes las reglas la RECHAZAN siempre:
+    // `discovery/{uid}` prohíbe al cliente escribir `verified` o `traveling` en
+    // true (firestore.rules), y el payload los lleva si el usuario tiene selfie
+    // verificada o está de viaje. Para esos usuarios la red de seguridad "el feed
+    // funciona sin desplegar Cloud Functions" NO existe.
     await refreshProfileCompletion(uid);
   }
 

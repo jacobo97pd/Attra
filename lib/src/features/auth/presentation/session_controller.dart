@@ -40,6 +40,7 @@ import '../data/user_repository.dart';
 import '../domain/app_user.dart';
 import 'session_state.dart';
 import '../../live/data/live_rtc_config.dart';
+import '../domain/resolved_place.dart';
 
 class SessionController extends ChangeNotifier {
   SessionController({
@@ -829,10 +830,17 @@ class SessionController extends ChangeNotifier {
 
   /// Guarda la ubicación del dispositivo (lat/lng + permiso) y recarga el
   /// usuario para que la completitud del perfil y el feed reaccionen.
+  ///
+  /// La recarga NO es opcional: el feed decide si toca refrescar comparando la
+  /// marca de la ubicación con el reloj, así que si el AppUser en memoria se
+  /// quedara con la marca vieja volvería a pedir GPS en el siguiente arranque.
   Future<void> saveDeviceLocation({
     required double latitude,
     required double longitude,
-    required String permissionStatus,
+    required DateTime fixedAt,
+    String? permissionStatus,
+    bool? permissionGranted,
+    ResolvedPlace? place,
   }) async {
     final String? uid = _state.user?.uid;
     if (uid == null) return;
@@ -840,7 +848,10 @@ class SessionController extends ChangeNotifier {
       uid: uid,
       latitude: latitude,
       longitude: longitude,
+      fixedAt: fixedAt,
+      place: place,
       permissionStatus: permissionStatus,
+      permissionGranted: permissionGranted,
     );
     await _refreshAuthenticatedUser(uid);
   }

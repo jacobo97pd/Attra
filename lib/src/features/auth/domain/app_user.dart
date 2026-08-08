@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../monetization/domain/subscription_tier.dart';
 import '../../social/domain/intent_mode.dart';
+import 'location_refresh_policy.dart';
 
 class AppUser {
   const AppUser({
@@ -23,6 +24,9 @@ class AppUser {
     this.interestedIn = const <String>[],
     this.latitude,
     this.longitude,
+    this.locationUpdatedAt,
+    this.locationMeasuredAt,
+    this.locationPermissionStatus = 'unknown',
     this.countryName = '',
     this.maxDistanceKm,
     this.slowDatingEnabled = false,
@@ -44,6 +48,7 @@ class AppUser {
     this.travelIso2 = '',
     this.travelCity = '',
     this.travelCountry = '',
+    this.travelUntil,
     this.busyModeEnabled = false,
     this.busyModeUntil,
     this.busyModeStartedAt,
@@ -130,6 +135,30 @@ class AppUser {
   final double? latitude;
   final double? longitude;
 
+  /// Cuándo se guardó esa ubicación (`location.updatedAt`). Sin esta marca no se
+  /// puede distinguir una ubicación de hoy de una de hace tres meses, que es
+  /// justo por lo que la ubicación se quedaba congelada: solo se capturaba
+  /// cuando FALTABA, nunca cuando estaba rancia.
+  final DateTime? locationUpdatedAt;
+
+  /// Cuándo se MIDIÓ la posición (`location.fixedAt`). No es lo mismo que
+  /// [locationUpdatedAt], que es cuándo la confirmó el servidor: sin cobertura la
+  /// escritura se resuelve al recuperar red, ya en otra ciudad, y la posición
+  /// vieja quedaba sellada como recién medida.
+  final DateTime? locationMeasuredAt;
+
+  /// Estado del permiso guardado (`location.permissionStatus`): 'granted',
+  /// 'denied', 'denied_forever', 'service_disabled' o 'unknown'.
+  final String locationPermissionStatus;
+
+  /// Ubicación guardada tal cual, para la política de refresco.
+  StoredLocation get storedLocation => StoredLocation(
+        latitude: latitude,
+        longitude: longitude,
+        updatedAt: locationUpdatedAt,
+        measuredAt: locationMeasuredAt,
+      );
+
   /// País del usuario (profile.currentCountryName). Fallback de relevancia
   /// geográfica cuando no hay coordenadas para calcular distancia.
   final String countryName;
@@ -145,7 +174,22 @@ class AppUser {
   final String travelCity;
   final String travelCountry;
 
-  bool get isTraveling => travelActive && travelCountry.trim().isNotEmpty;
+  /// Fin del viaje (`settings.travel.until`, 30 días al activarlo).
+  final DateTime? travelUntil;
+
+  /// True si el modo viaje está vigente. Expiración **defensiva en cliente**
+  /// (igual que [busyModeActive]): el backend ya caduca el viaje al publicar la
+  /// ficha (functions/src/discovery.ts → `travelExpired`), así que sin este
+  /// control el cliente y el backend discrepaban en el caso más común de todos —
+  /// quien activó el viaje y nunca lo apagó:
+  /// el backend publicaba su ciudad y sus coordenadas REALES mientras el cliente
+  /// seguía anclando su feed al destino, no gastaba GPS (la política evita el fix
+  /// viajando) y le silenciaba el aviso, así que sus coordenadas se congelaban
+  /// para siempre: justo el fallo que este módulo viene a arreglar.
+  bool get isTraveling =>
+      travelActive &&
+      travelCountry.trim().isNotEmpty &&
+      (travelUntil == null || travelUntil!.isAfter(DateTime.now()));
 
   /// Modo ocupado (Attra Clear §4): pausa suave. De `settings.privacy.busyMode*`.
   final bool busyModeEnabled;
@@ -210,6 +254,12 @@ class AppUser {
       interestedIn: _asStringList(preferences['interestedIn']),
       latitude: _asDouble(location['latitude']),
       longitude: _asDouble(location['longitude']),
+      locationUpdatedAt: _asEpochDate(location['updatedAt']),
+      locationMeasuredAt: _asEpochDate(location['fixedAt']),
+      locationPermissionStatus:
+          (location['permissionStatus'] as String?)?.trim().isNotEmpty == true
+              ? location['permissionStatus'] as String
+              : 'unknown',
       countryName: (profile['currentCountryName'] as String?) ??
           (profile['currentCountry'] as String?) ??
           '',
@@ -243,6 +293,7 @@ class AppUser {
       travelIso2: ((travel['iso2'] as String?) ?? '').toUpperCase(),
       travelCity: (travel['city'] as String?) ?? '',
       travelCountry: (travel['country'] as String?) ?? '',
+      travelUntil: _asEpochDate(travel['until']),
       busyModeEnabled: _asBool(settings['privacy.busyModeEnabled']),
       busyModeUntil: _asEpochDate(settings['privacy.busyModeUntil']),
       busyModeStartedAt: _asEpochDate(settings['privacy.busyModeStartedAt']),

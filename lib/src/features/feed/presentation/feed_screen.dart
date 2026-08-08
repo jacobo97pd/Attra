@@ -10,7 +10,12 @@ import '../../anti_ghosting/data/anti_ghosting_analytics.dart';
 import '../../anti_ghosting/data/pending_conversations_controller.dart';
 import '../../anti_ghosting/domain/anti_ghosting_config.dart';
 import '../../anti_ghosting/presentation/pending_limit_sheet.dart';
+import '../../auth/data/device_location_source.dart';
+import '../../auth/data/location_refresh_service.dart';
+import '../../auth/data/platform_place_resolver.dart';
+import '../../auth/domain/resolved_place.dart';
 import '../../auth/domain/app_user.dart';
+import '../../auth/domain/location_refresh_policy.dart';
 import '../../chat/data/chat_service.dart';
 import '../../chat/presentation/chat_detail_screen.dart';
 import '../../match/data/match_service.dart';
@@ -90,6 +95,8 @@ class FeedScreen extends StatefulWidget {
     this.onOpenChats,
     this.onOpenGroups,
     this.onDeviceLocation,
+    this.locationSource,
+    this.placeResolver,
   });
 
   /// Attra Clear §2: límite suave de conversaciones pendientes. Si null o
@@ -110,13 +117,18 @@ class FeedScreen extends StatefulWidget {
   /// acceso a grupos en el feed.
   final VoidCallback? onOpenGroups;
 
-  /// Persiste la ubicación del dispositivo cuando el feed la obtiene (para que
-  /// la completitud del perfil llegue al 100%). Best-effort.
-  final Future<void> Function({
-    required double latitude,
-    required double longitude,
-    required String permissionStatus,
-  })? onDeviceLocation;
+  /// Persiste la ubicación del dispositivo cuando el feed la obtiene o la
+  /// refresca: escribe `users/{uid}.location` (con la marca de frescura) y
+  /// republica `discovery/{uid}` para que los demás te vean donde estás.
+  final PersistDeviceLocation? onDeviceLocation;
+
+  /// Acceso al GPS. Inyectable SOLO para pruebas: en producción es
+  /// [GeolocatorLocationSource].
+  final DeviceLocationSource? locationSource;
+
+  /// Traduce coordenadas a ciudad/pais. Inyectable porque el geocodificador
+  /// del sistema es canal nativo y en `flutter test` no existe.
+  final PlaceResolver? placeResolver;
 
   final AppUser? user;
   final Future<List<SeedProfile>> Function() onLoadSeedProfiles;
@@ -250,7 +262,7 @@ class _FeedRewindAction {
   final _FeedActionKind kind;
 }
 
-class _FeedScreenState extends State<FeedScreen> {
+class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   bool _loading = true;
   String? _error;
   List<SeedProfile> _profiles = const <SeedProfile>[];
@@ -332,63 +344,272 @@ class _FeedScreenState extends State<FeedScreen> {
   /// de soltar el genérico "No hay más personas por el momento".
   _AiSearchState? _aiSearch;
 
-  // Ubicación del dispositivo como RESPALDO cuando el perfil del usuario no tiene
-  // coordenadas guardadas: así la distancia del feed siempre tiene un "yo".
+  // Ubicación del dispositivo como RESPALDO mientras la escritura en
+  // `users/{uid}` no ha vuelto: así la distancia del feed siempre tiene un "yo"
+  // con el que trabajar.
+  //
+  // Solo se adopta una lectura que se haya GUARDADO (o cuando no había ninguna
+  // coordenada). Si no, el feed se filtraba desde un punto que `discovery/{uid}`
+  // no publica: dabas likes a gente que, con su radio, no te podía ver. Peor aún
+  // con una lectura que la política acababa de rechazar por ser un retroceso
+  // (`cacheOlderThanStored`), que además ganaba al documento el resto de la sesión.
   double? _deviceLat;
   double? _deviceLng;
 
-  /// Lat efectiva del usuario: la guardada o, si falta, la del dispositivo.
-  double? get _effectiveLat => widget.user?.latitude ?? _deviceLat;
-  double? get _effectiveLng => widget.user?.longitude ?? _deviceLng;
+  /// Aviso de ubicación que se está enseñando (permiso denegado, localización
+  /// apagada, ubicación rancia que no se puede refrescar). Antes esto no existía:
+  /// `_ensureDeviceLocation` se tragaba cualquier fallo y el usuario veía gente
+  /// de otra ciudad sin ninguna explicación.
+  LocationNotice _locationNotice = LocationNotice.none;
+
+  /// True mientras hay un refresco de ubicación pedido a mano (para el botón).
+  bool _locationRefreshing = false;
+
+  /// Coordenadas con las que se filtró la última carga del feed. Sirven para no
+  /// recargar cuando la ubicación nueva no cambiaría a quién ves.
+  double? _loadedLat;
+  double? _loadedLng;
+
+  /// Contador de cargas: solo la ÚLTIMA puede pintar su resultado (ver [_load]).
+  int _loadGeneration = 0;
+
+  /// La carga actual ha tenido que ignorar el PAÍS declarado para no quedarse
+  /// vacía (ver el respaldo de `_load`). Se cuenta al usuario: un feed con gente
+  /// de otro país, sin explicación, parece un error.
+  bool _countryFallback = false;
+
+  /// Lat efectiva del usuario: la del dispositivo si la acabamos de leer y aún
+  /// no ha vuelto del backend, y si no la guardada.
+  ///
+  /// El orden importa: la lectura de esta sesión es MÁS reciente que la del
+  /// documento, y con el orden contrario un refresco no se notaba en el feed
+  /// hasta que Firestore devolvía el usuario recargado.
+  double? get _effectiveLat => _deviceLat ?? widget.user?.latitude;
+  double? get _effectiveLng => _deviceLng ?? widget.user?.longitude;
+
+  /// Refresco de ubicación. La DECISIÓN (¿toca? ¿está rancia? ¿hay permiso?)
+  /// vive en [LocationRefreshPolicy], que es lógica pura y testeable; aquí solo
+  /// se engancha.
+  late final LocationRefreshService _locationService = LocationRefreshService(
+    source: widget.locationSource ?? const GeolocatorLocationSource(),
+    // Inyectable para los tests: el geocodificador es canal nativo.
+    placeResolver: widget.placeResolver ?? const PlatformPlaceResolver(),
+    persist: ({
+      required double latitude,
+      required double longitude,
+      required DateTime fixedAt,
+      String? permissionStatus,
+      bool? permissionGranted,
+      ResolvedPlace? place,
+    }) async {
+      final PersistDeviceLocation? save = widget.onDeviceLocation;
+      // Sin nadie que persista, la ubicación NO se ha guardado ni se ha
+      // republicado en discovery: fingir lo contrario haría que el servicio diera
+      // por fresca una ubicación que sigue siendo la vieja.
+      if (save == null) {
+        throw StateError('feed sin onDeviceLocation: no se puede guardar');
+      }
+      await save(
+        latitude: latitude,
+        longitude: longitude,
+        fixedAt: fixedAt,
+        permissionStatus: permissionStatus,
+        permissionGranted: permissionGranted,
+        place: place,
+      );
+    },
+  );
+
+  /// Cuándo dejó la app de estar delante. Un rato largo en el fondo es la señal
+  /// de viaje más fiable que tenemos: el reloj a secas dejaba fuera cualquier
+  /// trayecto de menos de 4 h (Valencia→Madrid en AVE son 1 h 50 min).
+  DateTime? _backgroundSince;
 
   @override
   void initState() {
     super.initState();
+    // El ciclo de vida se observa aquí y no en HomeShell porque el feed vive
+    // dentro de un IndexedStack: sigue montado con cualquier pestaña delante, así
+    // que recibe `resumed` aunque el usuario vuelva a la app en Chats.
+    WidgetsBinding.instance.addObserver(this);
     _load();
     _loadStoriesFlag();
-    _ensureDeviceLocation();
+    _refreshLocation(LocationRefreshTrigger.appStart);
   }
 
-  /// Asegura una ubicación para el usuario cuando su perfil no tiene coords:
-  /// usa la última conocida y, si no hay, pide la actual (con permiso). Así la
-  /// distancia del feed siempre funciona. Best-effort: nunca rompe.
-  Future<void> _ensureDeviceLocation() async {
-    if (widget.user?.latitude != null) return; // ya hay coords guardadas
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // `paused`/`hidden` = la app dejó de estar delante de verdad. `inactive` no
+    // cuenta: en iOS salta por cualquier interrupción de un segundo.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _backgroundSince ??= DateTime.now();
+      return;
+    }
+    // Quien viaja abre la app AL LLEGAR: si solo se mirara la ubicación al
+    // arrancar, un proceso que lleva días vivo nunca se enteraría del viaje.
+    // La tormenta de llamadas la corta el cooldown de la política (`resumed`
+    // salta cada vez que se vuelve de otra app).
+    if (state == AppLifecycleState.resumed) {
+      final DateTime? since = _backgroundSince;
+      _backgroundSince = null;
+      _refreshLocation(
+        LocationRefreshTrigger.appResume,
+        // Cuánto ha estado la app fuera: con media hora o más, la política deja
+        // de creerse una ubicación de hace 2 h (es el trayecto en tren que no se
+        // detectaba de ninguna manera).
+        awayFor: since == null ? null : DateTime.now().difference(since),
+      );
+    }
+  }
+
+  /// Refresca la ubicación si la política dice que toca, la guarda (lo que
+  /// republica `discovery/{uid}`) y recarga el feed si las coordenadas cambiaron.
+  ///
+  /// Best-effort para el usuario, pero NO silencioso: lo que no se puede
+  /// arreglar solo (permiso denegado, localización apagada, ubicación rancia que
+  /// no se consigue refrescar) acaba en [_locationNotice].
+  /// Devuelve true si el refresco ha acabado recargando el feed (para que quien
+  /// llama no lo cargue otra vez).
+  Future<bool> _refreshLocation(
+    LocationRefreshTrigger trigger, {
+    Duration? awayFor,
+  }) async {
+    final AppUser? user = widget.user;
+    if (user == null) return false;
+    if (trigger == LocationRefreshTrigger.manual) {
+      setState(() => _locationRefreshing = true);
+    }
+    bool reloaded = false;
     try {
-      LocationPermission perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
-        return;
-      }
-      // getLastKnownPosition no está soportado en web: ahí se pide la actual.
-      Position? pos = kIsWeb ? null : await Geolocator.getLastKnownPosition();
-      pos ??= await Geolocator.getCurrentPosition(
-        locationSettings:
-            const LocationSettings(accuracy: LocationAccuracy.low),
-      ).timeout(const Duration(seconds: 6),
-          onTimeout: () => throw TimeoutException('geo'));
-      if (!mounted) return;
+      final LocationRefreshOutcome outcome = await _locationService.refresh(
+        stored: user.storedLocation,
+        trigger: trigger,
+        awayFor: awayFor,
+        // Umbral de escritura acorde con el radio del feed: con "Distancia
+        // máxima" en 2 km, no guardar un movimiento de 9 km dejaba al usuario
+        // likeando a vecinos que, con su radio, no le podían ver.
+        moveThresholdKm: _effectiveRadiusKm / 2,
+        // El modo viaje NO se puede pisar: la política evita gastar GPS cuando el
+        // feed está anclado al destino, y `DiscoveryPublisher` sigue siendo quien
+        // decide que viajando no se publican coordenadas.
+        travelActive: user.isTraveling,
+      );
+      if (!mounted) return false;
+
+      final LocationFix? fix = outcome.fix;
+      // Solo se adopta como "yo" una lectura que YA está guardada (o si no había
+      // coordenadas de ninguna clase): así el punto desde el que filtras es el
+      // mismo que `discovery/{uid}` publica y la visibilidad es simétrica.
+      final bool adopt = fix != null &&
+          (outcome.persisted || !user.storedLocation.hasCoordinates);
+      final bool needsReload = adopt && _feedWouldChangeWith(fix);
       setState(() {
-        _deviceLat = pos!.latitude;
-        _deviceLng = pos.longitude;
+        _locationRefreshing = false;
+        if (adopt) {
+          _deviceLat = fix.latitude;
+          _deviceLng = fix.longitude;
+        }
+        // Con otro intento ya en curso no hay información nueva que enseñar:
+        // sobrescribir el aviso solo lo haría parpadear. Una ronda frenada por el
+        // cooldown SÍ trae información (permiso y frescura), y si la ubicación
+        // sigue rancia el usuario merece verlo y poder forzarlo.
+        if (outcome.reason != LocationRefreshReason.inFlight) {
+          _locationNotice = outcome.notice;
+        }
       });
-      // Persiste la ubicación en el perfil (completitud 100% + distancia). No
-      // bloquea el feed si falla.
-      unawaited(widget.onDeviceLocation?.call(
-            latitude: pos.latitude,
-            longitude: pos.longitude,
-            permissionStatus: perm.name,
-          ) ??
-          Future<void>.value());
-      _load();
-    } catch (_) {/* sin ubicación: el feed cae al filtro por país */}
+
+      // Solo se recarga el feed si el "yo" cambió: `_load()` hace lecturas de red
+      // y el resultado sería idéntico con las mismas coordenadas.
+      if (needsReload) {
+        reloaded = true;
+        await _load();
+      }
+    } catch (error) {
+      // La ubicación es best-effort para el feed: un fallo del canal nativo no
+      // puede tumbar la pantalla (ni dejar un error asíncrono suelto en
+      // `initState`). Lo que el usuario tiene que saber ya está en el aviso.
+      if (kDebugMode) {
+        debugPrint('[Attra][Ubicación] refresco fallido: $error');
+      }
+    } finally {
+      // En un `finally` a propósito: si el intento falla o se queda sin
+      // completar, el aviso se quedaba con el spinner puesto y `onTap` en null,
+      // es decir, sin ninguna forma de reintentarlo.
+      if (mounted && _locationRefreshing) {
+        setState(() => _locationRefreshing = false);
+      }
+    }
+    return reloaded;
+  }
+
+  /// Radio (km) con el que el feed está midiendo distancias ahora mismo.
+  double get _effectiveRadiusKm => (_filters.maxDistanceKm ??
+          widget.user?.maxDistanceKm ??
+          FeedFilter.defaultRadiusKm)
+      .toDouble();
+
+  /// ¿Cambiaría el feed si se recargara con esta lectura?
+  ///
+  /// Evita una segunda carga (con sus lecturas de red) en cada arranque: lo
+  /// normal es que el fix confirme el sitio donde el feed ya te estaba situando.
+  ///
+  /// El umbral es el mismo con el que se decide GUARDAR: `_load()` es
+  /// DESTRUCTIVO (vacía el mazo, vuelve a la primera carta y borra el historial
+  /// de rewind), así que recargar por 1 km era perder la sesión de swipe de quien
+  /// va en autobús por su ciudad, y encima sin poder cambiar a quién ve (el radio
+  /// mínimo son kilómetros y las coordenadas públicas se redondean a ~1,1 km).
+  bool _feedWouldChangeWith(LocationFix fix) {
+    // Viajando el feed usa el país de destino y descarta la latitud/longitud:
+    // recargar por una coordenada nueva no cambiaría ni un perfil.
+    if (widget.user?.isTraveling ?? false) return false;
+    final double? lat = _loadedLat;
+    final double? lng = _loadedLng;
+    // El feed se cargó SIN ubicación: pasa de filtrar por país a filtrar por
+    // radio, así que sí cambia.
+    if (lat == null || lng == null) return true;
+    return LocationRefreshPolicy.distanceKm(lat, lng, fix.latitude,
+            fix.longitude) >=
+        LocationRefreshPolicy.significantMoveKm;
+  }
+
+  /// Recarga que pide el usuario desde un estado vacío. Además de volver a
+  /// consultar el feed, vuelve a mirar dónde está: un feed vacío por estar
+  /// publicado en la ciudad de la que te mudaste se ve EXACTAMENTE igual que un
+  /// feed vacío de verdad, y antes la única salida era el modo viaje a mano.
+  ///
+  /// En serie y no en paralelo: lanzados a la vez, el refresco leía las
+  /// coordenadas de la carga ANTERIOR y disparaba un segundo `_load()` solapado
+  /// con el primero.
+  Future<void> _reloadFeed() async {
+    final bool reloaded = await _refreshLocation(
+        LocationRefreshTrigger.feedReload);
+    if (!reloaded && mounted) await _load();
+  }
+
+  /// Abre el diálogo del sistema (o los ajustes del sistema si ya está bloqueado)
+  /// desde el aviso del feed. Es un gesto EXPLÍCITO del usuario sobre un texto
+  /// que explica para qué se usa la ubicación: pedir el permiso al abrir el feed,
+  /// sin contexto, es justo lo que iOS penaliza en revisión.
+  Future<void> _onLocationNoticeTap() async {
+    if (_locationNotice == LocationNotice.permissionBlocked ||
+        _locationNotice == LocationNotice.serviceDisabled) {
+      try {
+        if (_locationNotice == LocationNotice.serviceDisabled) {
+          await Geolocator.openLocationSettings();
+        } else {
+          await Geolocator.openAppSettings();
+        }
+      } catch (_) {/* sin ajustes que abrir: el aviso sigue ahí */}
+      return;
+    }
+    await _refreshLocation(LocationRefreshTrigger.manual);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Vuelca impresiones pendientes (no perder telemetría al cerrar).
     widget.metrics?.flush();
     _storiesSub?.cancel();
@@ -771,6 +992,34 @@ class _FeedScreenState extends State<FeedScreen> {
     if (oldWidget.reloadToken != widget.reloadToken && !_loading) {
       _load();
     }
+    // Modo viaje que se APAGA: mientras viajabas no se publicaban coordenadas y
+    // las guardadas pueden ser de antes del viaje. Ahora vuelven a publicarse,
+    // así que hay que mirar dónde estás de verdad antes de que los demás te vean
+    // en la ciudad de la que te fuiste.
+    final bool wasTraveling = oldWidget.user?.isTraveling ?? false;
+    final bool isTraveling = widget.user?.isTraveling ?? false;
+    if (wasTraveling && !isTraveling) {
+      _refreshLocation(LocationRefreshTrigger.travelEnded);
+    }
+    // El documento ya trae la ubicación que habíamos adoptado: el respaldo deja
+    // de hacer falta y se suelta. Si no, una lectura de esta sesión mandaba sobre
+    // el documento el resto de la sesión, incluso cuando otro dispositivo
+    // escribiera una posterior.
+    final double? deviceLat = _deviceLat;
+    final double? deviceLng = _deviceLng;
+    final double? docLat = widget.user?.latitude;
+    final double? docLng = widget.user?.longitude;
+    if (deviceLat != null &&
+        deviceLng != null &&
+        docLat != null &&
+        docLng != null &&
+        LocationRefreshPolicy.distanceKm(deviceLat, deviceLng, docLat, docLng) <
+            LocationRefreshPolicy.minMoveKm) {
+      setState(() {
+        _deviceLat = null;
+        _deviceLng = null;
+      });
+    }
     // Petición externa de "buscar parecidos a mi referencia".
     if (oldWidget.visualSearchToken != widget.visualSearchToken &&
         widget.visualSearchToken > 0) {
@@ -794,6 +1043,12 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _load() async {
+    // Generación de la carga: `_load()` se dispara desde varios sitios (arranque,
+    // filtros, refresco de ubicación, `reloadToken`) y son varias lecturas de red
+    // seguidas, así que dos pueden solaparse. Sin esta marca, la que acabara
+    // primero (normalmente la vieja) se quedaba con el `setState` final y el mazo
+    // que veía el usuario no correspondía a los filtros de la última petición.
+    final int generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -801,6 +1056,19 @@ class _FeedScreenState extends State<FeedScreen> {
     });
     try {
       final String myUid = widget.user?.uid ?? '';
+      // Se apuntan ANTES del primer await: si no, cualquier ronda de ubicación
+      // que terminase durante las lecturas de red veía `_loadedLat == null`,
+      // concluía "el feed se cargó sin ubicación" y disparaba una SEGUNDA carga
+      // completa. En producción la ronda de ubicación (dos llamadas de canal
+      // nativo) siempre gana esa carrera, así que era el doble de lecturas de
+      // Firestore en cada apertura de la app, para todo el mundo.
+      final bool aiSearchPending = _filters.aiSearchActive &&
+          widget.canUseVisualMatch &&
+          widget.aiVisualService != null;
+      final bool travelingPending =
+          !aiSearchPending && (widget.user?.isTraveling ?? false);
+      _loadedLat = (travelingPending || aiSearchPending) ? null : _effectiveLat;
+      _loadedLng = (travelingPending || aiSearchPending) ? null : _effectiveLng;
       final List<SeedProfile> all = await widget.onLoadSeedProfiles();
       // Excluidos (likeados/pasados/matcheados/bloqueados). Best-effort: si la
       // lectura falla, no vaciamos el feed.
@@ -824,7 +1092,7 @@ class _FeedScreenState extends State<FeedScreen> {
       if (_secondRound) {
         excluded = excluded.difference(disliked);
       }
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       // ¿Hay algún filtro IA PEDIDO? (independiente de si el plan lo permite).
@@ -852,6 +1120,18 @@ class _FeedScreenState extends State<FeedScreen> {
       // Modo viajes: cuando viajas, el feed se CENTRA en el destino (se ignora
       // la distancia real y se usa el PAÍS de destino para la relevancia).
       final bool traveling = !aiSearch && (widget.user?.isTraveling ?? false);
+      // Las coordenadas de esta carga se apuntaron antes del primer await; aquí
+      // solo se anulan si el estado cambió por medio (se activó el viaje o una
+      // búsqueda IA), porque entonces no se filtra por distancia.
+      if (traveling || aiSearch) {
+        _loadedLat = null;
+        _loadedLng = null;
+      }
+      final String myCountry = aiSearch
+          ? ''
+          : (traveling
+              ? (widget.user?.travelCountry ?? '')
+              : (widget.user?.countryName ?? ''));
       List<SeedProfile> filtered = FeedFilter.apply(
         profiles: all,
         myUid: myUid,
@@ -860,17 +1140,51 @@ class _FeedScreenState extends State<FeedScreen> {
         excludedUids: excluded,
         filters: _filters,
         // En viaje/búsqueda IA no hay "mi" lat/lng (no filtra por distancia).
-        myLat: (traveling || aiSearch) ? null : _effectiveLat,
-        myLng: (traveling || aiSearch) ? null : _effectiveLng,
-        myCountry: aiSearch
-            ? ''
-            : (traveling
-                ? (widget.user?.travelCountry ?? '')
-                : (widget.user?.countryName ?? '')),
+        myLat: _loadedLat,
+        myLng: _loadedLng,
+        myCountry: myCountry,
         defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
         // Modo Amigos: filtra por compatibilidad de intención (default dating).
         myIntent: widget.user?.intentMode ?? IntentMode.dating,
       );
+      // RESPALDO cuando el PAÍS declarado es lo único que vacía el feed.
+      //
+      // El país sale de `profile.currentCountryName`, que solo se escribe una vez
+      // (selector manual del onboarding) porque en la app no hay geocodificación
+      // inversa: al cruzar una frontera las coordenadas son las de verdad y el
+      // país sigue siendo el de casa, así que la regla de país tira a los de
+      // alrededor y la de radio a los del país declarado. Resultado: feed VACÍO,
+      // sin explicación y sin salida (el modo viaje es de pago).
+      //
+      // Solo se aplica cuando el feed se quedaría vacío, así que no relaja la
+      // regla "nunca de otro país" para nadie más, y el radio se sigue
+      // respetando: lo que entra está SIEMPRE en tu zona.
+      bool countryFallback = false;
+      if (filtered.isEmpty &&
+          !traveling &&
+          !aiSearch &&
+          !_secondRound &&
+          myCountry.isNotEmpty &&
+          _loadedLat != null &&
+          _loadedLng != null) {
+        final List<SeedProfile> nearby = FeedFilter.apply(
+          profiles: all,
+          myUid: myUid,
+          myGender: widget.user?.gender ?? '',
+          myInterestedIn: widget.user?.interestedIn ?? const <String>[],
+          excludedUids: excluded,
+          filters: _filters,
+          myLat: _loadedLat,
+          myLng: _loadedLng,
+          myCountry: '',
+          defaultMaxKm: widget.user?.maxDistanceKm,
+          myIntent: widget.user?.intentMode ?? IntentMode.dating,
+        );
+        if (nearby.isNotEmpty) {
+          filtered = nearby;
+          countryFallback = true;
+        }
+      }
       if (traveling) {
         filtered = _applyTravel(filtered);
       }
@@ -891,7 +1205,7 @@ class _FeedScreenState extends State<FeedScreen> {
           activeBoosts = const <String, ActiveBoost>{};
         }
       }
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       // Ranking inteligente: si está activo el flag, precarga las señales
       // server-side (prefetch en lote) y construye el inyector signalsFor.
       // Personalización con IA (Datos→consentimiento): si el usuario la
@@ -905,7 +1219,7 @@ class _FeedScreenState extends State<FeedScreen> {
           await widget.rankingSignals!
               .prefetch(filtered.map((SeedProfile p) => p.id));
         } catch (_) {/* señales no disponibles: orden orgánico */}
-        if (!mounted) return;
+        if (!mounted || generation != _loadGeneration) return;
         signalsFor = (SeedProfile p) => widget.rankingSignals!.signalsFor(p.id);
       }
       // Orden BASE orgánico (compatibilidad real). No salta filtros: solo ordena
@@ -975,13 +1289,14 @@ class _FeedScreenState extends State<FeedScreen> {
           nudgePositions: aiSearch ? LikedMeRanker.defaultNudge : null,
         );
       }
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _excluded = excluded;
         _likedMeUids = likedMe;
         _dislikedUids = disliked;
         _activeBoostsByUid = activeBoosts;
         _aiSearch = aiState;
+        _countryFallback = countryFallback;
         _rankedPool = filtered;
         _profiles = const <SeedProfile>[];
         _index = 0;
@@ -1001,7 +1316,7 @@ class _FeedScreenState extends State<FeedScreen> {
       if (_storyWallActive && _storiesSub == null) _bindStories();
       _afterWallChanged();
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -1612,6 +1927,119 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  /// Aviso de ubicación. Explica QUÉ pasa y ofrece la acción que lo arregla:
+  /// sin él, quien tenía el permiso denegado (o una ubicación de hace meses) veía
+  /// un feed de otra ciudad sin ninguna pista de por qué.
+  Widget _locationBanner() {
+    final String message;
+    final String action;
+    final IconData icon;
+    switch (_locationNotice) {
+      case LocationNotice.permissionAskable:
+        // No dice "te enseñamos gente de tu país, no de tu zona": eso solo es
+        // verdad si NO hay coordenadas guardadas, y este aviso también sale con
+        // coordenadas buenas (en iOS, "Permitir una vez" vuelve como
+        // notDetermined en el arranque siguiente). Afirmar algo falso para
+        // mendigar un permiso es peor que no avisar.
+        message = 'Sin permiso de ubicación no podemos mantener tu zona al día';
+        action = 'Activar';
+        icon = Icons.location_off_rounded;
+        break;
+      case LocationNotice.permissionBlocked:
+        message = 'La ubicación está bloqueada para Attra';
+        action = 'Ajustes';
+        icon = Icons.location_disabled_rounded;
+        break;
+      case LocationNotice.serviceDisabled:
+        // En iOS el botón NO puede llevar al interruptor global: el plugin mapea
+        // `openLocationSettings` y `openAppSettings` al MISMO destino (los
+        // ajustes de Attra), donde ese interruptor no está. Se dice la ruta en
+        // vez de prometer un atajo que no existe.
+        message = defaultTargetPlatform == TargetPlatform.iOS
+            ? 'Ubicación apagada: Ajustes › Privacidad y seguridad › Localización'
+            : 'La ubicación del dispositivo está apagada';
+        action = 'Ajustes';
+        icon = Icons.location_disabled_rounded;
+        break;
+      case LocationNotice.stale:
+        message = 'Tu ubicación puede estar desactualizada';
+        action = 'Actualizar';
+        icon = Icons.my_location_rounded;
+        break;
+      case LocationNotice.none:
+        return const SizedBox.shrink();
+    }
+    return Material(
+      color: AppColors.attraRed.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: _locationRefreshing ? null : _onLocationNoticeTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              Icon(icon, size: 16, color: AppColors.attraRed),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                      color: AppColors.attraRed,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13),
+                ),
+              ),
+              if (_locationRefreshing)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.attraRed),
+                )
+              else
+                Text(action,
+                    style: const TextStyle(
+                        color: AppColors.attraRed,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Aviso de que el feed ha tenido que ignorar el país declarado para no
+  /// quedarse vacío. Sin explicación, ver perfiles de otro país parece un error
+  /// (y un feed vacío, un feed roto).
+  Widget _countryFallbackBanner() {
+    final ThemeData theme = Theme.of(context);
+    final Color color = theme.colorScheme.outline;
+    final String country = (widget.user?.countryName ?? '').trim();
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.travel_explore_rounded, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                country.isEmpty
+                    ? 'No hay nadie de tu país en tu zona: te enseñamos gente de alrededor'
+                    : 'No hay nadie de $country en tu zona: te enseñamos gente de alrededor',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Banner cuando estás de viaje: indica el destino y permite volver.
   Widget _travelBanner() {
     final String label = widget.user?.travelLabel ?? '';
@@ -1789,6 +2217,10 @@ class _FeedScreenState extends State<FeedScreen> {
       children: <Widget>[
         _feedHeader(),
         if (widget.user?.isTraveling ?? false) _travelBanner(),
+        // Va después del de viaje porque viajando no se enseña (la política
+        // devuelve `none`): el feed del destino es intencionado, no un fallo.
+        if (_locationNotice != LocationNotice.none) _locationBanner(),
+        if (_countryFallback) _countryFallbackBanner(),
         // Aviso siempre visible del filtro IA: sin él, el usuario no tenía
         // ninguna pista de que una búsqueda IA le estaba recortando el feed.
         if (ai != null) _aiSearchBanner(ai),
@@ -1896,7 +2328,7 @@ class _FeedScreenState extends State<FeedScreen> {
           primaryLabel: 'Dar una segunda vuelta',
           onPrimary: _enterSecondRound,
           secondaryLabel: 'Recargar',
-          onSecondary: _load,
+          onSecondary: _reloadFeed,
         );
       }
       return AttraEmptyState(
@@ -1905,7 +2337,7 @@ class _FeedScreenState extends State<FeedScreen> {
         message:
             'Cuando entren nuevos perfiles compatibles aparecerán aquí. No volverás a ver a quien ya likeaste o pasaste.',
         actionLabel: 'Recargar',
-        onAction: _load,
+        onAction: _reloadFeed,
       );
     }
 

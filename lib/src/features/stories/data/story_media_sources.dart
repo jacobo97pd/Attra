@@ -170,6 +170,15 @@ class DeviceStoryCamera implements StoryCamera {
   }
 
   Future<void> _open() async {
+    // El anterior se SUELTA ANTES de abrir el nuevo. Al girar la cámara se
+    // inicializaba el nuevo controlador con el viejo todavía vivo, y en iOS el
+    // dispositivo de captura no se comparte: la sesión nueva se creaba pero no
+    // entregaba fotogramas, así que la cámara frontal se quedaba EN NEGRO. Que
+    // haya un instante sin vista previa es el precio correcto.
+    final CameraController? previous = _controller;
+    _controller = null;
+    await previous?.dispose();
+
     final CameraController controller = CameraController(
       _cameras[_index],
       ResolutionPreset.high,
@@ -177,16 +186,34 @@ class DeviceStoryCamera implements StoryCamera {
       // obligaría a reabrir la cámara a mitad de gesto.
       enableAudio: true,
     );
-    await controller.initialize();
-    await _controller?.dispose();
+    try {
+      await controller.initialize();
+    } catch (_) {
+      // Si esta cámara no abre, se suelta para no dejar el dispositivo tomado
+      // por un controlador que nadie va a usar.
+      await controller.dispose();
+      rethrow;
+    }
     _controller = controller;
   }
 
   @override
   Future<void> flip() async {
     if (!canFlip || _recording) return;
+    final int previousIndex = _index;
     _index = (_index + 1) % _cameras.length;
-    await _open();
+    try {
+      await _open();
+    } catch (_) {
+      // Si la otra cámara falla se vuelve a la que funcionaba, en vez de
+      // dejar la pantalla en negro sin vista previa ni forma de recuperarla.
+      _index = previousIndex;
+      try {
+        await _open();
+      } catch (_) {
+        // Ni una ni otra: la pantalla lo enseñará como cámara no disponible.
+      }
+    }
   }
 
   @override
