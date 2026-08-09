@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
@@ -72,6 +73,30 @@ class IapService extends ChangeNotifier {
   bool _busy = false;
   String? _error;
   bool _disposed = false;
+
+  /// Compras que llegaron pero NO se pudieron entregar por un fallo temporal, y
+  /// que por tanto se dejaron SIN completar a proposito.
+  ///
+  /// Hay que recordarlas porque la cola de la tienda no admite dos
+  /// transacciones del mismo producto: mientras una siga abierta, cualquier
+  /// intento de comprar ese producto revienta con
+  /// `storekit_duplicate_product_object` y el usuario NO PUEDE SUSCRIBIRSE. Con
+  /// el mapa se puede reintentar la entrega en la misma sesion, en vez de
+  /// esperar a que la tienda vuelva a emitirla al reabrir la app.
+  final Map<String, PurchaseDetails> _undelivered =
+      <String, PurchaseDetails>{};
+
+  /// Intentos de entrega por compra, para no reintentar en bucle.
+  final Map<String, int> _deliveryAttempts = <String, int>{};
+
+  /// A partir de aqui se cierra la transaccion aunque no se haya entregado.
+  ///
+  /// Es la MENOS mala de dos opciones malas. Dejarla abierta para siempre
+  /// bloquea el producto y el usuario no puede ni comprar; cerrarla le deja
+  /// pagado sin conceder, pero el recibo de una suscripcion PERSISTE y
+  /// "Restaurar" vuelve a entregarla (los entitlements los manda el backend).
+  /// De lo irrecuperable a lo recuperable.
+  static const int _maxDeliveryAttempts = 3;
 
   /// Notifica solo si el servicio sigue vivo. Cerrar la pantalla mientras el
   /// backend verificaba lanzaba "notifyListeners after dispose".
@@ -199,8 +224,25 @@ class IapService extends ChangeNotifier {
       // que hay que soltar el busy aquí o la pantalla se queda congelada.
       if (!started) _setBusy(false);
       return started;
-    } catch (e) {
-      _error = e.toString();
+    } on PlatformException catch (e) {
+      // La cola de la tienda ya tiene una transaccion ABIERTA de este mismo
+      // producto y se niega a empezar otra. Le pasa a quien pago y cuya entrega
+      // fallo por red: se queda sin poder suscribirse, viendo un
+      // `PlatformException(storekit_duplicate_product_object, ...)` en crudo que
+      // no le dice nada ni le da salida.
+      //
+      // No es un error del usuario ni hace falta que vuelva a pagar: hay que
+      // TERMINAR la transaccion que quedo a medias.
+      if (e.code == 'storekit_duplicate_product_object') {
+        _setBusy(false);
+        _error = 'Tenías una compra sin terminar. La estamos completando: '
+            'espera unos segundos y vuelve a intentarlo. No se te cobrará dos '
+            'veces.';
+        _notify();
+        unawaited(_recoverPending(product.id));
+        return false;
+      }
+      _error = _readableStoreError(e);
       _setBusy(false);
       return false;
     }
@@ -238,6 +280,16 @@ class IapService extends ChangeNotifier {
       _notify();
     }
   }
+
+  /// Entrada del flujo de compras para los tests.
+  ///
+  /// Existe porque montar el stream real exigiria falsear tambien la carga de
+  /// productos y la disponibilidad de la tienda, y lo que hay que fijar aqui es
+  /// QUE TRANSACCIONES SE CIERRAN: dejar una abierta bloquea el producto y la
+  /// persona no puede suscribirse.
+  @visibleForTesting
+  Future<void> handlePurchases(List<PurchaseDetails> purchases) =>
+      _onPurchases(purchases);
 
   Future<void> _onPurchases(List<PurchaseDetails> purchases) async {
     for (final PurchaseDetails purchase in purchases) {
@@ -277,21 +329,78 @@ class IapService extends ChangeNotifier {
     } catch (e) {
       result = IapDeliveryResult(delivered: false, message: e.toString());
     }
+    final String key = purchase.purchaseID ?? purchase.productID;
     if (result.delivered) {
       _error = null;
+      _undelivered.remove(purchase.productID);
+      _deliveryAttempts.remove(key);
       onDelivered?.call(purchase);
       await _safeComplete(purchase);
     } else if (result.permanent) {
       // Reintentar no arregla nada: se cierra la transacción para no dejarla
       // colgada en la cola de la tienda, y se explica al usuario qué pasó.
       _error = result.message ?? 'Esta compra no se puede entregar.';
+      _undelivered.remove(purchase.productID);
+      _deliveryAttempts.remove(key);
       await _safeComplete(purchase);
     } else {
-      // Fallo temporal (red, backend caído): NO completamos, la tienda
-      // reintentará la entrega más tarde.
-      _error = result.message ?? 'No se pudo entregar la compra.';
+      // Fallo temporal (red, backend caído): NO se completa todavía, para no
+      // cerrar una compra pagada sin haberla concedido.
+      final int attempts = (_deliveryAttempts[key] ?? 0) + 1;
+      _deliveryAttempts[key] = attempts;
+      if (attempts >= _maxDeliveryAttempts) {
+        // Se agotaron los reintentos. Dejarla abierta bloquearía ESE producto
+        // en la cola de la tienda para siempre: el usuario no podría ni volver
+        // a intentar la compra, que es peor que quedarse pagado sin conceder,
+        // porque de esto último se sale con "Restaurar".
+        _undelivered.remove(purchase.productID);
+        _deliveryAttempts.remove(key);
+        await _safeComplete(purchase);
+        _error = 'No hemos podido activar tu compra tras varios intentos. '
+            'No se ha vuelto a cobrar nada: pulsa "Restaurar" cuando tengas '
+            'conexión y se activará.';
+      } else {
+        _undelivered[purchase.productID] = purchase;
+        _error = result.message ?? 'No se pudo entregar la compra.';
+      }
     }
     _setBusy(false);
+  }
+
+  /// Termina la compra que quedo abierta y bloquea el producto.
+  ///
+  /// Primero se reintenta la entrega de la que ya tenemos en memoria. Si no la
+  /// tenemos (la app se reinicio y el stream aun no la ha reemitido), se pide
+  /// `restorePurchases`, que hace que la tienda la vuelva a emitir por el
+  /// stream y entre por el camino normal de verificar y completar.
+  Future<void> _recoverPending(String productId) async {
+    final PurchaseDetails? pending = _undelivered[productId];
+    if (pending != null) {
+      await _handleVerified(pending);
+      return;
+    }
+    try {
+      await _iap.restorePurchases();
+    } catch (_) {
+      // Si ni restaurar funciona, no hay mas que hacer desde aqui: el mensaje
+      // ya le ha dicho al usuario que espere y reintente.
+    }
+  }
+
+  /// Traduce los codigos de la tienda a algo que una persona pueda entender y
+  /// accionar. Antes se enseñaba `e.toString()` tal cual, que es un volcado con
+  /// nombres de clases internas.
+  String _readableStoreError(PlatformException e) {
+    switch (e.code) {
+      case 'storekit_duplicate_product_object':
+        return 'Tenías una compra sin terminar de este mismo plan. Espera unos '
+            'segundos y vuelve a intentarlo.';
+      case 'storekit0':
+        return 'La App Store ha rechazado la compra. Revisa tu método de pago '
+            'en Ajustes.';
+      default:
+        return e.message ?? 'No se ha podido iniciar la compra.';
+    }
   }
 
   Future<void> _safeComplete(PurchaseDetails purchase) async {
