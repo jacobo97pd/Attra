@@ -297,6 +297,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   int _storiesRetries = 0;
   Timer? _storiesRetryTimer;
 
+  /// Reintento de la LECTURA del flag remoto. Un fallo ahí apaga el muro, y
+  /// apagar el muro es enseñar la ficha completa de la gente: no puede quedarse
+  /// así el resto de la sesión por un bache de red.
+  int _storiesFlagRetries = 0;
+  Timer? _storiesFlagRetryTimer;
+
   // Stories vivas agrupadas por dueño: es lo que decide QUIÉN entra en el muro
   // y cuántas hojas tiene su pila.
   Map<String, List<Story>> _storiesByOwner = const <String, List<Story>>{};
@@ -615,6 +621,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     _storiesSub?.cancel();
     _storiesTimeout?.cancel();
     _storiesRetryTimer?.cancel();
+    _storiesFlagRetryTimer?.cancel();
     _blindWall?.dispose();
     super.dispose();
   }
@@ -772,13 +779,42 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   bool get _storyWallActive => _storiesEnabled && widget.storyService != null;
 
   Future<void> _loadStoriesFlag() async {
-    // Con timeout: la barrera del "a ciegas" espera a este flag, así que un
-    // `get()` que tarda en volver (arranque en frío, red mala) dejaría Discover
-    // en el esqueleto. Sin flag se cae al feed de perfiles, que es el default.
-    final bool enabled = await (widget.storyService?.storiesEnabled() ??
-            Future<bool>.value(false))
-        .timeout(const Duration(seconds: 6), onTimeout: () => false);
+    final StoryService? svc = widget.storyService;
+    if (svc == null) {
+      // Sin servicio no hay muro posible y no hay nada que reintentar.
+      if (!mounted) return;
+      setState(() {
+        _storiesFlagResolved = true;
+        _applyStoryWall();
+      });
+      _afterWallChanged();
+      return;
+    }
+    bool enabled;
+    try {
+      // Con timeout: la barrera del "a ciegas" espera a este flag, así que un
+      // `get()` que tarda en volver (arranque en frío, red mala) dejaría
+      // Discover en el esqueleto. Agotarlo cuenta como fallo, no como "apagado".
+      enabled = await svc
+          .storiesEnabled()
+          .timeout(const Duration(seconds: 6));
+    } catch (_) {
+      // No se ha podido leer el flag, que NO es lo mismo que estar apagado. Se
+      // sigue pintando el feed de perfiles (el default, para no dejar Discover
+      // en el esqueleto sin red), pero se reintenta con espera creciente igual
+      // que el stream de historias: antes un solo bache dejaba el muro apagado
+      // el resto de la sesión, enseñando la ficha completa de cada persona.
+      if (!mounted) return;
+      setState(() {
+        _storiesFlagResolved = true;
+        _applyStoryWall();
+      });
+      _afterWallChanged();
+      _scheduleStoriesFlagRetry();
+      return;
+    }
     if (!mounted) return;
+    _storiesFlagRetries = 0;
     setState(() {
       _storiesEnabled = enabled;
       _storiesFlagResolved = true;
@@ -788,6 +824,16 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     });
     _afterWallChanged();
     if (enabled) _bindStories();
+  }
+
+  /// Reintento con espera creciente (2, 4, 8, 16 y 32 s) de la LECTURA del flag.
+  void _scheduleStoriesFlagRetry() {
+    _storiesFlagRetryTimer?.cancel();
+    _storiesFlagRetries = (_storiesFlagRetries + 1).clamp(1, 5);
+    _storiesFlagRetryTimer =
+        Timer(Duration(seconds: 1 << _storiesFlagRetries), () {
+      if (mounted && !_storiesEnabled) _loadStoriesFlag();
+    });
   }
 
   /// Escucha las historias vivas agrupadas por dueño: es lo que define el muro

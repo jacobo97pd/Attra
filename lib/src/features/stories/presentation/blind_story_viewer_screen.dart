@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../../theme/app_colors.dart';
 import '../domain/story.dart';
+import '../domain/story_composer.dart';
 import 'blind_wall_controller.dart';
 
 /// Visor A CIEGAS a pantalla completa: Discover por dentro.
@@ -39,11 +40,29 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   /// Cuánto dura una historia de imagen cuando el autor no fijó duración.
   static const int _defaultImageSeconds = 5;
 
+  /// Cuánto se enseña el aviso de "medio roto" antes de seguir con las demás.
+  static const Duration _mediaErrorHold = Duration(seconds: 3);
+
+  /// Margen sobre la duración del vídeo antes de pasar de historia por nuestra
+  /// cuenta (el evento de fin puede llegar tarde, o no llegar nunca).
+  static const Duration _videoWatchdogSlack = Duration(seconds: 3);
+
   BlindWallPerson? _person;
   int _storyIndex = 0;
 
   VideoPlayerController? _video;
   Timer? _imageTimer;
+
+  /// Reloj de seguridad del medio actual.
+  ///
+  /// La imagen tiene su `Timer.periodic`; el vídeo dependía EN EXCLUSIVA de que
+  /// el reproductor avisara del final. Si no inicializaba (catch de `_load`) o
+  /// si el MP4 llegaba sin duración fiable, `_onVideoTick` no disparaba nunca
+  /// `_next()`: tres historias vivas y solo se veía la primera, con las otras
+  /// dos alcanzables únicamente si el usuario adivinaba que hay que tocar el
+  /// lado derecho de la pantalla.
+  Timer? _mediaWatchdog;
+
   Duration _imageElapsed = Duration.zero;
   Duration _imageDuration = const Duration(seconds: _defaultImageSeconds);
   DateTime? _lastImageTick;
@@ -112,6 +131,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
     widget.controller.removeListener(_onWallChanged);
     _swipeAnim.dispose();
     _imageTimer?.cancel();
+    _mediaWatchdog?.cancel();
     _video?.dispose();
     super.dispose();
   }
@@ -176,6 +196,11 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
 
   Future<void> _load() async {
     _imageTimer?.cancel();
+    _mediaWatchdog?.cancel();
+    // Invariante: quien deja de ser `_video` queda DESECHADO aquí mismo. Por eso
+    // la carga que llegue tarde no vuelve a desecharlo (sería un doble dispose,
+    // que en debug revienta al llamar dos veces a `super.dispose()`), solo se
+    // retira.
     _video?.dispose();
     _video = null;
     if (!mounted) return;
@@ -192,7 +217,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
 
     if (story.isImage) {
       if (story.imageUrl.isEmpty) {
-        setState(() => _mediaError = 'Esta historia no tiene imagen.');
+        _failMedia('Esta historia no tiene imagen.');
         return;
       }
       _imageDuration = Duration(
@@ -209,7 +234,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
       return;
     }
     if (story.videoUrl.isEmpty) {
-      setState(() => _mediaError = 'Esta historia no tiene vídeo.');
+      _failMedia('Esta historia no tiene vídeo.');
       return;
     }
     final VideoPlayerController controller =
@@ -219,20 +244,51 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
       await controller.initialize().timeout(const Duration(seconds: 20));
       // Mientras se inicializaba puede haberse pasado de historia o de persona:
       // sin esta comprobación el vídeo viejo se ponía a sonar encima del nuevo.
-      if (!mounted || !identical(_video, controller)) {
-        controller.dispose();
-        return;
-      }
+      if (!mounted || !identical(_video, controller)) return;
       controller
         ..addListener(_onVideoTick)
         ..setVolume(1)
         ..play();
+      _armVideoWatchdog(controller, story);
       setState(() {});
     } catch (_) {
       if (mounted && identical(_video, controller)) {
-        setState(() => _mediaError = 'No se pudo reproducir el vídeo.');
+        _failMedia('No se pudo reproducir el vídeo.');
       }
     }
+  }
+
+  /// Marca la historia como no reproducible y SIGUE con las demás.
+  ///
+  /// Antes esto solo pintaba el aviso y salía: ni temporizador ni listener, así
+  /// que nada volvía a llamar a `_next()` y una historia rota se quedaba con el
+  /// relato entero de esa persona.
+  void _failMedia(String message) {
+    if (!mounted) return;
+    setState(() => _mediaError = message);
+    _mediaWatchdog?.cancel();
+    _mediaWatchdog = Timer(_mediaErrorHold, () {
+      if (mounted) _next();
+    });
+  }
+
+  /// Reloj de seguridad del vídeo: si el reproductor no avisa del final, se pasa
+  /// igualmente. `_onVideoTick` exige `duration > 0` y `position >= duration`, y
+  /// un MP4 sin átomo de duración (o un evento `completed` que no llega) no
+  /// cumple ninguna de las dos aunque el vídeo se vea perfecto.
+  void _armVideoWatchdog(VideoPlayerController controller, Story story) {
+    final Duration reported = controller.value.duration;
+    final Duration base = reported > Duration.zero
+        ? reported
+        : Duration(
+            seconds: story.durationSeconds > 0
+                ? story.durationSeconds
+                : kStoryMaxVideoDuration.inSeconds,
+          );
+    _mediaWatchdog?.cancel();
+    _mediaWatchdog = Timer(base + _videoWatchdogSlack, () {
+      if (mounted && identical(_video, controller)) _next();
+    });
   }
 
   void _onVideoTick() {
@@ -277,6 +333,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
     // Se acabaron sus historias: siguiente PERSONA. Mirar no es opinar, así que
     // no se manda ni like ni pase; el feed sí cuenta la impresión.
     _imageTimer?.cancel();
+    _mediaWatchdog?.cancel();
     _video?.pause();
     widget.controller.onSkip();
   }
@@ -298,6 +355,9 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
 
   void _pause() {
     if (_mediaError != null) return;
+    // El reloj de seguridad se para con el dedo encima: si siguiera corriendo,
+    // mantener pulsado para leer un texto acabaría saltando de historia.
+    _mediaWatchdog?.cancel();
     _video?.pause();
     setState(() => _paused = true);
   }
@@ -305,7 +365,20 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   void _resume() {
     if (_mediaError != null) return;
     _lastImageTick = DateTime.now();
-    _video?.play();
+    final VideoPlayerController? controller = _video;
+    if (controller != null && controller.value.isInitialized) {
+      // Se rearma con lo que QUEDA de vídeo, no con su duración entera.
+      final Duration left =
+          controller.value.duration - controller.value.position;
+      _mediaWatchdog?.cancel();
+      _mediaWatchdog = Timer(
+        (left > Duration.zero ? left : Duration.zero) + _videoWatchdogSlack,
+        () {
+          if (mounted && identical(_video, controller)) _next();
+        },
+      );
+    }
+    controller?.play();
     setState(() => _paused = false);
   }
 
@@ -331,6 +404,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
     if (_busy) return;
     setState(() => _busy = true);
     _imageTimer?.cancel();
+    _mediaWatchdog?.cancel();
     _video?.pause();
     try {
       await action();
@@ -356,7 +430,22 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
     // animación hay casi medio segundo en el que se podía decidir otra cosa.
     setState(() => _actionPending = true);
     // Mismo gate que la tarjeta del feed (límite de conversaciones pendientes).
-    final bool allowed = await widget.controller.beforeLike();
+    //
+    // Si el gate LANZA hay que soltar la entrada igualmente: `_actionPending` se
+    // levanta antes de esperarlo y solo lo bajaban el "no permitido" y `_act`,
+    // así que una excepción del gate (registra analítica y abre un bottom sheet)
+    // dejaba `_locked` puesto para siempre: `_next` y `_prev` pasaban a no hacer
+    // nada y el visor se quedaba clavado en la historia que hubiera, con las
+    // demás inalcanzables.
+    bool allowed;
+    try {
+      allowed = await widget.controller.beforeLike();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _actionPending = false);
+      _runTo(0);
+      return;
+    }
     if (!mounted) return;
     if (!allowed) {
       setState(() => _actionPending = false);

@@ -10,13 +10,13 @@ enum _MyStoryAction { view, create }
 /// Punto de entrada para PUBLICAR una historia (y para repasar/borrar las
 /// propias).
 ///
-/// Existe porque el muro a ciegas se llevó por delante la tira de aros
-/// (`StoriesBar`), que era el único sitio desde el que se abría
+/// Existe porque el muro a ciegas se llevó por delante la tira de aros (ya
+/// borrada), que era el único sitio desde el que se abría
 /// [StoryComposerScreen]. Sin esto, Discover —que solo enseña a quien tiene una
 /// historia viva— se vaciaba solo: a las 72 h de encender `storiesEnabled`
 /// caducaba lo publicado, nadie podía publicar nada nuevo y la pantalla
 /// principal quedaba muerta para todo el mundo.
-class MyStoryButton extends StatelessWidget {
+class MyStoryButton extends StatefulWidget {
   const MyStoryButton({
     super.key,
     required this.currentUid,
@@ -27,11 +27,51 @@ class MyStoryButton extends StatelessWidget {
   final StoryService storyService;
 
   @override
+  State<MyStoryButton> createState() => _MyStoryButtonState();
+}
+
+class _MyStoryButtonState extends State<MyStoryButton> {
+  /// El stream se crea UNA vez y no en cada `build`.
+  ///
+  /// `observeMyLiveStories` devuelve un `Stream` nuevo en cada llamada, así que
+  /// construirlo dentro de `build` hacía que `StreamBuilder` viera otro stream y
+  /// cancelara y volviera a registrar el listener de Firestore. Este botón vive
+  /// en la cabecera del feed, que repinta con cada snapshot del stream global de
+  /// historias (basta con que alguien, en cualquier parte de la app, vea una):
+  /// era un vaivén continuo de suscripciones sobre `stories` por una insignia
+  /// que solo dice "3/5".
+  late Stream<List<Story>> _mineStream;
+
+  /// Último recuento bueno. Un error del stream deja el snapshot SIN datos, y
+  /// entonces el botón decía "Contar algo" teniendo historias vivas: el dueño
+  /// concluye que no se subió nada y vuelve a publicar. Un bache de red no puede
+  /// contar como "no tienes ninguna".
+  List<Story> _lastKnown = const <Story>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _mineStream = widget.storyService.observeMyLiveStories(widget.currentUid);
+  }
+
+  @override
+  void didUpdateWidget(covariant MyStoryButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentUid != widget.currentUid ||
+        oldWidget.storyService != widget.storyService) {
+      _lastKnown = const <Story>[];
+      _mineStream = widget.storyService.observeMyLiveStories(widget.currentUid);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Story>>(
-      stream: storyService.observeMyLiveStories(currentUid),
+      stream: _mineStream,
       builder: (BuildContext context, AsyncSnapshot<List<Story>> snap) {
-        final List<Story> mine = snap.data ?? const <Story>[];
+        final List<Story>? fresh = snap.data;
+        if (fresh != null) _lastKnown = fresh;
+        final List<Story> mine = fresh ?? _lastKnown;
         if (mine.isEmpty) {
           return TextButton.icon(
             key: const ValueKey<String>('my-story-create'),
@@ -99,8 +139,10 @@ class MyStoryButton extends StatelessWidget {
 
   void _openCreate(BuildContext context) {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) =>
-          StoryComposerScreen(currentUid: currentUid, storyService: storyService),
+      builder: (_) => StoryComposerScreen(
+        currentUid: widget.currentUid,
+        storyService: widget.storyService,
+      ),
     ));
   }
 
@@ -111,8 +153,8 @@ class MyStoryButton extends StatelessWidget {
       builder: (_) => StoryViewerScreen(
         stories: mine,
         initialIndex: 0,
-        currentUid: currentUid,
-        storyService: storyService,
+        currentUid: widget.currentUid,
+        storyService: widget.storyService,
       ),
     ));
   }

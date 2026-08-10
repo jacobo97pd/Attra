@@ -180,8 +180,15 @@ class StoryService {
         excludedOwners: excludedOwners,
       );
 
-  Stream<Story?> observeMyLiveStory(String uid) =>
-      _repository.observeMyLiveStory(uid);
+  /// Stories vivas de un match, agrupadas por dueño y SIN filtrar visibilidad.
+  Stream<Map<String, List<Story>>> observeLiveStoriesForMatches({
+    String excludeUid = '',
+    Set<String> excludedOwners = const <String>{},
+  }) =>
+      _repository.observeLiveStoriesForMatches(
+        excludeUid: excludeUid,
+        excludedOwners: excludedOwners,
+      );
 
   /// Stories vivas agrupadas por dueño (para el muro apilado de Discover).
   Stream<Map<String, List<Story>>> observeLiveStoriesByOwner({

@@ -16,6 +16,58 @@ int storyStackSheets(int liveStories) {
   return sheets > StoryStackCard.maxSheets ? StoryStackCard.maxSheets : sheets;
 }
 
+/// Qué historia pone la CARA de la pila.
+///
+/// Antes era `stories.first` y el grupo llega ordenado de más antigua a más
+/// reciente (`StoryRepository.groupWallStories`), así que la portada era siempre
+/// la MÁS VIEJA. Dos motivos para darle la vuelta:
+///
+/// 1. El muro va de lo que la gente está contando AHORA. Con tres historias
+///    vivas, la cara tiene que ser la última publicada, no la de hace dos días
+///    a punto de caducar (y es lo que espera quien acaba de publicar: ve su
+///    pila y no reconoce lo que sale).
+/// 2. La portada no puede depender de una posición: en un vídeo `previewUrl` es
+///    la MINIATURA, y generarla es best-effort (`VideoCompress.getByteThumbnail`
+///    va en su propio try en story_service.dart, y en web no se genera nunca).
+///    Con la miniatura fallida la tarjeta caía al recuadro con la inicial del
+///    nombre teniendo, ahí mismo y sin usar, dos fotos perfectamente válidas.
+///
+/// El orden ENTRE personas no se toca: eso lo decide el pipeline del feed
+/// (ranking orgánico, Boost PAGADO, modo viaje). Esto es solo qué se pinta
+/// dentro de la tarjeta.
+Story storyStackCover(List<Story> stories) {
+  for (int i = stories.length - 1; i >= 0; i--) {
+    if (storyCoverUrl(stories[i]).isNotEmpty) return stories[i];
+  }
+  // Ninguna tiene vista previa utilizable: da igual cuál, se pintará el
+  // recuadro con la inicial. Se devuelve la más reciente por coherencia.
+  return stories.last;
+}
+
+/// Lo que se puede pintar de una historia sin abrirla: la miniatura del vídeo o
+/// la propia foto. `imageUrl` se mantiene como último recurso para un documento
+/// que traiga foto y marca de vídeo a la vez.
+String storyCoverUrl(Story story) =>
+    story.previewUrl.isNotEmpty ? story.previewUrl : story.imageUrl;
+
+/// Dónde va la hoja [index] (1 = la pegada a la portada) de una pila de
+/// [sheets] hojas: inserción en píxeles desde cada borde de la tarjeta.
+///
+/// El borde INFERIOR se escalona al revés que los otros tres. Con todas las
+/// hojas llegando al fondo, cada una quedaba íntegramente dentro de la de
+/// delante —que se pinta después y es opaca—, así que solo asomaba UNA banda:
+/// 2, 3, 4 y 5 historias se veían igual y lo único que cambiaba era el grosor de
+/// esa banda única.
+EdgeInsets storyStackSheetInsets({required int index, required int sheets}) {
+  const double step = StoryStackCard.sheetStep;
+  return EdgeInsets.fromLTRB(
+    index * step,
+    index * step,
+    index * step,
+    (sheets - index) * step,
+  );
+}
+
 /// Tarjeta del muro de Discover: una PILA cuyo grosor depende del NÚMERO de
 /// historias vivas de esa persona.
 ///
@@ -42,7 +94,7 @@ class StoryStackCard extends StatelessWidget {
 
   /// Separación entre hojas. Lo justo para que 4 hojas se distingan sin comerse
   /// la portada en pantallas pequeñas.
-  static const double _sheetStep = 9;
+  static const double sheetStep = 9;
 
   final List<Story> stories;
   final String displayName;
@@ -66,30 +118,14 @@ class StoryStackCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final AttraColors colors = context.colors;
     final int sheets = storyStackSheets(stories.length);
-    final double stackDepth = sheets * _sheetStep;
+    final double stackDepth = sheets * sheetStep;
 
     return Stack(
       children: <Widget>[
         // Hojas de atrás hacia delante: asoman por abajo y son más estrechas,
-        // que es como se lee "aquí hay más".
-        for (int i = sheets; i >= 1; i--)
-          Positioned(
-            left: i * _sheetStep,
-            right: i * _sheetStep,
-            top: i * _sheetStep,
-            bottom: 0,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color.lerp(
-                  colors.surfaceHigh,
-                  colors.bg,
-                  i / (maxSheets + 1),
-                ),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: colors.surfaceLine, width: 1),
-              ),
-            ),
-          ),
+        // que es como se lee "aquí hay más". La colocación vive en
+        // [storyStackSheetInsets] para poder fijarla con un test.
+        for (int i = sheets; i >= 1; i--) _sheet(colors, i, sheets),
         Positioned(
           left: 0,
           right: 0,
@@ -101,10 +137,38 @@ class StoryStackCard extends StatelessWidget {
     );
   }
 
+  /// Una hoja de la pila. Va vacía a propósito: ver [_cover].
+  Widget _sheet(AttraColors colors, int index, int sheets) {
+    final EdgeInsets insets =
+        storyStackSheetInsets(index: index, sheets: sheets);
+    return Positioned(
+      left: insets.left,
+      right: insets.right,
+      top: insets.top,
+      bottom: insets.bottom,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Color.lerp(
+            colors.surfaceHigh,
+            colors.bg,
+            index / (maxSheets + 1),
+          ),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: colors.surfaceLine, width: 1),
+        ),
+      ),
+    );
+  }
+
   Widget _cover(BuildContext context, AttraColors colors, int sheets) {
-    final Story cover = stories.first;
-    final String url =
-        cover.previewUrl.isNotEmpty ? cover.previewUrl : cover.imageUrl;
+    // Las hojas de atrás son chapa: no llevan imagen a propósito. Asoman 9 px,
+    // y meter ahí la vista previa de cada historia serían hasta cuatro
+    // descargas y decodificaciones más por tarjeta —en la pantalla que se
+    // recorre a swipes— para una banda que no se distingue. Que hay más
+    // historias lo dicen el grosor de la pila y la pastilla del contador, y
+    // verlas todas es lo que hace el visor al tocar.
+    final Story cover = storyStackCover(stories);
+    final String url = storyCoverUrl(cover);
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),

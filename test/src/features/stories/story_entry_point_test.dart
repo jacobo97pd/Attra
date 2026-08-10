@@ -51,6 +51,26 @@ void main() {
           'servidor rechaza después de procesar y subir el vídeo.',
     );
   });
+
+  test('"Ver mis historias" abre el GRUPO entero, no una suelta', () {
+    // El dueño ve las suyas solo por aquí. Con `<Story>[una]` la barra pinta un
+    // único segmento y el primer toque cierra el visor: subir tres y ver una.
+    final String button = File(
+      'lib/src/features/stories/presentation/my_story_button.dart',
+    ).readAsStringSync();
+    expect(
+      button.contains('observeMyLiveStories('),
+      isTrue,
+      reason: 'la versión singular colapsaba a la más reciente',
+    );
+    expect(button.contains('stories: mine'), isTrue);
+    expect(
+      RegExp(r'stories:\s*<Story>\[').hasMatch(button),
+      isFalse,
+      reason: 'una lista de un elemento es el patrón heredado de cuando solo se '
+          'admitía UNA historia por persona',
+    );
+  });
 }
 
 /// Ficheros de `lib/` que construyen la clase [className].

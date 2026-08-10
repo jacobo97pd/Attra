@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import '../../../theme/app_colors.dart';
 import '../data/story_service.dart';
 import '../domain/story.dart';
+import '../domain/story_composer.dart';
 
 /// Visor de stories a pantalla completa, estilo moderno (Instagram): vídeo a
 /// pantalla completa con degradados, barra de progreso segmentada, cabecera con
@@ -37,12 +38,32 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   late int _index;
   VideoPlayerController? _controller;
   Timer? _imageTimer;
+
+  /// Reloj de seguridad del medio actual.
+  ///
+  /// El vídeo es el ÚNICO medio sin reloj propio: la imagen avanza con
+  /// `_imageTimer`, pero el vídeo dependía en exclusiva de que el reproductor
+  /// avisara de que había terminado. Si no llegaba a inicializar (red mala,
+  /// codec, URL caducada) o si el MP4 venía sin duración fiable, ese aviso no
+  /// llegaba NUNCA: el visor se quedaba clavado en la primera historia y las
+  /// demás solo se alcanzaban si el usuario adivinaba que hay que tocar la
+  /// mitad derecha de la pantalla. Con tres historias y un vídeo el primero,
+  /// eso es exactamente "he subido tres y solo veo el vídeo".
+  Timer? _mediaWatchdog;
+
   Duration _imageElapsed = Duration.zero;
   Duration _imageDuration = const Duration(seconds: 5);
   DateTime? _lastImageTick;
   bool _sending = false;
   bool _paused = false;
   String? _mediaError;
+
+  /// Cuánto se enseña el aviso de "medio roto" antes de seguir con las demás.
+  static const Duration _mediaErrorHold = Duration(seconds: 3);
+
+  /// Margen sobre la duración del vídeo antes de pasar de historia por nuestra
+  /// cuenta (el evento de fin puede llegar unos ms tarde, o no llegar).
+  static const Duration _videoWatchdogSlack = Duration(seconds: 3);
 
   /// storyId -> 'like' | 'attra' (reacción ya enviada esta sesión).
   final Map<String, String> _reactions = <String, String>{};
@@ -62,12 +83,17 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _reply.dispose();
     _replyFocus.dispose();
     _imageTimer?.cancel();
+    _mediaWatchdog?.cancel();
     _controller?.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     _imageTimer?.cancel();
+    _mediaWatchdog?.cancel();
+    // Invariante: quien deja de ser `_controller` queda DESECHADO aquí mismo.
+    // Por eso la carga que llegue tarde no vuelve a desecharlo (sería un doble
+    // dispose), solo se retira.
     _controller?.dispose();
     _controller = null;
     setState(() {
@@ -82,7 +108,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     }
     if (s.isImage) {
       if (s.imageUrl.isEmpty) {
-        setState(() => _mediaError = 'La story no tiene imagen.');
+        _failMedia('La story no tiene imagen.');
         return;
       }
       _imageDuration = Duration(
@@ -97,7 +123,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       return;
     }
     if (s.videoUrl.isEmpty) {
-      setState(() => _mediaError = 'La story no tiene video.');
+      _failMedia('La story no tiene video.');
       return;
     }
     final VideoPlayerController c =
@@ -105,22 +131,61 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     _controller = c;
     try {
       await c.initialize().timeout(const Duration(seconds: 20));
-      if (!mounted) return;
+      // Mientras se inicializaba se puede haber pasado de historia: este
+      // controlador ya no es el vigente (y `_load` ya lo desechó). Sin esta
+      // comprobación el vídeo viejo se ponía a sonar por debajo de la foto
+      // siguiente, y si fallaba escribía "No se pudo reproducir el video"
+      // ENCIMA de una foto perfectamente válida: subes tres, se ve el vídeo y
+      // las dos fotos salen como un error de vídeo.
+      if (!mounted || !identical(_controller, c)) return;
       c
         ..addListener(_onTick)
         ..setVolume(1)
         ..play();
+      _armVideoWatchdog(c, s);
       setState(() {});
-    } catch (e) {
-      if (mounted) {
-        setState(() => _mediaError = 'No se pudo reproducir el video.');
-      }
+    } catch (_) {
+      if (!mounted || !identical(_controller, c)) return;
+      _failMedia('No se pudo reproducir el video.');
     }
+  }
+
+  /// Marca la historia como no reproducible y SIGUE con las demás.
+  ///
+  /// Antes esto solo pintaba el aviso: nada programaba el avance, así que un
+  /// fallo pasajero de un medio se comía el resto del grupo.
+  void _failMedia(String message) {
+    if (!mounted) return;
+    setState(() => _mediaError = message);
+    _mediaWatchdog?.cancel();
+    _mediaWatchdog = Timer(_mediaErrorHold, () {
+      if (mounted) _next();
+    });
+  }
+
+  /// Reloj de seguridad del vídeo: si el reproductor no avisa de que ha
+  /// terminado, se pasa igualmente. Un vídeo mudo no puede secuestrar al grupo.
+  void _armVideoWatchdog(VideoPlayerController c, Story s) {
+    final Duration reported = c.value.duration;
+    // Sin duración fiable (VideoCompress no siempre escribe el átomo) se usa la
+    // que se guardó al publicar y, si tampoco hay, el tope de un vídeo de
+    // historia.
+    final Duration base = reported > Duration.zero
+        ? reported
+        : Duration(
+            seconds: s.durationSeconds > 0
+                ? s.durationSeconds
+                : kStoryMaxVideoDuration.inSeconds,
+          );
+    _mediaWatchdog?.cancel();
+    _mediaWatchdog = Timer(base + _videoWatchdogSlack, () {
+      if (mounted && identical(_controller, c)) _next();
+    });
   }
 
   void _onTick() {
     final VideoPlayerController? c = _controller;
-    if (c == null) return;
+    if (c == null || !mounted) return;
     if (c.value.isInitialized &&
         !c.value.isPlaying &&
         !_paused &&
@@ -164,6 +229,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   void _pause() {
+    if (_mediaError != null) return;
+    // El reloj de seguridad se para con el dedo encima: si siguiera corriendo,
+    // mantener pulsado para leer un texto acabaría saltando de historia.
+    _mediaWatchdog?.cancel();
     _controller?.pause();
     setState(() => _paused = true);
   }
@@ -171,7 +240,19 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   void _resume() {
     if (_mediaError != null) return;
     _lastImageTick = DateTime.now();
-    _controller?.play();
+    final VideoPlayerController? c = _controller;
+    if (c != null && c.value.isInitialized) {
+      // Se rearma con lo que QUEDA de vídeo, no con su duración entera.
+      final Duration left = c.value.duration - c.value.position;
+      _mediaWatchdog?.cancel();
+      _mediaWatchdog = Timer(
+        (left > Duration.zero ? left : Duration.zero) + _videoWatchdogSlack,
+        () {
+          if (mounted && identical(_controller, c)) _next();
+        },
+      );
+    }
+    c?.play();
     setState(() => _paused = false);
   }
 
@@ -524,6 +605,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
 
   Future<void> _confirmDelete() async {
     _pause();
+    // Se fija la historia AHORA: mientras el diálogo está abierto el visor puede
+    // pasar de historia solo (el reloj de seguridad de un medio roto no se
+    // detiene con el diálogo), y entonces se borraba la que no era.
+    final String targetId = _story.storyId;
     final bool ok = await showDialog<bool>(
           context: context,
           builder: (BuildContext context) => AlertDialog(
@@ -545,7 +630,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       return;
     }
     try {
-      await widget.storyService.deleteStory(_story.storyId);
+      await widget.storyService.deleteStory(targetId);
       if (mounted) Navigator.of(context).maybePop();
     } catch (_) {
       if (mounted) _snack('No se pudo borrar la story.');

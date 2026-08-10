@@ -36,7 +36,9 @@ enum StoryVisibility {
   }
 }
 
-/// Story de vídeo 24h. `stories/{storyId}` (escritura solo backend).
+/// Historia de FOTO o VÍDEO, viva 72 h. `stories/{storyId}` (escritura solo
+/// backend; la caducidad la fija STORY_TTL_MS en functions/src/stories.ts, que
+/// es quien manda).
 enum StoryMediaType {
   video('video'),
   image('image');

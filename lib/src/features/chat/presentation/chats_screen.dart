@@ -150,10 +150,15 @@ class ChatsScreen extends StatelessWidget {
     ));
   }
 
-  void _openStory(BuildContext context, Story story) {
+  void _openStory(BuildContext context, List<Story> stories) {
+    // Se pasa el GRUPO entero. Antes se abria con `<Story>[story]`: el visor
+    // pintaba una sola barra de segmento y el primer toque a la derecha cerraba
+    // la pantalla, asi que del match solo se veia una historia y las demas eran
+    // inalcanzables desde Chats.
+    if (stories.isEmpty) return;
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => StoryViewerScreen(
-        stories: <Story>[story],
+        stories: stories,
         initialIndex: 0,
         currentUid: currentUid,
         storyService: storyService!,
@@ -215,14 +220,15 @@ class ChatsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Stream de stories vivas para mostrar el aro en los avatares (map dueño->story).
-    return StreamBuilder<List<Story>>(
-      stream: storyService?.observeLiveStories() ??
-          const Stream<List<Story>>.empty(),
-      builder: (BuildContext context, AsyncSnapshot<List<Story>> storySnap) {
-        final Map<String, Story> storyByOwner = <String, Story>{
-          for (final Story s in storySnap.data ?? const <Story>[])
-            s.ownerUid: s,
-        };
+    return StreamBuilder<Map<String, List<Story>>>(
+      stream: storyService?.observeLiveStoriesForMatches() ??
+          const Stream<Map<String, List<Story>>>.empty(),
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<Map<String, List<Story>>> storySnap,
+      ) {
+        final Map<String, List<Story>> storyByOwner =
+            storySnap.data ?? const <String, List<Story>>{};
         // "Planes y grupos": chats de grupo arriba (si hay). Se rinde solo si no
         // hay grupos. El resto de la pantalla (matches/conversaciones) va debajo.
         if (friendGroupService != null && currentUid.isNotEmpty) {
@@ -242,7 +248,10 @@ class ChatsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildList(BuildContext context, Map<String, Story> storyByOwner) {
+  Widget _buildList(
+    BuildContext context,
+    Map<String, List<Story>> storyByOwner,
+  ) {
     return StreamBuilder<List<Chat>>(
       stream: chatService.observeChats(currentUid),
       builder: (BuildContext context, AsyncSnapshot<List<Chat>> snapshot) {
@@ -288,19 +297,19 @@ class ChatsScreen extends StatelessWidget {
           rest.addAll(convos);
         }
 
-        Story? storyFor(Chat c) => storyByOwner[c.otherUid(currentUid)];
+        List<Story>? storyFor(Chat c) => storyByOwner[c.otherUid(currentUid)];
 
         Widget convoRow(Chat c, {bool yourTurn = false}) => _ConversationRow(
               chat: c,
               currentUid: currentUid,
               summaries: summaries,
-              story: storyFor(c),
+              stories: storyFor(c),
               yourTurn: yourTurn,
               waitingLabel: yourTurn && c.lastMessageAt != null
                   ? formatWaiting(now.difference(c.lastMessageAt!))
                   : null,
               onTap: () => _open(context, c),
-              onOpenStory: (Story s) => _openStory(context, s),
+              onOpenStory: (List<Story> group) => _openStory(context, group),
             );
 
         return ListView(
@@ -325,9 +334,9 @@ class ChatsScreen extends StatelessWidget {
                     chat: nuevos[i],
                     currentUid: currentUid,
                     summaries: summaries,
-                    story: storyFor(nuevos[i]),
+                    stories: storyFor(nuevos[i]),
                     onTap: () => _open(context, nuevos[i]),
-                    onOpenStory: (Story s) => _openStory(context, s),
+                    onOpenStory: (List<Story> group) => _openStory(context, group),
                   ),
                 ),
               ),
@@ -499,15 +508,16 @@ class _RingAvatar extends StatelessWidget {
     required this.photoUrl,
     required this.name,
     required this.radius,
-    this.story,
+    this.stories,
     this.onOpenStory,
   });
 
   final String photoUrl;
   final String name;
   final double radius;
-  final Story? story;
-  final void Function(Story story)? onOpenStory;
+  /// Grupo completo de historias vivas de esa persona (puede tener hasta 5).
+  final List<Story>? stories;
+  final void Function(List<Story> stories)? onOpenStory;
 
   @override
   Widget build(BuildContext context) {
@@ -519,10 +529,10 @@ class _RingAvatar extends StatelessWidget {
           photoUrl.isNotEmpty ? CachedNetworkImageProvider(photoUrl) : null,
       child: photoUrl.isEmpty ? Text(_initial(name)) : null,
     );
-    final Story? s = story;
-    if (s == null) return avatar;
+    final List<Story>? group = stories;
+    if (group == null || group.isEmpty) return avatar;
     return GestureDetector(
-      onTap: () => onOpenStory?.call(s),
+      onTap: () => onOpenStory?.call(group),
       child: Container(
         padding: const EdgeInsets.all(2.5),
         decoration: BoxDecoration(
@@ -552,7 +562,7 @@ class _NewMatchAvatar extends StatelessWidget {
     required this.currentUid,
     required this.summaries,
     required this.onTap,
-    this.story,
+    this.stories,
     this.onOpenStory,
   });
 
@@ -560,8 +570,9 @@ class _NewMatchAvatar extends StatelessWidget {
   final String currentUid;
   final ProfileSummaryRepository summaries;
   final VoidCallback onTap;
-  final Story? story;
-  final void Function(Story story)? onOpenStory;
+  /// Grupo completo de historias vivas de esa persona (puede tener hasta 5).
+  final List<Story>? stories;
+  final void Function(List<Story> stories)? onOpenStory;
 
   @override
   Widget build(BuildContext context) {
@@ -581,7 +592,7 @@ class _NewMatchAvatar extends StatelessWidget {
                       photoUrl: s.photoUrl,
                       name: s.displayName,
                       radius: 30,
-                      story: story,
+                      stories: stories,
                       onOpenStory: onOpenStory,
                     ),
                     if (chat.hasAttra)
@@ -618,7 +629,7 @@ class _ConversationRow extends StatelessWidget {
     required this.currentUid,
     required this.summaries,
     required this.onTap,
-    this.story,
+    this.stories,
     this.onOpenStory,
     this.yourTurn = false,
     this.waitingLabel,
@@ -628,8 +639,9 @@ class _ConversationRow extends StatelessWidget {
   final String currentUid;
   final ProfileSummaryRepository summaries;
   final VoidCallback onTap;
-  final Story? story;
-  final void Function(Story story)? onOpenStory;
+  /// Grupo completo de historias vivas de esa persona (puede tener hasta 5).
+  final List<Story>? stories;
+  final void Function(List<Story> stories)? onOpenStory;
 
   /// Attra Clear §1: fila de la sección "Tu turno" (muestra el badge).
   final bool yourTurn;
@@ -650,7 +662,7 @@ class _ConversationRow extends StatelessWidget {
             photoUrl: s.photoUrl,
             name: s.displayName,
             radius: 26,
-            story: story,
+            stories: stories,
             onOpenStory: onOpenStory,
           ),
           title: Text(s.displayName,
