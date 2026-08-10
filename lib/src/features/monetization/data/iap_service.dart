@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'storekit_queue_cleaner.dart';
+import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
 
 /// Resultado de entregar (verificar + conceder) una compra en el backend.
 class IapDeliveryResult {
@@ -38,11 +40,19 @@ class IapDeliveryResult {
 /// Regla de oro: el cliente NUNCA concede tier/saldo; solo lanza la compra y
 /// reenvía el recibo. La concesión es siempre server-side.
 class IapService extends ChangeNotifier {
-  IapService({InAppPurchase? iap, Set<String> consumableIds = const <String>{}})
-      : _iap = iap ?? InAppPurchase.instance,
+  IapService({
+    InAppPurchase? iap,
+    Set<String> consumableIds = const <String>{},
+    StoreKitQueueCleaner? queueCleaner,
+  })  : _queueCleaner = queueCleaner ?? StoreKitQueueCleaner(),
+        _iap = iap ?? InAppPurchase.instance,
         _consumableIds = consumableIds;
 
   final InAppPurchase _iap;
+
+  /// Vacia las transacciones colgadas de la cola de StoreKit, que es la unica
+  /// forma de recuperar las que la tienda ya no reemite por `purchaseStream`.
+  final StoreKitQueueCleaner _queueCleaner;
   // IDs que en Android deben CONSUMIRSE (Attras/Boosts/Swipes). El resto
   // (suscripciones) son no-consumibles.
   final Set<String> _consumableIds;
@@ -163,6 +173,29 @@ class IapService extends ChangeNotifier {
       },
     );
     await loadProducts(productIds);
+
+    // Barrido de arranque. Se hace DESPUES de suscribirse al stream para que la
+    // tienda tenga su oportunidad de reemitir lo pendiente por el camino normal
+    // (verificar y completar), y solo entonces se cierra lo que haya quedado
+    // atras. Sin este barrido, una transaccion colgada bloquea su producto para
+    // siempre y el paywall solo sabe devolver un error.
+    unawaited(_sweepStoreKitQueue());
+  }
+
+  Future<void> _sweepStoreKitQueue() async {
+    // Margen para que el stream entregue lo que la tienda si reemite: si lo
+    // entrega, se concede de verdad en vez de cerrarse sin entregar.
+    await Future<void>.delayed(const Duration(seconds: 4));
+    if (_disposed) return;
+    final QueueCleanupResult result = await _queueCleaner.cleanUp(
+      deliver: (SKPaymentTransactionWrapper _) async => false,
+    );
+    if (_disposed || !result.changedSomething) return;
+    if (result.undeliverable > 0) {
+      _error = 'Habia una compra sin activar de una sesion anterior. Pulsa '
+          '"Restaurar" para activarla.';
+      _notify();
+    }
   }
 
   /// Carga los detalles (precio localizado, título) de [ids] desde la tienda.
@@ -377,8 +410,30 @@ class IapService extends ChangeNotifier {
     final PurchaseDetails? pending = _undelivered[productId];
     if (pending != null) {
       await _handleVerified(pending);
+      if (_undelivered[productId] == null) return;
+    }
+
+    // La transaccion que bloquea el producto puede NO estar en `_undelivered`:
+    // si se quedo colgada mientras la app estaba cerrada, o llego como `failed`
+    // sin `pendingCompletePurchase`, la tienda no vuelve a emitirla por el
+    // stream y no hay manera de verla desde la API general. Por eso se ataca la
+    // cola de StoreKit directamente. Sin esto, el usuario no puede suscribirse
+    // y la unica salida es desinstalar o cambiar de Apple ID.
+    final QueueCleanupResult result =
+        await _queueCleaner.cleanUp(productId: productId);
+    if (result.blockedInProgress > 0 && !result.changedSomething) {
+      _error = 'Tienes una compra en curso o pendiente de aprobacion. '
+          'Cuando se resuelva podras continuar.';
+      _notify();
       return;
     }
+    if (result.undeliverable > 0) {
+      _error = 'Habia una compra sin activar. Ya puedes volver a intentarlo; '
+          'si te cobraron, pulsa "Restaurar" y se activara.';
+      _notify();
+    }
+    if (result.changedSomething) return;
+
     try {
       await _iap.restorePurchases();
     } catch (_) {
