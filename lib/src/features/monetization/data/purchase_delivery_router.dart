@@ -191,7 +191,17 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
             : (result.message ?? 'No se pudo verificar la compra.'),
       );
     } on BoostServiceException catch (e) {
-      return IapDeliveryResult(delivered: false, message: e.message);
+      // `e.isPermanent` se tiraba a la basura en esta rama (la de consumibles sí
+      // lo respetaba). Consecuencia: un rechazo DEFINITIVO de `verifyPurchase`
+      // —lanza `invalid-argument` cuando el producto no está en su catálogo o
+      // falta el recibo— llegaba al cliente como fallo TEMPORAL, así que la
+      // transacción se quedaba abierta esperando un reintento que nunca podría
+      // salir bien, y ese producto quedaba bloqueado para siempre.
+      return IapDeliveryResult(
+        delivered: false,
+        permanent: e.isPermanent,
+        message: e.message,
+      );
     } catch (e) {
       return IapDeliveryResult(delivered: false, message: e.toString());
     }

@@ -73,25 +73,25 @@ void main() {
     expect(store.completed, isEmpty);
   });
 
-  test('tras varios intentos SÍ se cierra, para no bloquear el producto',
+  test('por muchos intentos que fallen, NUNCA se cierra sin entregar',
       () async {
-    // Dejarla abierta para siempre es peor que cerrarla: la persona no podría
-    // ni volver a intentar la compra. De lo irrecuperable a lo recuperable,
-    // porque el recibo persiste y "Restaurar" vuelve a entregarla.
+    // Antes, al tercer intento se cerraba igualmente ("de lo irrecuperable a lo
+    // recuperable, porque el recibo persiste y Restaurar vuelve a entregarla").
+    // Esa premisa era falsa para los consumibles: "Restaurar" no los devuelve
+    // (Apple no los incluye en `currentEntitlements`), así que cerrar un pack
+    // sin abonarlo era dinero perdido sin rastro. Y para las suscripciones ya no
+    // hace falta: `recoverUnfinishedPurchases` reintenta la entrega en cada
+    // arranque con el recibo, así que el bloqueo del producto dura lo que dure
+    // la avería, no para siempre.
     service.deliver = (PurchaseDetails _) async =>
         const IapDeliveryResult(delivered: false, message: 'sin red');
 
     final PurchaseDetails p = _purchase();
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
       await service.handlePurchases(<PurchaseDetails>[p]);
     }
 
-    expect(store.completed, hasLength(1));
-    expect(
-      service.error,
-      contains('Restaurar'),
-      reason: 'hay que decirle cómo recuperar lo que ya pagó',
-    );
+    expect(store.completed, isEmpty);
   });
 
   test('una entrega correcta cierra la transacción y limpia el error',

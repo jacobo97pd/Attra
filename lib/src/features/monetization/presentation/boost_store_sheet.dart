@@ -122,6 +122,7 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
       // valor con el que se abrió (0), y parecía que no había servido de nada.
       _iap = shared..addListener(_onIap);
       _iap.clearError();
+      _showPendingNotice();
       return;
     }
     _ownsIap = true;
@@ -129,6 +130,19 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
       ..deliver = _deliver
       ..addListener(_onIap);
     _iap.init(productIds: _consumableIds);
+  }
+
+  /// Aviso de la recuperación de compras del arranque. No puede viajar en
+  /// `error` porque `clearError()` lo borra justo aquí, antes de que nadie lo
+  /// pinte, y un pack de Attras recuperado (o rechazado) es dinero del usuario:
+  /// tiene que enterarse.
+  void _showPendingNotice() {
+    final String? notice = _iap.notice;
+    if (notice == null) return;
+    _iap.clearNotice();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _snack(notice);
+    });
   }
 
   @override

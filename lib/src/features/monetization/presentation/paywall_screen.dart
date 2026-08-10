@@ -164,6 +164,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
       _previousOnRestoreFinished = _iap.onRestoreFinished;
       _iap.onDelivered = _deliveredHandler;
       _iap.clearError();
+      _showPendingNotice();
       return;
     }
     // Camino heredado: sin enrutador de sesión, la pantalla se apaña sola.
@@ -175,6 +176,23 @@ class _PaywallScreenState extends State<PaywallScreen> {
     if (widget.verifySubscription != null) {
       _iap.init(productIds: _ids);
     }
+  }
+
+  /// Enseña el aviso que dejó la recuperación de compras del arranque.
+  ///
+  /// Va aparte de `error` porque ese campo se borra aquí mismo (`clearError`) y
+  /// el aviso se genera cuando la app arranca, mucho antes de que exista esta
+  /// pantalla: metido en `error`, el único mensaje que le explicaba al usuario
+  /// qué había pasado con su dinero no llegaba a pintarse nunca.
+  void _showPendingNotice() {
+    final String? notice = _iap.notice;
+    if (notice == null) return;
+    _iap.clearNotice();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(notice)));
+    });
   }
 
   @override
