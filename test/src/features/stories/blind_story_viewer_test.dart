@@ -1,3 +1,4 @@
+import 'package:attra/src/features/feed/domain/rewind_policy.dart';
 import 'package:attra/src/features/stories/domain/story.dart';
 import 'package:attra/src/features/stories/presentation/blind_story_viewer_screen.dart';
 import 'package:attra/src/features/stories/presentation/blind_wall_controller.dart';
@@ -45,6 +46,17 @@ Story _brokenMedia(String id) => Story.fromMap(id, <String, dynamic>{
 /// Zona derecha de la pantalla de test (800x600): avanzar.
 const Offset _derecha = Offset(700, 300);
 
+/// Un gesto guardado, con el tramo que se quiera probar.
+RewindState _rewind(RewindTier tier, {int gestos = 1, bool usado = false}) {
+  RewindState state = RewindState(tier: tier, usedInSession: usado);
+  for (int i = 0; i < gestos; i++) {
+    state = state.record(
+      RewindEntry(targetUid: 'p$i', kind: FeedActionKind.like),
+    );
+  }
+  return state;
+}
+
 void main() {
   late List<String> vistas;
   late List<String> acciones;
@@ -63,12 +75,17 @@ void main() {
       onSkip: () => acciones.add('skip'),
       onStoriesSeen: (List<Story> s) =>
           vistas.addAll(s.map((Story x) => x.storyId)),
+      onRewind: () async => acciones.add('rewind'),
     );
   });
 
   tearDown(() => controller.dispose());
 
-  Future<void> abrir(WidgetTester tester, List<Story> stories) async {
+  Future<void> abrir(
+    WidgetTester tester,
+    List<Story> stories, {
+    RewindState? rewind,
+  }) async {
     controller.sync(
       person: BlindWallPerson(
         uid: 'a',
@@ -77,6 +94,7 @@ void main() {
         stories: stories,
       ),
       shouldClose: false,
+      rewind: rewind ?? const RewindState(),
     );
     await tester.pumpWidget(
       MaterialApp(home: BlindStoryViewerScreen(controller: controller)),
@@ -228,5 +246,154 @@ void main() {
     expect(vistas, <String>['s1', 's2']);
 
     await cerrar(tester);
+  });
+
+  group('Marcha atrás desde el visor', () {
+    // Discover ES el muro: el like y el pase se dan AQUÍ, así que si el botón de
+    // deshacer no está aquí, no está en ninguna parte. Antes lo único que había
+    // era un SnackBar de 4 segundos que ni siquiera salía desde el visor.
+    final Finder boton =
+        find.byKey(const ValueKey<String>('blind-viewer-rewind'));
+
+    testWidgets('el botón se ve en los TRES tramos, también en Free', (
+      WidgetTester tester,
+    ) async {
+      // Free lo ve a propósito: es el gancho. Lo que no puede es parecer roto.
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.free));
+      expect(boton, findsOneWidget);
+      await cerrar(tester);
+
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.plus));
+      expect(boton, findsOneWidget);
+      await cerrar(tester);
+
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.pro, gestos: 3));
+      expect(boton, findsOneWidget);
+      await cerrar(tester);
+    });
+
+    testWidgets('pulsarlo devuelve la acción al feed, no la resuelve aquí', (
+      WidgetTester tester,
+    ) async {
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.plus));
+      await tester.tap(boton);
+      await tester.pump();
+      expect(acciones, <String>['rewind']);
+      await cerrar(tester);
+    });
+
+    testWidgets('Free también llega al feed (allí está el paywall)', (
+      WidgetTester tester,
+    ) async {
+      // El botón NO se apaga para Free: el mensaje y el paywall los decide el
+      // feed, que es quien sabe el plan. Si el visor lo bloqueara por su cuenta,
+      // el gancho no llevaría a ninguna parte.
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.free));
+      await tester.tap(boton);
+      await tester.pump();
+      expect(acciones, <String>['rewind']);
+      await cerrar(tester);
+    });
+
+    testWidgets('sin nada que deshacer SIGUE respondiendo (no se queda mudo)', (
+      WidgetTester tester,
+    ) async {
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: const RewindState(tier: RewindTier.plus, usedInSession: true));
+      await tester.tap(boton);
+      await tester.pump();
+      expect(acciones, <String>['rewind'],
+          reason: 'el feed es quien explica que ya no queda nada; un botón '
+              'muerto parecería un fallo de la app');
+      await cerrar(tester);
+    });
+
+    testWidgets('sin poder deshacer, NO reinicia la historia que estás viendo', (
+      WidgetTester tester,
+    ) async {
+      // El botón dorado es el gancho de Free: está diseñado para que lo pulse.
+      // Si cada toque recarga el medio, el usuario pierde el vídeo que estaba
+      // viendo —y en Free encima suena desde el segundo 0 por detrás del
+      // paywall— justo al pulsar lo que la app quiere que pulse. Recargar
+      // también volvía a marcar la historia como vista.
+      await abrir(tester, <Story>[_photo('s1', seconds: 6)],
+          rewind: _rewind(RewindTier.free));
+      expect(vistas, <String>['s1']);
+
+      await tester.tap(boton);
+      await tester.pump();
+      expect(acciones, <String>['rewind'], reason: 'el aviso lo da el feed');
+      expect(vistas, <String>['s1'],
+          reason: 'recargar la contaría como vista otra vez y la pondría desde '
+              'el principio');
+      await cerrar(tester);
+
+      // Mismo caso con Plus sin nada guardado: tampoco hay nada que recargar.
+      await abrir(tester, <Story>[_photo('s1', seconds: 6)],
+          rewind: const RewindState(tier: RewindTier.plus, usedInSession: true));
+      final int marcasAntes = vistas.length;
+      await tester.tap(boton);
+      await tester.pump();
+      expect(vistas.length, marcasAntes);
+      await cerrar(tester);
+    });
+
+    testWidgets('Pro ve cuántos gestos le quedan', (
+      WidgetTester tester,
+    ) async {
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.pro, gestos: 3));
+      expect(find.text('3'), findsOneWidget);
+      await cerrar(tester);
+    });
+
+    testWidgets('el contador no sale con un solo gesto (sería ruido)', (
+      WidgetTester tester,
+    ) async {
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.plus));
+      expect(find.text('1'), findsNothing);
+      await cerrar(tester);
+    });
+
+    testWidgets('la barra de cuatro botones cabe en un móvil pequeño', (
+      WidgetTester tester,
+    ) async {
+      // El botón nuevo entra en una fila que ya tenía tres: si no cupiera, la
+      // barra de acciones entera se pinta con la franja de desbordamiento
+      // encima del vídeo de otra persona.
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.pro, gestos: 12));
+      expect(tester.takeException(), isNull);
+      expect(boton, findsOneWidget);
+      await cerrar(tester);
+    });
+
+    testWidgets('con una acción en vuelo no se puede deshacer', (
+      WidgetTester tester,
+    ) async {
+      // Deshacer a mitad de un like mandaría el rewind sobre la persona
+      // equivocada: la barra entera se bloquea mientras la acción se anima.
+      await abrir(tester, <Story>[_photo('s1')],
+          rewind: _rewind(RewindTier.pro, gestos: 2));
+      await tester.tap(find.byKey(const ValueKey<String>('blind-viewer-pass')));
+      await tester.pump();
+      await tester.tap(boton, warnIfMissed: false);
+      await tester.pump();
+      expect(acciones.contains('rewind'), isFalse);
+      // Terminada la animación del pase, la acción que sale es el pase.
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(acciones, <String>['pass']);
+      await cerrar(tester);
+    });
   });
 }

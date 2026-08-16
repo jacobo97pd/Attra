@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../feed/domain/rewind_policy.dart';
 import '../domain/story.dart';
 import '../domain/story_composer.dart';
 import 'blind_wall_controller.dart';
@@ -20,6 +21,12 @@ import 'blind_wall_controller.dart';
 /// y el botón central manda un Super Attra. Ninguna de esas acciones se resuelve
 /// aquí: todas vuelven al feed por [BlindWallController] para que compartan gate
 /// de likes, contadores, métricas, rewind y anuncios.
+///
+/// La barra de acciones lleva además la MARCHA ATRÁS, porque es aquí donde se
+/// dan los likes y los pases. El estado (bloqueada, disponible, sin nada que
+/// deshacer) lo calcula el feed en [RewindState]: el visor solo lo pinta. Ese
+/// botón no rompe el "a ciegas": habla del plan de quien mira, no de la persona
+/// que se está viendo.
 ///
 /// No hay música ni pista de audio propia: lo único que suena es el audio del
 /// vídeo que ha grabado esa persona.
@@ -340,7 +347,8 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
 
   /// Retrocede DENTRO de la persona. No vuelve a la persona anterior a
   /// propósito: a esa ya se le mandó un like o un pase, y "des-verla" no
-  /// desharía la acción (para eso está el rewind del feed, con su gate de plan).
+  /// desharía la acción. Para eso está el botón de marcha atrás de la barra,
+  /// que sí deshace el gesto (con su gate de plan).
   void _prev() {
     if (_locked) return;
     if (_storyIndex == 0) {
@@ -466,6 +474,27 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   void _superAttra() {
     if (_locked) return;
     unawaited(_act(widget.controller.onSuperAttra));
+  }
+
+  /// Marcha atrás DESDE el visor: aquí es donde se dan los likes y los pases, así
+  /// que aquí tiene que estar el botón de deshacerlos.
+  ///
+  /// Va por `_act` como el resto: pausa el medio, bloquea la entrada y, cuando el
+  /// feed contesta, recarga lo que toque (la persona recuperada si se deshizo, o
+  /// la misma si el plan no lo permitía). Sin eso, el visor se quedaba con el
+  /// temporizador cancelado y la historia congelada.
+  void _rewind() {
+    if (_locked) return;
+    // Bloqueada (Free) o sin munición, el feed solo enseña un aviso —y abre el
+    // paywall—: no hay ni llamada de red ni cambio de persona. Pasarlo por
+    // `_act` recargaba la historia desde el segundo 0 CADA vez que se tocaba el
+    // gancho, por debajo del paywall, así que el usuario perdía el vídeo que
+    // estaba viendo justo al pulsar el botón que la app quiere que pulse.
+    if (widget.controller.rewind.status != RewindStatus.ready) {
+      unawaited(widget.controller.onRewind());
+      return;
+    }
+    unawaited(_act(widget.controller.onRewind));
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
@@ -747,32 +776,64 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   Widget _actionBar() {
+    final RewindState rewind = widget.controller.rewind;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 22),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 22),
+      // Cada botón en su columna elástica: con tres cabían holgados, con cuatro
+      // (y las etiquetas, que son más anchas que los círculos) la fila se salía
+      // 49 px en una pantalla de 320 y pintaba la franja de desbordamiento
+      // encima del vídeo de otra persona.
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: <Widget>[
-          _ActionButton(
-            key: const ValueKey<String>('blind-viewer-pass'),
-            icon: Icons.close_rounded,
-            label: 'Paso',
-            color: Colors.white,
-            onTap: _locked ? null : _pass,
+          // La marcha atrás va la PRIMERA, fuera del trío like/pase/Attra: no es
+          // una opinión sobre esta persona, es corregir la anterior.
+          //
+          // Bloqueada (Free) NO se apaga: se ve en dorado, como el Super Attra,
+          // porque es el gancho. Apagada de verdad solo cuando no queda nada que
+          // deshacer, y aun así responde al toque para decirlo.
+          Expanded(
+            child: _ActionButton(
+              key: const ValueKey<String>('blind-viewer-rewind'),
+              icon: Icons.replay_rounded,
+              label: rewind.label,
+              semanticsLabel: '${rewind.label}. ${rewind.hint}',
+              tooltip: rewind.hint,
+              color: rewind.status == RewindStatus.locked
+                  ? AppColors.gold
+                  : Colors.white,
+              dimmed: rewind.status == RewindStatus.empty,
+              badge: rewind.counterLabel,
+              small: true,
+              onTap: _locked ? null : _rewind,
+            ),
           ),
-          _ActionButton(
-            key: const ValueKey<String>('blind-viewer-attra'),
-            icon: Icons.star_rounded,
-            label: 'Super Attra',
-            color: AppColors.gold,
-            big: true,
-            onTap: _locked ? null : _superAttra,
+          Expanded(
+            child: _ActionButton(
+              key: const ValueKey<String>('blind-viewer-pass'),
+              icon: Icons.close_rounded,
+              label: 'Paso',
+              color: Colors.white,
+              onTap: _locked ? null : _pass,
+            ),
           ),
-          _ActionButton(
-            key: const ValueKey<String>('blind-viewer-like'),
-            icon: Icons.favorite_rounded,
-            label: 'Me gusta',
-            color: AppColors.attraRed,
-            onTap: _locked ? null : () => unawaited(_like()),
+          Expanded(
+            child: _ActionButton(
+              key: const ValueKey<String>('blind-viewer-attra'),
+              icon: Icons.star_rounded,
+              label: 'Super Attra',
+              color: AppColors.gold,
+              big: true,
+              onTap: _locked ? null : _superAttra,
+            ),
+          ),
+          Expanded(
+            child: _ActionButton(
+              key: const ValueKey<String>('blind-viewer-like'),
+              icon: Icons.favorite_rounded,
+              label: 'Me gusta',
+              color: AppColors.attraRed,
+              onTap: _locked ? null : () => unawaited(_like()),
+            ),
           ),
         ],
       ),
@@ -832,6 +893,11 @@ class _ActionButton extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.big = false,
+    this.small = false,
+    this.dimmed = false,
+    this.badge,
+    this.semanticsLabel,
+    this.tooltip,
   });
 
   final IconData icon;
@@ -840,35 +906,89 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool big;
 
+  /// Acción secundaria (la marcha atrás): más pequeña, para que no compita con
+  /// like/pase/Attra, que son la decisión de verdad.
+  final bool small;
+
+  /// Se ve pero está sin munición. Distinto de `onTap == null`: sigue
+  /// respondiendo al toque para poder EXPLICAR por qué no hace nada, en vez de
+  /// quedarse mudo.
+  final bool dimmed;
+
+  /// Contador pequeño sobre el icono (cuántos gestos quedan por deshacer).
+  final String? badge;
+  final String? semanticsLabel;
+  final String? tooltip;
+
   @override
   Widget build(BuildContext context) {
-    final double size = big ? 68 : 56;
-    return Semantics(
+    final double size = big
+        ? 68
+        : small
+            ? 48
+            : 56;
+    final Color iconColor =
+        (onTap == null || dimmed) ? Colors.white38 : color;
+    final Widget button = Semantics(
       button: true,
-      label: label,
+      enabled: onTap != null,
+      label: semanticsLabel ?? label,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Material(
-            color: Colors.white.withValues(alpha: 0.14),
-            shape: const CircleBorder(),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              child: SizedBox(
-                width: size,
-                height: size,
-                child: Icon(icon,
-                    color: onTap == null ? Colors.white38 : color,
-                    size: big ? 34 : 28),
+          Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              Material(
+                color: Colors.white.withValues(alpha: 0.14),
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onTap,
+                  child: SizedBox(
+                    width: size,
+                    height: size,
+                    child: Icon(icon,
+                        color: iconColor,
+                        size: big
+                            ? 34
+                            : small
+                                ? 24
+                                : 28),
+                  ),
+                ),
               ),
-            ),
+              if (badge != null)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badge!,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
             label,
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
+              color: Colors.white.withValues(alpha: dimmed ? 0.5 : 0.8),
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
@@ -876,6 +996,9 @@ class _ActionButton extends StatelessWidget {
         ],
       ),
     );
+    final String? message = tooltip;
+    if (message == null) return button;
+    return Tooltip(message: message, child: button);
   }
 }
 

@@ -28,6 +28,13 @@ class FeedMetricsService {
   static const String attraSent = 'attraSent';
   static const String nopeSent = 'nopeSent';
   static const String matchCreated = 'matchCreated';
+
+  /// Marcha atrás. Sin estos dos eventos, `likeSent`/`nopeSent` se quedan en el
+  /// embudo contando gestos que el usuario deshizo, y la pregunta que paga la
+  /// función ("¿se usa? ¿convierte el gancho de Free en Plus?") no se puede
+  /// responder con lo que la app graba.
+  static const String rewindUsed = 'rewindUsed';
+  static const String rewindBlocked = 'rewindBlocked';
   static const String messageSent = 'messageSent';
   static const String firstMessageSent = 'firstMessageSent';
   static const String conversationStarted = 'conversationStarted';

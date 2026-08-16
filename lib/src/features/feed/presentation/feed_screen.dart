@@ -54,6 +54,7 @@ import '../domain/feed_filters.dart';
 import '../domain/liked_me_ranker.dart';
 import '../domain/ranking.dart';
 import '../domain/ranking_config.dart';
+import '../domain/rewind_policy.dart';
 import '../domain/slow_dating.dart';
 import 'filters_screen.dart';
 
@@ -197,14 +198,6 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
-enum _FeedActionKind {
-  like('like'),
-  pass('pass');
-
-  const _FeedActionKind(this.wireName);
-  final String wireName;
-}
-
 /// Resultado de una búsqueda IA del feed (foto de referencia o descripción).
 ///
 /// Antes estas búsquedas devolvían simplemente una lista vacía en TODOS los
@@ -248,18 +241,6 @@ class _AiSearchState {
   String get label => byPrompt
       ? (query.isEmpty ? 'Búsqueda por descripción' : '«$query»')
       : 'Solo parecidos a mi referencia';
-}
-
-class _FeedRewindAction {
-  const _FeedRewindAction({
-    required this.index,
-    required this.targetUid,
-    required this.kind,
-  });
-
-  final int index;
-  final String targetUid;
-  final _FeedActionKind kind;
 }
 
 class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
@@ -342,7 +323,16 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   bool _blindViewerOpen = false;
 
   bool _rewinding = false;
-  List<_FeedRewindAction> _rewindHistory = const <_FeedRewindAction>[];
+
+  /// Marcha atrás de esta sesión. La REGLA (qué guarda cada plan, qué se puede
+  /// deshacer, qué se le dice al usuario) vive en [RewindState], que es puro y
+  /// testeable; aquí solo se guarda el historial y se aplica el resultado.
+  ///
+  /// El tramo NO se guarda dentro: se recalcula en [_rewindState] desde los
+  /// props, porque el plan cambia en caliente (se compra Plus desde el paywall,
+  /// o caduca una suscripción con la app abierta) y un tramo congelado en el
+  /// `initState` seguiría mandando al paywall a quien acaba de pagar.
+  RewindState _rewind = const RewindState();
   FeedFilters _filters = const FeedFilters();
 
   /// Estado de la búsqueda IA de la última carga. null = no hay ninguna pedida.
@@ -984,6 +974,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // El visor se cierra solo cuando toca anuncio intercalado o cuando se
       // acaba el muro: son estados del FEED, no del visor.
       shouldClose: _pendingAd || person == null,
+      // La marcha atrás también es estado del feed: el visor pinta el botón con
+      // esto y no lleva historial propio.
+      rewind: _rewindState,
     );
   }
 
@@ -1007,12 +1000,20 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // impresión, igual que pasar de tarjeta).
       onSkip: _advance,
       onStoriesSeen: _markStoriesSeen,
+      // Marcha atrás: MISMO método que el botón de la tarjeta del feed. El visor
+      // no puede tener su propio historial ni su propio gate de plan, o serían
+      // dos verdades distintas sobre lo mismo.
+      onRewind: _onRewind,
       onSafety: () {
         final SeedProfile? p = _profileAtIndex();
         if (p != null) unawaited(_openSafetyMenu(p));
       },
     );
-    wall.sync(person: _currentBlindPerson, shouldClose: false);
+    wall.sync(
+      person: _currentBlindPerson,
+      shouldClose: false,
+      rewind: _rewindState,
+    );
     _blindViewerOpen = true;
     // Fundido corto en vez del deslizamiento de página: el visor es Discover a
     // pantalla completa, no otra pantalla a la que "se navega".
@@ -1353,7 +1354,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         _impressedUid = '';
         _applyStoryWall();
         _pendingAd = false;
-        _rewindHistory = const <_FeedRewindAction>[];
+        // Pool nuevo: los gestos guardados apuntaban al muro anterior. Se
+        // conserva `usedInSession` para no volver a decir "todavía no hay nada
+        // que deshacer" a quien ya lo ha usado.
+        _rewind = _rewindState.clearHistory();
         _rewinding = false;
         _loading = false;
       });
@@ -1404,32 +1408,53 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   int _swipesSinceAd = 0;
   bool _pendingAd = false;
 
+  /// Pasa de tarjeta después de un gesto.
+  ///
+  /// [targetUid] es sobre QUIÉN fue el gesto y se pasa explícito porque no
+  /// siempre es la tarjeta actual: con un modal abierto (la hoja de respuesta a
+  /// una foto) el muro se recompone por debajo —el stream de historias es
+  /// global— y `_profiles[_index]` puede apuntar ya a otra persona. Cogerlo del
+  /// índice guardaba el rewind sobre alguien a quien no se le mandó nada y
+  /// marcaba como decidida a una persona que el usuario ni había visto.
   void _advance({
-    _FeedActionKind? rewindAction,
-    bool clearRewindHistory = false,
+    String? targetUid,
+    FeedActionKind? rewindAction,
+    bool notRewindable = false,
   }) {
     // Tras varios perfiles, inserta una ad card (si procede). No al arrancar.
     _swipesSinceAd++;
     final bool showAd = widget.adsEnabled && _swipesSinceAd >= _adFrequency;
+    final String? currentUid = _profileAtIndex()?.id;
+    final String? acted = targetUid ?? currentUid;
     setState(() {
-      if (clearRewindHistory) {
-        _rewindHistory = const <_FeedRewindAction>[];
-      } else if (rewindAction != null && _index < _profiles.length) {
-        final _FeedRewindAction action = _FeedRewindAction(
-          index: _index,
-          targetUid: _profiles[_index].id,
-          kind: rewindAction,
-        );
-        _rewindHistory = widget.rewindUnlimited
-            ? <_FeedRewindAction>[..._rewindHistory, action]
-            : <_FeedRewindAction>[action];
+      if (acted != null) {
+        if (rewindAction != null) {
+          // Cuántos se guardan (uno o todos) lo decide el tramo dentro de
+          // `record`. Aquí ya no hay ningún `if` de plan: cuando la regla estaba
+          // partida entre este método y `_onRewind` no había forma de probarla.
+          _rewind = _rewindState
+              .record(RewindEntry(targetUid: acted, kind: rewindAction));
+        } else if (notRewindable) {
+          // Super Attra: el backend se niega a deshacerlo, así que se quita SU
+          // entrada (por si esa persona ya estuviera guardada de antes) y solo
+          // la suya. Vaciar el historial entero borraba los gestos anteriores,
+          // que siguen siendo deshacibles, y encima lo hacía aunque el Attra
+          // acabara fallando por saldo.
+          _rewind = _rewindState.forget(acted);
+        }
+        // Decidido (like, pase, Attra o vistas todas sus historias): no puede
+        // volver a salir cuando el muro se recomponga.
+        _consumed.add(acted);
       }
-      // Decidido (like, pase, Attra o vistas todas sus historias): no puede
-      // volver a salir cuando el muro se recomponga.
-      if (_index >= 0 && _index < _profiles.length) {
-        _consumed.add(_profiles[_index].id);
+      if (acted == null || acted == currentUid) {
+        _index += 1;
+      } else {
+        // El gesto era sobre otra persona (el muro cambió con el modal abierto):
+        // se recompone el muro para sacarla, pero NO se avanza el índice, que
+        // saltaría a quien está delante sin que el usuario haya decidido nada
+        // sobre él.
+        _applyStoryWall();
       }
-      _index += 1;
       if (showAd) {
         _swipesSinceAd = 0;
         _pendingAd = true;
@@ -1440,12 +1465,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   }
 
   void _removeRewindActionFor(String targetUid) {
-    if (_rewindHistory.isEmpty) return;
-    final List<_FeedRewindAction> next = _rewindHistory
-        .where((_FeedRewindAction action) => action.targetUid != targetUid)
-        .toList(growable: false);
-    if (next.length == _rewindHistory.length) return;
-    setState(() => _rewindHistory = next);
+    final RewindState next = _rewindState.forget(targetUid);
+    if (identical(next, _rewind)) return;
+    setState(() => _rewind = next);
   }
 
   /// Registra como "mostrado" el perfil actualmente visible (impresión).
@@ -1500,81 +1522,168 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
 
   void _snack(String message) {
     if (!mounted) return;
+    // Se retira el aviso que hubiera antes de poner el nuevo: los SnackBar se
+    // ENCOLAN, y encadenando gestos (deshacer y volver a pulsar) el usuario leía
+    // la respuesta del gesto anterior mientras la del suyo esperaba turno cuatro
+    // segundos.
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _offerRewind(String message) {
-    if (!mounted || !widget.canRewind || _rewindHistory.isEmpty) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 4),
-        content: Text(message),
-        action: SnackBarAction(
-          label: 'Deshacer',
-          onPressed: _onRewind,
-        ),
-      ),
-    );
-  }
+  /// Tramo vigente, recalculado desde los props en cada lectura (el plan cambia
+  /// en caliente).
+  RewindTier get _rewindTier => RewindTier.forPlan(
+        canRewind: widget.canRewind,
+        unlimited: widget.rewindUnlimited,
+      );
 
+  /// La marcha atrás con el tramo de AHORA. Es lo que se pinta y lo que se
+  /// modifica: nunca se toca `_rewind` directamente.
+  RewindState get _rewindState => _rewind.withTier(_rewindTier);
+
+  /// Marcha atrás. La ÚNICA ruta: la usan el botón de la tarjeta del feed y el
+  /// del visor a ciegas.
+  ///
+  /// Antes lo único que ofrecía deshacer era un SnackBar de 4 segundos tras cada
+  /// like o pase: si no lo cazabas, no había forma de volver. Y desde el muro de
+  /// historias no había ninguna, porque las acciones se toman en el visor.
   Future<void> _onRewind() async {
-    if (!widget.canRewind) {
-      _snack('Volver atras es para Plus y Pro.');
-      widget.onOpenUpgrade?.call();
+    if (_rewinding) return;
+    // Un like o un pase TODAVÍA EN VUELO no se puede deshacer: `rewindFeedAction`
+    // leería el documento antes de que la transacción de `sendLike` lo
+    // escribiera, contestaría "no había nada que deshacer" y el like acabaría
+    // enviado igualmente. Y arrepentirse en el segundo siguiente es justo la
+    // razón de ser de este botón, así que la carrera no es teórica.
+    if (_sending > 0) {
+      _snack('Tu último gesto todavía está saliendo. Prueba en un segundo.');
       return;
     }
-    if (_rewinding) return;
-    if (_rewindHistory.isEmpty) {
-      _snack('No hay ningun perfil anterior para volver.');
-      return;
+    final RewindState state = _rewindState;
+    switch (state.status) {
+      case RewindStatus.locked:
+        // Free ve el botón a propósito (es el gancho), pero al pulsarlo tiene
+        // que entender POR QUÉ no pasa nada y qué le daría cada plan.
+        widget.metrics?.log(FeedMetricsService.rewindBlocked,
+            uid: _uid,
+            targetUid: state.history.isEmpty
+                ? null
+                : state.history.last.targetUid,
+            meta: <String, dynamic>{'tier': _planLabel});
+        _snack(state.lockedMessage);
+        widget.onOpenUpgrade?.call();
+        return;
+      case RewindStatus.empty:
+        // Sin nada guardado el botón no puede quedarse mudo: parecería roto.
+        _snack(state.emptyMessage);
+        return;
+      case RewindStatus.ready:
+        break;
     }
 
-    final _FeedRewindAction action = _rewindHistory.last;
+    final RewindEntry action = state.pending!;
     setState(() => _rewinding = true);
     try {
-      await widget.matchService.rewindFeedAction(
+      // Se LEE el bool: el backend distingue "deshecho" de "no había nada que
+      // deshacer" (`rewound`) precisamente para esto. Tirarlo hacía que un gesto
+      // que nunca llegó a escribirse (tope diario alcanzado, pase que falló y se
+      // tragó su error) se cobrara como marcha atrás gastada y encima se
+      // anunciara como "Hecho".
+      final bool rewound = await widget.matchService.rewindFeedAction(
         targetUid: action.targetUid,
         action: action.kind.wireName,
       );
       if (!mounted) return;
+      bool volvio = false;
       setState(() {
         _pendingAd = false;
-        if (_profiles.isEmpty) {
-          _index = 0;
-        } else {
-          // Manda el UID, no la posición guardada: el muro se recompone solo
-          // (historias que caducan, bloqueos) y el índice de entonces puede
-          // apuntar ya a otra persona.
-          final int found = _profiles
-              .indexWhere((SeedProfile p) => p.id == action.targetUid);
-          final int maxIndex = _profiles.length - 1;
-          _index = found >= 0
-              ? found
-              : action.index < 0
-                  ? 0
-                  : action.index > maxIndex
-                      ? maxIndex
-                      : action.index;
-        }
-        _rewindHistory = _rewindHistory
-            .sublist(0, _rewindHistory.length - 1)
-            .toList(growable: false);
         _excluded = <String>{..._excluded}..remove(action.targetUid);
         // Deshecha la acción, deja de estar decidido: puede volver a salir.
+        // Sin esto el perfil no reaparece y el usuario habría gastado su marcha
+        // atrás para nada.
         _consumed.remove(action.targetUid);
+        // Se busca por UID, no por la posición guardada: el muro se recompone
+        // solo (historias que caducan, bloqueos) y el índice de entonces puede
+        // apuntar ya a otra persona.
+        int found =
+            _profiles.indexWhere((SeedProfile p) => p.id == action.targetUid);
+        if (found < 0) {
+          // Ya no estaba en el muro. Se recompone AQUÍ, con `_consumed` y
+          // `_excluded` recién limpiados: si solo la sacaba una de esas dos
+          // listas, vuelve ahora mismo en vez de esperar a un snapshot ajeno o a
+          // una recarga (que además borra el historial).
+          _applyStoryWall();
+          found =
+              _profiles.indexWhere((SeedProfile p) => p.id == action.targetUid);
+        }
+        volvio = found >= 0;
+        if (volvio) _index = found;
+        // Solo cuenta como marcha atrás GASTADA si el servidor deshizo algo. Si
+        // no había nada registrado se olvida el gesto (no era deshacible) pero
+        // no se le cobra al usuario su única marcha atrás.
+        _rewind = rewound
+            ? _rewindState.undoFor(action.targetUid)
+            : _rewindState.forget(action.targetUid);
         _rewinding = false;
       });
+      if (rewound) {
+        // Sin este evento no hay forma de responder a la pregunta que paga la
+        // función ("¿se usa la marcha atrás?"), y el embudo se queda con los
+        // likeSent/nopeSent de gestos que ya no existen.
+        widget.metrics?.log(FeedMetricsService.rewindUsed,
+            uid: _uid,
+            targetUid: action.targetUid,
+            meta: <String, dynamic>{
+              'kind': action.kind.wireName,
+              'tier': _planLabel,
+            });
+      }
+      if (!rewound) {
+        _snack('Ese gesto no llegó a registrarse, así que no te hemos gastado '
+            'la marcha atrás.');
+      } else if (!volvio) {
+        // Se ha deshecho de verdad, pero no hay a quién enseñar: decirlo es la
+        // diferencia entre "el botón está roto" y "ya está hecho".
+        _snack('Hecho. Ahora mismo no podemos volver a enseñártela; '
+            'reaparecerá en cuanto recargues el feed.');
+      } else {
+        // Se dice lo que queda DESPUÉS de deshacer: es la diferencia entre
+        // "puedes seguir" (Pro) y "hasta el siguiente gesto" (Plus).
+        _snack(_rewindState.doneMessage);
+      }
       _precacheNext();
       _recordCurrentImpression();
     } on MatchServiceException catch (error) {
       _snack(error.message);
+      // El gesto solo se OLVIDA cuando el "no" es definitivo (ya hay match, era
+      // un Attra, no es tuyo). `_call` envuelve TODAS las
+      // FirebaseFunctionsException por igual, así que olvidarlo siempre se comía
+      // la única marcha atrás de un Plus por un bache de cobertura —dejando el
+      // gesto vivo en el servidor y el botón diciendo "ya no queda nada", que
+      // era falso.
+      if (mounted && _isPermanentRewindError(error.code)) {
+        setState(() => _rewind = _rewindState.forget(action.targetUid));
+      }
+    } catch (_) {
+      // `_call` solo envuelve las FirebaseFunctionsException: un
+      // PlatformException del plugin, un timeout o un error de serialización
+      // salían crudos, y como el botón invoca esto como VoidCallback el Future
+      // se descartaba sin observar. El usuario veía girar el icono y nada más.
+      _snack('No hemos podido deshacerlo. Inténtalo otra vez.');
     } finally {
       if (mounted && _rewinding) {
         setState(() => _rewinding = false);
       }
     }
   }
+
+  /// Códigos de `rewindFeedAction` que significan "esto no se va a poder
+  /// deshacer NUNCA". El resto (`unavailable`, `deadline-exceeded`, `internal`,
+  /// `resource-exhausted`…) son transitorios y el gesto se conserva.
+  static bool _isPermanentRewindError(String? code) =>
+      code == 'failed-precondition' ||
+      code == 'permission-denied' ||
+      code == 'invalid-argument';
 
   String get _planLabel => widget.isPro
       ? 'pro'
@@ -1622,8 +1731,11 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   Future<void> _onLikeProfile(SeedProfile profile) async {
     widget.metrics
         ?.log(FeedMetricsService.likeSent, uid: _uid, targetUid: profile.id);
-    _advance(rewindAction: _FeedActionKind.like);
-    _offerRewind('Like enviado');
+    // Sin SnackBar de "Like enviado / Deshacer": era la ÚNICA forma de volver
+    // atrás y duraba 4 segundos. Ahora deshacer es un botón permanente (en la
+    // tarjeta y en el visor a ciegas), así que el aviso fugaz solo tapaba la
+    // barra de acciones del visor.
+    _advance(targetUid: profile.id, rewindAction: FeedActionKind.like);
     await _sendAndHandle(
         () => widget.matchService.sendLike(profile.id), profile);
   }
@@ -1631,12 +1743,17 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   Future<void> _onPass(SeedProfile profile) async {
     widget.metrics
         ?.log(FeedMetricsService.nopeSent, uid: _uid, targetUid: profile.id);
-    _advance(rewindAction: _FeedActionKind.pass);
-    _offerRewind('Perfil omitido');
+    _advance(targetUid: profile.id, rewindAction: FeedActionKind.pass);
+    _markSending(1);
     try {
       await widget.matchService.passProfile(profile.id);
     } catch (_) {
-      // Descartar es best-effort.
+      // Descartar es best-effort: el gesto SE QUEDA en el historial aunque
+      // falle. Deshacerlo entonces no encuentra dislike, el backend contesta
+      // `rewound: false` y `_onRewind` repone a la persona sin cobrar la marcha
+      // atrás, que es exactamente lo que el usuario quiere en ese caso.
+    } finally {
+      _markSending(-1);
     }
   }
 
@@ -1657,7 +1774,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     }
     widget.metrics
         ?.log(FeedMetricsService.attraSent, uid: _uid, targetUid: profile.id);
-    _advance(clearRewindHistory: true);
+    _advance(targetUid: profile.id, notRewindable: true);
     await _sendAndHandle(
         () => widget.matchService.sendAttra(profile.id), profile);
   }
@@ -1692,8 +1809,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     if (res.kind == PhotoResponseKind.like) {
       widget.metrics
           ?.log(FeedMetricsService.likeSent, uid: _uid, targetUid: profile.id);
-      _advance(rewindAction: _FeedActionKind.like);
-      _offerRewind('Like enviado');
+      _advance(targetUid: profile.id, rewindAction: FeedActionKind.like);
       await _sendAndHandle(
         () => widget.matchService
             .sendLike(profile.id, targetPhotoId: photoId, comment: res.comment),
@@ -1702,7 +1818,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     } else {
       widget.metrics
           ?.log(FeedMetricsService.attraSent, uid: _uid, targetUid: profile.id);
-      _advance(clearRewindHistory: true);
+      _advance(targetUid: profile.id, notRewindable: true);
       await _sendAndHandle(
         () => widget.matchService.sendAttra(profile.id,
             targetPhotoId: photoId, comment: res.comment),
@@ -1761,11 +1877,36 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         .toList(growable: false);
   }
 
+  /// Gestos EN VUELO (like/Attra/pase que el backend todavía no ha confirmado).
+  ///
+  /// Es un contador y no un bool porque el visor a ciegas y la tarjeta pueden
+  /// encadenar gestos antes de que el anterior conteste. Mientras haya alguno,
+  /// la marcha atrás espera: deshacer un like que aún no se ha escrito es un
+  /// no-op que además deja el like enviado.
+  int _sending = 0;
+
+  void _markSending(int delta) {
+    _sending += delta;
+    if (mounted) setState(() {});
+  }
+
   Future<void> _sendAndHandle(
       Future<MatchFlowResult> Function() call, SeedProfile profile) async {
+    final MatchFlowResult result;
+    _markSending(1);
     try {
-      final MatchFlowResult result = await call();
-      if (!mounted) return;
+      result = await call();
+    } on MatchServiceException catch (error) {
+      _snack(error.message);
+      return;
+    } finally {
+      // Se suelta ANTES de los diálogos (match, revelado): son del usuario, no
+      // de la red, y mantener el botón en espera mientras están abiertos lo
+      // dejaría bloqueado minutos.
+      _markSending(-1);
+    }
+    if (!mounted) return;
+    try {
       switch (result.outcome) {
         case MatchOutcome.matched:
           _removeRewindActionFor(profile.id);
@@ -2301,89 +2442,25 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     // se reinicia el indice (los perfiles vistos no deben reaparecer); solo
     // "Recargar" vuelve a consultar y re-excluye lo ya likeado/pasado/matcheado.
     if (_profiles.isEmpty || _index >= _profiles.length) {
-      // El stream de historias se cayó antes de traer nada: el muro no está
-      // vacío, es que no se ha podido leer. Va lo PRIMERO porque cualquier otro
-      // mensaje de aquí (filtro IA, "nadie está contando nada") culparía a quien
-      // no es y encima ofrecía un botón que no arreglaba nada.
-      if (_storyWallActive && _storiesUnavailable && _storiesByOwner.isEmpty) {
-        return AttraEmptyState(
-          icon: Icons.cloud_off_rounded,
-          title: 'No hemos podido cargar las historias',
-          message:
-              'Puede ser la conexión. Lo reintentamos solos cada pocos segundos; si tienes prisa, prueba tú.',
-          actionLabel: 'Reintentar',
-          onAction: _reloadWall,
-        );
-      }
-      // Feed vacío CON búsqueda IA aplicada: la causa es el filtro, no la falta
-      // de gente. Se explica y se ofrece quitarlo (antes: mensaje genérico).
-      final _AiSearchState? ai = _aiSearch;
-      // (Con `ok` o `notEntitled` la IA no es la culpable: el feed venía vacío
-      // de los filtros previos o el filtro ni se aplicó → mensaje genérico.)
-      if (ai != null &&
-          _profiles.isEmpty &&
-          ai.status != _AiSearchStatus.ok &&
-          ai.status != _AiSearchStatus.notEntitled) {
-        return _aiEmptyState(ai);
-      }
-      // Fin de la segunda vuelta: se acabaron los perfiles que pasaste.
-      if (_secondRound) {
-        return AttraEmptyState(
-          icon: Icons.refresh_rounded,
-          title: 'Fin de la segunda vuelta',
-          message:
-              'Ya has revisado a quienes pasaste. Vuelve al feed normal para descubrir gente nueva.',
-          actionLabel: 'Volver al feed',
-          onAction: _exitSecondRound,
-        );
-      }
-      // Muro vacío HABIENDO gente compatible: la causa no es que no haya
-      // perfiles, es que nadie ha publicado. Decirlo evita que el usuario crea
-      // que sus filtros están mal puestos.
-      if (_storyWallActive && _rankedPool.isNotEmpty) {
-        const String wallMessage =
-            'Aquí solo aparece quien tiene una historia viva: se descubre a la gente por lo que cuenta, no por su ficha. Las historias duran 72 h, así que vuelve en un rato.';
-        // La segunda vuelta sigue existiendo en el muro: a quien pasaste puede
-        // haberle caducado la historia que viste y haber publicado otra.
-        if (_dislikedUids.isNotEmpty) {
-          return _FeedEndState(
-            icon: Icons.auto_stories_outlined,
-            title: 'Nadie está contando nada ahora mismo',
-            message: wallMessage,
-            primaryLabel: 'Recargar',
-            onPrimary: _reloadWall,
-            secondaryLabel: 'Dar una segunda vuelta',
-            onSecondary: _enterSecondRound,
-          );
-        }
-        return AttraEmptyState(
-          icon: Icons.auto_stories_outlined,
-          title: 'Nadie está contando nada ahora mismo',
-          message: wallMessage,
-          actionLabel: 'Recargar',
-          onAction: _reloadWall,
-        );
-      }
-      // Feed vacío con pases guardados: ofrece la segunda vuelta.
-      if (_dislikedUids.isNotEmpty) {
-        return _FeedEndState(
-          icon: Icons.replay_rounded,
-          title: 'Se acabó el feed por ahora',
-          message:
-              '¿Quieres dar una segunda vuelta? Puedes volver a ver a las ${_dislikedUids.length} personas que pasaste, por si les das otra oportunidad.',
-          primaryLabel: 'Dar una segunda vuelta',
-          onPrimary: _enterSecondRound,
-          secondaryLabel: 'Recargar',
-          onSecondary: _reloadFeed,
-        );
-      }
-      return AttraEmptyState(
-        icon: Icons.search_off,
-        title: 'No hay más personas por el momento',
-        message:
-            'Cuando entren nuevos perfiles compatibles aparecerán aquí. No volverás a ver a quien ya likeaste o pasaste.',
-        actionLabel: 'Recargar',
-        onAction: _reloadFeed,
+      final Widget empty = _exhaustedContent(context);
+      // El feed se acaba justo DESPUÉS de un gesto, así que aquí es donde más
+      // falta hace poder deshacerlo... y es justo donde ya no hay tarjeta que
+      // lleve el botón. Además "Recargar" borra el historial (el pool es otro),
+      // o sea que sin esto la última marcha atrás se perdía sin usarse.
+      //
+      // Free NO puede deshacer, pero SÍ guarda el gesto, y esta es la pantalla
+      // donde más tiempo pasa: la franja sale también bloqueada (lleva al
+      // paywall) siempre que haya un gesto real detrás. Lo que se oculta es el
+      // estado vacío, que solo podría decir "no queda nada" y sería ruido.
+      final RewindState rewind = _rewindState;
+      final bool hayGesto = rewind.canUndo ||
+          (rewind.status == RewindStatus.locked && rewind.history.isNotEmpty);
+      if (!hayGesto) return empty;
+      return Column(
+        children: <Widget>[
+          Expanded(child: empty),
+          SafeArea(top: false, child: _rewindStrip()),
+        ],
       );
     }
 
@@ -2419,6 +2496,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           stories: stories,
           storySeen: _ownerStoriesSeen(profile.id),
           onOpenStory: _openBlindViewer,
+          // Marcha atrás en la propia tarjeta: es donde se da el like y el pase
+          // cuando el muro está apagado.
+          rewind: _rewindState,
+          rewinding: _rewinding,
+          // Con un gesto en vuelo el botón espera (no gira): deshacer antes de
+          // que el like esté escrito lo dejaría enviado para siempre.
+          pendingSend: _sending > 0,
+          onRewind: _onRewind,
           onBeforeLike: () async => !await _pendingBlocks(isAttra: false),
           onLike: () => _onLikeProfile(profile),
           onPass: () => _onPass(profile),
@@ -2432,6 +2517,117 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           onSafetyMenu: () => _openSafetyMenu(profile),
         ),
       ),
+    );
+  }
+
+  /// Franja de marcha atrás para cuando NO hay tarjeta (feed agotado).
+  ///
+  /// Solo sale si hay un gesto guardado detrás (lo decide quien la pinta): en el
+  /// estado vacío un botón que solo sirve para decir "no queda nada" es ruido.
+  Widget _rewindStrip() {
+    final RewindState state = _rewindState;
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: OutlinedButton.icon(
+        key: const ValueKey<String>('feed-rewind-strip'),
+        onPressed: (_rewinding || _sending > 0) ? null : _onRewind,
+        icon: const Icon(Icons.replay_rounded, size: 18),
+        label: Text(state.hint),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(44),
+          foregroundColor: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
+  /// Estado permanente de "no hay (más) perfiles". Sale de [_buildContent] para
+  /// poder colgarle debajo la marcha atrás sin repetir sus seis ramas.
+  Widget _exhaustedContent(BuildContext context) {
+    // El stream de historias se cayó antes de traer nada: el muro no está
+    // vacío, es que no se ha podido leer. Va lo PRIMERO porque cualquier otro
+    // mensaje de aquí (filtro IA, "nadie está contando nada") culparía a quien
+    // no es y encima ofrecía un botón que no arreglaba nada.
+    if (_storyWallActive && _storiesUnavailable && _storiesByOwner.isEmpty) {
+      return AttraEmptyState(
+        icon: Icons.cloud_off_rounded,
+        title: 'No hemos podido cargar las historias',
+        message:
+            'Puede ser la conexión. Lo reintentamos solos cada pocos segundos; si tienes prisa, prueba tú.',
+        actionLabel: 'Reintentar',
+        onAction: _reloadWall,
+      );
+    }
+    // Feed vacío CON búsqueda IA aplicada: la causa es el filtro, no la falta
+    // de gente. Se explica y se ofrece quitarlo (antes: mensaje genérico).
+    final _AiSearchState? ai = _aiSearch;
+    // (Con `ok` o `notEntitled` la IA no es la culpable: el feed venía vacío
+    // de los filtros previos o el filtro ni se aplicó → mensaje genérico.)
+    if (ai != null &&
+        _profiles.isEmpty &&
+        ai.status != _AiSearchStatus.ok &&
+        ai.status != _AiSearchStatus.notEntitled) {
+      return _aiEmptyState(ai);
+    }
+    // Fin de la segunda vuelta: se acabaron los perfiles que pasaste.
+    if (_secondRound) {
+      return AttraEmptyState(
+        icon: Icons.refresh_rounded,
+        title: 'Fin de la segunda vuelta',
+        message:
+            'Ya has revisado a quienes pasaste. Vuelve al feed normal para descubrir gente nueva.',
+        actionLabel: 'Volver al feed',
+        onAction: _exitSecondRound,
+      );
+    }
+    // Muro vacío HABIENDO gente compatible: la causa no es que no haya
+    // perfiles, es que nadie ha publicado. Decirlo evita que el usuario crea
+    // que sus filtros están mal puestos.
+    if (_storyWallActive && _rankedPool.isNotEmpty) {
+      const String wallMessage =
+          'Aquí solo aparece quien tiene una historia viva: se descubre a la gente por lo que cuenta, no por su ficha. Las historias duran 72 h, así que vuelve en un rato.';
+      // La segunda vuelta sigue existiendo en el muro: a quien pasaste puede
+      // haberle caducado la historia que viste y haber publicado otra.
+      if (_dislikedUids.isNotEmpty) {
+        return _FeedEndState(
+          icon: Icons.auto_stories_outlined,
+          title: 'Nadie está contando nada ahora mismo',
+          message: wallMessage,
+          primaryLabel: 'Recargar',
+          onPrimary: _reloadWall,
+          secondaryLabel: 'Dar una segunda vuelta',
+          onSecondary: _enterSecondRound,
+        );
+      }
+      return AttraEmptyState(
+        icon: Icons.auto_stories_outlined,
+        title: 'Nadie está contando nada ahora mismo',
+        message: wallMessage,
+        actionLabel: 'Recargar',
+        onAction: _reloadWall,
+      );
+    }
+    // Feed vacío con pases guardados: ofrece la segunda vuelta.
+    if (_dislikedUids.isNotEmpty) {
+      return _FeedEndState(
+        icon: Icons.replay_rounded,
+        title: 'Se acabó el feed por ahora',
+        message:
+            '¿Quieres dar una segunda vuelta? Puedes volver a ver a las ${_dislikedUids.length} personas que pasaste, por si les das otra oportunidad.',
+        primaryLabel: 'Dar una segunda vuelta',
+        onPrimary: _enterSecondRound,
+        secondaryLabel: 'Recargar',
+        onSecondary: _reloadFeed,
+      );
+    }
+    return AttraEmptyState(
+      icon: Icons.search_off,
+      title: 'No hay más personas por el momento',
+      message:
+          'Cuando entren nuevos perfiles compatibles aparecerán aquí. No volverás a ver a quien ya likeaste o pasaste.',
+      actionLabel: 'Recargar',
+      onAction: _reloadFeed,
     );
   }
 
@@ -2473,6 +2669,10 @@ class _SwipeCard extends StatefulWidget {
     required this.onRespondToPhoto,
     required this.onRespondToPrompt,
     required this.onSafetyMenu,
+    required this.rewind,
+    required this.onRewind,
+    this.rewinding = false,
+    this.pendingSend = false,
     this.likedMe = false,
     this.stories = const <Story>[],
     this.storySeen = false,
@@ -2481,6 +2681,19 @@ class _SwipeCard extends StatefulWidget {
 
   final SeedProfile profile;
   final bool likedMe;
+
+  /// Marcha atrás: estado (calculado por el feed) y acción. La tarjeta no sabe
+  /// de planes ni de historial, solo lo pinta.
+  final RewindState rewind;
+
+  /// Hay una marcha atrás EN CURSO: el botón gira y la tarjeta deja de aceptar
+  /// deslizamientos. Sin ese bloqueo, un swipe a mitad de la llamada guardaba un
+  /// gesto nuevo que la respuesta del rewind descartaba en su lugar.
+  final bool rewinding;
+
+  /// Hay un like/pase saliendo todavía: el botón espera, sin girar.
+  final bool pendingSend;
+  final VoidCallback onRewind;
 
   /// Historias vivas de esta persona. Si NO está vacío, la tarjeta es la pila a
   /// ciegas del muro; si está vacío, la tarjeta de perfil de siempre (que es lo
@@ -2577,11 +2790,17 @@ class _SwipeCardState extends State<_SwipeCard>
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
-    if (_checkingLike) return;
+    // Mientras se deshace un gesto la tarjeta no acepta otro: la marcha atrás
+    // está a punto de recolocar el muro y el like caería sobre quien no es.
+    if (_checkingLike || widget.rewinding) return;
     setState(() => _dx += d.delta.dx);
   }
 
   void _onDragEnd(DragEndDetails d) {
+    if (widget.rewinding) {
+      _runTo(0);
+      return;
+    }
     if (_dx.abs() > _threshold) {
       unawaited(_trySwipe(_dx > 0));
     } else {
@@ -2653,11 +2872,26 @@ class _SwipeCardState extends State<_SwipeCard>
                 children: <Widget>[
                   body,
                   // Guideline 1.2: acceso permanente a Reportar / Bloquear
-                  // sobre la propia tarjeta del feed.
+                  // sobre la propia tarjeta del feed. La marcha atrás va a su
+                  // lado y NO abajo a la izquierda: ahí la tarjeta ya tiene el
+                  // botón de Attra a la foto y el badge de "te dio like" ocupa
+                  // la esquina de arriba.
                   Positioned(
                     top: 12,
                     right: 12,
-                    child: _SafetyCardButton(onPressed: widget.onSafetyMenu),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        _RewindCardButton(
+                          state: widget.rewind,
+                          busy: widget.rewinding,
+                          waiting: widget.pendingSend,
+                          onPressed: widget.onRewind,
+                        ),
+                        const SizedBox(width: 8),
+                        _SafetyCardButton(onPressed: widget.onSafetyMenu),
+                      ],
+                    ),
                   ),
                   Positioned(
                     top: 24,
@@ -2685,6 +2919,94 @@ class _SwipeCardState extends State<_SwipeCard>
           ),
         );
       },
+    );
+  }
+}
+
+/// Marcha atrás en la tarjeta del feed.
+///
+/// SIEMPRE visible, en los tres tramos:
+/// - Free: dorado (como el Attra), porque es el gancho. Al pulsarlo cuenta qué
+///   da cada plan y abre el paywall; no se pinta apagado porque un botón gris
+///   que no responde parece un fallo, no una función de pago.
+/// - Plus/Pro con algo guardado: blanco y con contador cuando hay más de uno.
+/// - Plus/Pro sin nada: atenuado, pero SIGUE respondiendo para poder decir que
+///   no queda nada que deshacer.
+class _RewindCardButton extends StatelessWidget {
+  const _RewindCardButton({
+    required this.state,
+    required this.onPressed,
+    this.busy = false,
+    this.waiting = false,
+  });
+
+  final RewindState state;
+  final VoidCallback onPressed;
+
+  /// Deshaciendo ahora mismo: gira.
+  final bool busy;
+
+  /// Esperando a que el gesto anterior llegue al servidor: no responde, pero
+  /// tampoco gira (no hay nada que el usuario haya pedido todavía).
+  final bool waiting;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool locked = state.status == RewindStatus.locked;
+    final bool empty = state.status == RewindStatus.empty;
+    final Color color = locked
+        ? AppColors.gold
+        : empty
+            ? Colors.white38
+            : Colors.white;
+    final String? counter = state.counterLabel;
+    return Material(
+      color: Colors.black.withValues(alpha: 0.45),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          IconButton(
+            key: const ValueKey<String>('feed-rewind-button'),
+            tooltip: state.hint,
+            onPressed: (busy || waiting) ? null : onPressed,
+            icon: busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : Icon(Icons.replay_rounded, color: color, size: 22),
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            padding: EdgeInsets.zero,
+          ),
+          if (counter != null)
+            Positioned(
+              right: 2,
+              top: 2,
+              child: IgnorePointer(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    counter,
+                    style: const TextStyle(
+                      color: AppColors.black,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

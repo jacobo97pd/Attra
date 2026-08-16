@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../feed/domain/rewind_policy.dart';
 import '../domain/story.dart';
 
 /// Una persona del muro, tal y como la ve el visor a ciegas.
@@ -48,6 +49,7 @@ class BlindWallController extends ChangeNotifier {
     required this.onSuperAttra,
     required this.onSkip,
     required this.onStoriesSeen,
+    required this.onRewind,
     this.onSafety,
   });
 
@@ -65,33 +67,60 @@ class BlindWallController extends ChangeNotifier {
   /// Historias que el usuario acaba de ver (marca de vista + contador backend).
   final void Function(List<Story> stories) onStoriesSeen;
 
+  /// Marcha atrás. El visor NO lleva historial propio: las acciones se toman
+  /// aquí pero se guardan en el feed, así que deshacer tiene que volver por el
+  /// mismo puente. Una segunda pila dentro del visor se desincronizaría en
+  /// cuanto el muro se recompusiera (historias que caducan, bloqueos, anuncios).
+  final Future<void> Function() onRewind;
+
   /// Reportar / bloquear (Guideline 1.2): el contenido de una historia también
   /// tiene que poder denunciarse desde donde se ve.
   final VoidCallback? onSafety;
 
   BlindWallPerson? _current;
   bool _shouldClose = false;
+  RewindState _rewind = const RewindState();
   String _signature = '';
+  String _rewindSignature = '';
 
   BlindWallPerson? get current => _current;
 
   /// El visor se cierra solo: se acabó el muro o toca un anuncio intercalado.
   bool get shouldClose => _shouldClose;
 
+  /// Estado de la marcha atrás tal y como lo ve el feed. El visor solo lo pinta:
+  /// ni cuenta gestos ni decide tramos.
+  ///
+  /// No filtra nada del "a ciegas": habla del PLAN de quien mira, no de la
+  /// persona que se está viendo.
+  RewindState get rewind => _rewind;
+
   /// Vuelca el estado del feed al visor. Se llama en CADA frame del feed, así
   /// que solo notifica cuando cambia algo de verdad; si notificara siempre, el
   /// visor recargaría el vídeo en bucle.
-  void sync({BlindWallPerson? person, required bool shouldClose}) {
+  void sync({
+    BlindWallPerson? person,
+    required bool shouldClose,
+    required RewindState rewind,
+  }) {
+    // El estado de la marcha atrás entra en la firma: si no, el botón se
+    // quedaba con el número de gestos del primer volcado y no se apagaba al
+    // gastar el último. Solo entra lo que se PINTA (estado y cuántos quedan),
+    // no el historial entero, que cambia de identidad en cada gesto.
     final String next = shouldClose
         ? '#close'
         : person == null
             ? '#empty'
             : '${person.uid}|'
                 '${person.stories.map((Story s) => s.storyId).join(',')}';
-    if (next == _signature) return;
+    final String rewindSignature =
+        '${rewind.status.name}:${rewind.remaining}:${rewind.usedInSession}';
+    if (next == _signature && rewindSignature == _rewindSignature) return;
     _signature = next;
+    _rewindSignature = rewindSignature;
     _current = person;
     _shouldClose = shouldClose;
+    _rewind = rewind;
     notifyListeners();
   }
 }

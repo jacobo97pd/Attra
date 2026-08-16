@@ -1,3 +1,4 @@
+import 'package:attra/src/features/feed/domain/rewind_policy.dart';
 import 'package:attra/src/features/stories/domain/story.dart';
 import 'package:attra/src/features/stories/presentation/blind_wall_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,14 @@ Story _story(String owner, String id) =>
       'expiresAt':
           DateTime.now().add(const Duration(hours: 12)).toIso8601String(),
     });
+
+/// Marcha atrás disponible (Plus con un gesto guardado). La mayoría de los
+/// tests de sincronización no la miran, pero `sync` la exige a propósito: el
+/// visor pinta el botón con ella y un valor por defecto era justo la forma de
+/// que el feed se olvidara de volcarla.
+final RewindState _libre = const RewindState(tier: RewindTier.plus).record(
+  const RewindEntry(targetUid: 'z', kind: FeedActionKind.like),
+);
 
 BlindWallPerson _person(String uid, {int stories = 1, int? age = 28}) =>
     BlindWallPerson(
@@ -44,6 +53,7 @@ void main() {
       onSuperAttra: () async => calls.add('attra'),
       onSkip: () => calls.add('skip'),
       onStoriesSeen: (List<Story> s) => calls.add('seen:${s.length}'),
+      onRewind: () async => calls.add('rewind'),
       onSafety: () => calls.add('safety'),
     );
   });
@@ -58,8 +68,19 @@ void main() {
       await controller.onSuperAttra();
       controller.onSkip();
       controller.onSafety!();
-      expect(calls,
-          <String>['beforeLike', 'like', 'pass', 'attra', 'skip', 'safety']);
+      // La marcha atrás también: el visor no puede llamar a `rewindFeedAction`
+      // por su cuenta ni llevar su propio historial (el gate de plan, el
+      // `_excluded` y el `_consumed` que hay que limpiar viven en el feed).
+      await controller.onRewind();
+      expect(calls, <String>[
+        'beforeLike',
+        'like',
+        'pass',
+        'attra',
+        'skip',
+        'safety',
+        'rewind',
+      ]);
     });
   });
 
@@ -81,51 +102,85 @@ void main() {
       int notifications = 0;
       controller.addListener(() => notifications++);
 
-      controller.sync(person: _person('a'), shouldClose: false);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
       expect(notifications, 1);
       expect(controller.current?.uid, 'a');
 
-      controller.sync(person: _person('b'), shouldClose: false);
+      controller.sync(person: _person('b'), shouldClose: false, rewind: _libre);
       expect(notifications, 2);
       expect(controller.current?.uid, 'b');
     });
 
     test('volcar lo mismo NO avisa (se llama en cada frame del feed)', () {
-      controller.sync(person: _person('a'), shouldClose: false);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
       int notifications = 0;
       controller.addListener(() => notifications++);
 
-      controller.sync(person: _person('a'), shouldClose: false);
-      controller.sync(person: _person('a'), shouldClose: false);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
       expect(notifications, 0,
           reason: 'si notificara siempre, el vídeo se recargaría en bucle');
     });
 
     test('publicar una historia nueva de la misma persona sí avisa', () {
-      controller.sync(person: _person('a'), shouldClose: false);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
       int notifications = 0;
       controller.addListener(() => notifications++);
 
-      controller.sync(person: _person('a', stories: 3), shouldClose: false);
+      controller.sync(
+          person: _person('a', stories: 3),
+          shouldClose: false,
+          rewind: _libre);
       expect(notifications, 1);
       expect(controller.current?.stories.length, 3);
     });
 
     test('sin nadie a quien enseñar, el visor se cierra', () {
-      controller.sync(person: _person('a'), shouldClose: false);
-      controller.sync(person: null, shouldClose: true);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
+      controller.sync(person: null, shouldClose: true, rewind: _libre);
       expect(controller.shouldClose, isTrue);
     });
 
     test('el anuncio intercalado cierra el visor y luego lo libera', () {
-      controller.sync(person: _person('a'), shouldClose: false);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
       // Toca anuncio: el visor se cierra y el feed pinta la ad card.
-      controller.sync(person: _person('b'), shouldClose: true);
+      controller.sync(person: _person('b'), shouldClose: true, rewind: _libre);
       expect(controller.shouldClose, isTrue);
       // Cerrado el anuncio, el muro vuelve a estar disponible.
-      controller.sync(person: _person('b'), shouldClose: false);
+      controller.sync(person: _person('b'), shouldClose: false, rewind: _libre);
       expect(controller.shouldClose, isFalse);
       expect(controller.current?.uid, 'b');
+    });
+  });
+
+  group('La marcha atrás llega al visor', () {
+    test('gastar el último gesto apaga el botón sin cambiar de persona', () {
+      // Es el caso real: Plus deshace, sigue en la misma persona y el botón
+      // tiene que pasar a "no queda nada". Si la firma de `sync` solo mirara a
+      // la persona, el visor se quedaría enseñándolo disponible para siempre.
+      final RewindState plus = const RewindState(tier: RewindTier.plus).record(
+        const RewindEntry(targetUid: 'z', kind: FeedActionKind.pass),
+      );
+      controller.sync(
+          person: _person('a'), shouldClose: false, rewind: plus);
+      expect(controller.rewind.status, RewindStatus.ready);
+
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      controller.sync(
+          person: _person('a'), shouldClose: false, rewind: plus.undo());
+
+      expect(notifications, 1);
+      expect(controller.rewind.status, RewindStatus.empty);
+      expect(controller.rewind.remaining, 0);
+    });
+
+    test('volcar la MISMA marcha atrás sigue sin avisar', () {
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: _libre);
+      expect(notifications, 0);
     });
   });
 }

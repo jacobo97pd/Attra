@@ -190,10 +190,14 @@ export const sendLike = onCall(
   }
 
   const likeFwdRef = col.likes.doc(directedId(fromUid, toUid));
+  // El dia se calcula UNA vez y se guarda tambien en el doc del like: sin esa
+  // marca, `rewindFeedAction` no puede saber que contador bajar al deshacerlo y
+  // acabaria bajando el de HOY (regalando un like) o no devolviendo nada.
+  const usageDay = dailyUsageKey();
   const usageRef = col.users
     .doc(fromUid)
     .collection("usage")
-    .doc(`likes_${dailyUsageKey()}`);
+    .doc(`likes_${usageDay}`);
   // Fuera de la transaccion: `config/featureFlags` es otro documento y no debe
   // entrar en el bloqueo del like.
   const likeLimits = await dailyLikeLimits();
@@ -297,6 +301,13 @@ export const sendLike = onCall(
           commentText: cmtText,
           commentStatus: cmtStatus === "none" ? "none" : "active",
           commentModerationStatus: cmtStatus === "none" ? "approved" : cmtStatus,
+          // QUE CONSUMIO este like. Es lo que `rewindFeedAction` necesita para
+          // devolverlo al deshacerlo: sin esto, deshacer un like te dejaba igual
+          // sin el like del dia y, si lo habias pagado con un Attra Swipe, sin
+          // el swipe. Se guarda aqui porque es el unico sitio que sabe si se
+          // gasto.
+          usageKey: usageDay,
+          consumedSwipe: consumeSwipe,
           createdAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
