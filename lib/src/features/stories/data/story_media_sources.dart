@@ -1,13 +1,14 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 // `camera` reexporta XFile (ambos salen de cross_file), asi que no se importa
 // image_picker aqui: seria el mismo tipo por dos caminos.
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../domain/story.dart';
+import '../domain/selfie_mirror.dart';
 import '../domain/story_composer.dart';
 import '../domain/story_errors.dart';
 import 'story_image_conversion.dart';
@@ -153,7 +154,30 @@ class DeviceStoryCamera implements StoryCamera {
   Widget? preview() {
     final CameraController? c = _controller;
     if (c == null || !c.value.isInitialized) return null;
-    return CameraPreview(c);
+    final Size? sensor = c.value.previewSize;
+    if (sensor == null) return CameraPreview(c);
+
+    // La vista previa iba SUELTA dentro de un `Stack(fit: StackFit.expand)`, así
+    // que se estiraba hasta llenar la pantalla ignorando la proporción del
+    // sensor: las caras salían alargadas, en las dos cámaras.
+    //
+    // `BoxFit.cover` escala MANTENIENDO la proporción y recorta lo que sobra,
+    // que es lo que hace la cámara de Instagram: se ve un trozo menor de escena
+    // pero sin deformar a nadie.
+    //
+    // `previewSize` viene en coordenadas del SENSOR, que siempre es apaisado.
+    // En vertical hay que intercambiar los lados o la proporción sale invertida
+    // y el estiramiento empeora en vez de arreglarse.
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: sensor.height,
+          height: sensor.width,
+          child: CameraPreview(c),
+        ),
+      ),
+    );
   }
 
   @override
@@ -220,8 +244,46 @@ class DeviceStoryCamera implements StoryCamera {
   Future<XFile?> takePhoto() async {
     final CameraController? c = _controller;
     if (c == null || !c.value.isInitialized || _recording) return null;
-    return c.takePicture();
+    final XFile shot = await c.takePicture();
+
+    // El selfie llega EN ESPEJO: en iOS el plugin marca la conexión de la cámara
+    // frontal como reflejada (camera_avfoundation, DefaultCamera.swift:158). En
+    // la vista previa eso es lo natural, pero en la foto guardada no: el texto
+    // sale al revés y la cara no es la que ve el resto del mundo.
+    if (!shouldUnmirrorSelfie(
+      isFrontLens:
+          _cameras[_index].lensDirection == CameraLensDirection.front,
+      platformMirrors: _platformMirrorsFrontCamera,
+    )) {
+      return shot;
+    }
+
+    try {
+      final Uint8List? fixed =
+          unmirrorImageBytes(await shot.readAsBytes());
+      if (fixed == null) return shot;
+      // Se escribe AL LADO del original en vez de sobrescribirlo: si algo va mal
+      // a mitad, el archivo bueno de la cámara sigue intacto.
+      final String path =
+          '${shot.path}.unmirrored.jpg';
+      await File(path).writeAsBytes(fixed, flush: true);
+      return XFile(path);
+    } catch (error) {
+      // Una foto en espejo es infinitamente mejor que ninguna foto: si el
+      // volteo falla se publica la original.
+      debugPrint('[camara] no se pudo deshacer el espejo: $error');
+      return shot;
+    }
   }
+
+  /// ¿Refleja esta plataforma la cámara frontal?
+  ///
+  /// Solo iOS/macOS. En Android, CameraX no refleja la imagen fija, así que
+  /// voltearla ahí ROMPERÍA las fotos que hoy salen bien.
+  static bool get _platformMirrorsFrontCamera =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   @override
   Future<void> startVideo() async {
