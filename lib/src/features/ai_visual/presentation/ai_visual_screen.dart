@@ -82,6 +82,14 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
 
   _Issue? _issue;
 
+  /// Rasgos que Cloud Vision sacó de la ÚLTIMA foto de referencia analizada en
+  /// esta sesión. Null = todavía no se ha analizado ninguna aquí (la huella
+  /// puede existir de antes; los rasgos sólo llegan al analizar).
+  ///
+  /// Son rasgos de la FOTO (encuadre, pose, expresión, calidad), no de la
+  /// persona: ni edad, ni etnia, ni sexo. Vision no los da y aquí no se deducen.
+  ReferenceTraits? _traits;
+
   // Estado local de consentimiento: permite refrescar la pantalla al instante
   // tras conceder, sin tener que salir y volver a entrar.
   late bool _hasConsent;
@@ -108,7 +116,14 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
       final AiReferenceState state =
           await widget.service.loadReferenceState(widget.uid);
       if (!mounted) return;
-      setState(() => _reference = state);
+      setState(() {
+        _reference = state;
+        // Los rasgos ya estaban guardados en el backend, pero no los devolvía
+        // ningún endpoint, así que el panel "lo que la IA ha leído de tu foto"
+        // sólo se veía en la sesión en la que se subía la foto y desaparecía al
+        // volver a entrar. Ahora vienen con el estado y se repintan.
+        _traits = widget.service.lastReferenceTraits ?? _traits;
+      });
       _issueForReference(state);
     } on AiVisualException catch (e) {
       if (mounted) setState(() => _issue = _issueFor(e));
@@ -253,15 +268,18 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
       _reference = _reference.copyWith(status: AiReferenceStatus.processing);
     });
     try {
-      final AiReferenceStatus status = await runWithAttraLoader(
+      final ReferenceAnalysis analysis = await runWithAttraLoader(
         context,
         () => widget.service.analyzeReference(uid: widget.uid, bytes: bytes),
         message: 'Analizando tu referencia…',
       );
+      final AiReferenceStatus status = analysis.status;
       final String? url = await widget.service.getReferenceUrl(widget.uid);
       if (!mounted) return;
-      setState(
-          () => _reference = AiReferenceState(status: status, photoUrl: url));
+      setState(() {
+        _reference = AiReferenceState(status: status, photoUrl: url);
+        _traits = analysis.traits;
+      });
       if (status == AiReferenceStatus.ready) {
         _snack('Referencia lista: ya puedes buscar perfiles parecidos.');
       } else {
@@ -411,6 +429,10 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
         _ReferencePhoto(state: _reference, loading: _loading),
         const SizedBox(height: 12),
         _AnalysisPanel(state: _reference, loading: _loading),
+        if (_traits != null) ...<Widget>[
+          const SizedBox(height: 12),
+          _TraitsPanel(traits: _traits!),
+        ],
         const SizedBox(height: 12),
         _OutlinedAction(
           icon: Icons.image_outlined,
@@ -631,6 +653,9 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
         _insights = const <ProfileInsight>[];
         _insightsLoaded = false;
         _issue = null;
+        // Los rasgos vienen de la CARA del usuario: si pide borrar sus datos de
+        // IA no pueden seguir pintados en pantalla.
+        _traits = null;
       });
       messenger.showSnackBar(SnackBar(
         content: Text(result.isComplete
@@ -884,7 +909,11 @@ class _AnalysisPanel extends StatelessWidget {
           const SizedBox(height: 12),
           const _AnalysisRow(
               label: 'Qué analiza',
-              value: 'La estética general: estilo, vibe, composición'),
+              // Antes ponía "la estética general". Ahora se recorta la CARA
+              // antes de analizar, precisamente para que el fondo y el encuadre
+              // dejen de mandar en el resultado: decirlo es más honesto y
+              // explica por qué importa subir un retrato.
+              value: 'La cara: se recorta y se compara su aspecto general'),
           const _Sep(),
           const _AnalysisRow(
               label: 'Qué NO usa',
@@ -895,6 +924,140 @@ class _AnalysisPanel extends StatelessWidget {
           // visual y la búsqueda no fuera a devolver nada.
           _AnalysisRow(
               label: 'Estado', value: loading ? 'Comprobando…' : state.label),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lo que la IA ha LEÍDO de la foto de referencia, en cristiano.
+///
+/// Todo esto sale de la misma llamada a Cloud Vision que ya hacía falta para
+/// recortar la cara, así que no cuesta nada extra. Son rasgos de la FOTO
+/// (cuántas caras, cómo está girada, si sonríe, si va con gorro, si está movida
+/// o oscura, cuánto ocupa la cara): NO hay edad, ni etnia, ni sexo, porque Vision
+/// no los devuelve y aquí no se deducen. Tampoco gafas, por lo mismo.
+class _TraitsPanel extends StatelessWidget {
+  const _TraitsPanel({required this.traits});
+  final ReferenceTraits traits;
+
+  /// Traduce el "likelihood" de Vision a algo que entienda una persona.
+  static String _likely(String v) {
+    switch (v) {
+      case 'VERY_LIKELY':
+        return 'Sí, claramente';
+      case 'LIKELY':
+        return 'Probablemente sí';
+      case 'POSSIBLE':
+        return 'Puede ser';
+      case 'UNLIKELY':
+        return 'Probablemente no';
+      case 'VERY_UNLIKELY':
+        return 'No';
+      default:
+        return 'No se sabe';
+    }
+  }
+
+  static String _pose(String v) {
+    switch (v) {
+      case 'frontal':
+        return 'De frente';
+      case 'three_quarter':
+        return 'De tres cuartos';
+      case 'profile':
+        return 'De perfil';
+      default:
+        return 'No se sabe';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> warnings = traits.warnings;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.colors.surfaceLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.face_retouching_natural,
+                  size: 16, color: AppColors.aiViolet),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Lo que la IA ha leído de tu foto',
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Si lo que ha fallado es el MOTOR, no se puede afirmar nada sobre
+          // la cara: decir "ninguna" seria culpar a la foto del usuario de una
+          // caida nuestra.
+          if (traits.engineFailed)
+            const _AnalysisRow(
+                label: 'Análisis',
+                value: 'No disponible ahora mismo — reinténtalo')
+          else if (!traits.detected)
+            const _AnalysisRow(
+                label: 'Cara detectada',
+                value: 'Ninguna — se compara la foto entera')
+          else ...<Widget>[
+            _AnalysisRow(
+                label: 'Caras en la foto', value: '${traits.faceCount}'),
+            const _Sep(),
+            _AnalysisRow(
+                label: 'Fiabilidad de la detección',
+                value: '${(traits.confidence * 100).round()}%'),
+            const _Sep(),
+            _AnalysisRow(label: 'Orientación', value: _pose(traits.pose)),
+            const _Sep(),
+            _AnalysisRow(label: 'Sonrisa', value: _likely(traits.smile)),
+            const _Sep(),
+            _AnalysisRow(
+                label: 'Gorro o sombrero', value: _likely(traits.headwear)),
+            const _Sep(),
+            _AnalysisRow(
+                label: 'La cara ocupa',
+                value: '${(traits.faceAreaRatio * 100).toStringAsFixed(1)}% de '
+                    'la foto'),
+          ],
+          if (warnings.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            for (final String w in warnings)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Icon(Icons.error_outline,
+                        size: 14, color: AppColors.attraRed),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(w,
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            'No deducimos edad, etnia ni sexo: el motor no los da y no los '
+            'inventamos.',
+            style:
+                TextStyle(color: context.colors.textSecondary, fontSize: 11),
+          ),
         ],
       ),
     );

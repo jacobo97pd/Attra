@@ -141,6 +141,20 @@ class ProfileTraitsCatalog {
             TraitOption('black', 'Negros'),
           ]),
       ProfileTraitDefinition(
+          key: 'hair',
+          sectionKey: 'appearance',
+          label: 'Color de pelo',
+          type: TraitType.singleSelect,
+          group: 'appearance',
+          field: 'hairColor',
+          options: <TraitOption>[
+            TraitOption('black', 'Negro'),
+            TraitOption('brown', 'Castaño'),
+            TraitOption('blonde', 'Rubio'),
+            TraitOption('red', 'Pelirrojo'),
+            TraitOption('gray', 'Canoso'),
+          ]),
+      ProfileTraitDefinition(
           key: 'bodyType',
           sectionKey: 'appearance',
           label: 'Complexión',

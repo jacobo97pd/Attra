@@ -212,6 +212,12 @@ enum _AiSearchStatus {
   /// La IA respondió pero nadie supera el umbral de parecido/encaje.
   noMatches,
 
+  /// La IA respondió y hay resultados, pero NO pudo puntuar a todo el mundo
+  /// (cuota de Vertex agotada, motor a medias). El feed vale, pero está
+  /// incompleto y hay que decirlo: presentar media respuesta como si fuera la
+  /// respuesta entera es engañar a alguien que está pagando por esto.
+  partial,
+
   /// El motor no devolvió ranking (deshabilitado, sin referencia, función no
   /// desplegada, sin red...).
   unavailable,
@@ -230,12 +236,30 @@ class _AiSearchState {
     required this.byPrompt,
     required this.status,
     this.query = '',
+    this.signals = const <String>[],
+    this.skipped = 0,
+    this.visualOff = false,
   });
 
   /// true = búsqueda por descripción; false = por foto de referencia.
   final bool byPrompt;
   final _AiSearchStatus status;
   final String query;
+
+  /// Lo que la IA ENTENDIÓ de la descripción ("chico", "alto", "fuerte",
+  /// "majo"). Se enseña para que el usuario pueda ver por qué salen esos
+  /// perfiles y corregir la frase si se ha entendido otra cosa.
+  final List<String> signals;
+
+  /// Cuántos candidatos se quedaron sin analizar. Es el dato que hace creíble
+  /// el aviso de "incompleto": sin él sólo se podía decir "no ha podido con
+  /// todo el mundo", que suena a excusa.
+  final int skipped;
+
+  /// El prompt no se pudo convertir a embedding, así que el orden salió SÓLO de
+  /// los datos declarados. NO es lo mismo que "faltan perfiles": aquí están
+  /// todos, pero ordenados con media señal. Merece su propio texto.
+  final bool visualOff;
 
   /// Etiqueta corta para el banner del feed.
   String get label => byPrompt
@@ -616,11 +640,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  /// Umbral de parecido (similitud coseno) para considerar a alguien "similar".
-  /// El embedding multimodal de Vertex es ESTÉTICO (composición, estilo…): dos
-  /// fotos de la misma persona suelen rondar 0.5-0.8 y el mismo "tipo" 0.45-0.6.
-  /// 0.55 mantiene precision suficiente: Bella da ~0.658 y Ariel ~0.557 con
-  /// esta referencia, mientras los mocks de viaje probados quedan por debajo.
+  /// Umbral de parecido (similitud coseno) de RESPALDO.
+  ///
+  /// El bueno lo manda el BACKEND con el ranking (`VisualRanking.threshold`),
+  /// porque el corte y el preprocesado son la misma decisión: al cambiar el
+  /// pipeline los cosenos cambian de escala y un corte de la versión anterior
+  /// deja de significar nada. Teniéndolo aquí hacía falta desplegar la app para
+  /// recalibrar — y por eso no se recalibró nunca. Esto sólo se usa si el
+  /// backend es antiguo y no manda el campo.
   static const double _kVisualThreshold = 0.55;
 
   /// FILTRA el feed dejando SOLO los que se parecen a la foto de referencia
@@ -629,21 +656,23 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// Si el motor no esta disponible, devuelve una lista vacia. Al aplicar el
   /// filtro visual es peor mostrar el feed organico como falso positivo. Ahora
   /// devuelve TAMBIÉN el motivo, para que el estado vacío pueda explicarlo.
-  Future<({List<SeedProfile> profiles, _AiSearchStatus status})>
+  Future<({List<SeedProfile> profiles, _AiSearchStatus status, int skipped})>
       _sortByVisualReference(List<SeedProfile> profiles) async {
     // Sin candidatos previos la culpa no es de la IA (son los otros filtros).
     if (profiles.isEmpty) {
-      return (profiles: profiles, status: _AiSearchStatus.ok);
+      return (profiles: profiles, status: _AiSearchStatus.ok, skipped: 0);
     }
     try {
-      final List<VisualMatch> ranking = await widget.aiVisualService!
+      final VisualRanking result = await widget.aiVisualService!
           .getVisualMatches(profiles.map((SeedProfile p) => p.id).toList());
+      final List<VisualMatch> ranking = result.matches;
       // Motor no disponible (Vertex deshabilitado / sin referencia): sin falsos
       // positivos.
       if (ranking.isEmpty) {
         return (
           profiles: const <SeedProfile>[],
-          status: _AiSearchStatus.unavailable
+          status: _AiSearchStatus.unavailable,
+          skipped: result.skipped,
         );
       }
 
@@ -657,62 +686,135 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         for (final SeedProfile p in profiles) p.id: p,
       };
       // Solo los que superan el umbral, en orden de parecido (desc).
+      final double threshold = result.threshold ?? _kVisualThreshold;
       final List<SeedProfile> matches = <SeedProfile>[
         for (final VisualMatch m in ranking)
-          if (m.score >= _kVisualThreshold && byId.containsKey(m.uid))
-            byId[m.uid]!,
+          if (m.score >= threshold && byId.containsKey(m.uid)) byId[m.uid]!,
       ];
+      // Lista vacía: sólo se puede decir "nadie encaja" si se ha mirado a
+      // TODO EL MUNDO. Antes se devolvía `noMatches` sin mirar `complete`, así
+      // que el caso peor —la IA se dejó gente sin puntuar y ninguno de los que
+      // sí miró pasó el umbral— le afirmaba al usuario que nadie se parece a su
+      // foto, y encima sin el botón de reintentar (que sólo sale con `partial`).
+      // El `case partial` del estado vacío era literalmente inalcanzable.
+      if (matches.isEmpty) {
+        return (
+          profiles: matches,
+          status: result.complete
+              ? _AiSearchStatus.noMatches
+              : _AiSearchStatus.partial,
+          skipped: result.skipped,
+        );
+      }
+      // Hay resultados pero el motor se dejó gente sin puntuar: se avisa en vez
+      // de hacer pasar media respuesta por la respuesta entera.
       return (
         profiles: matches,
         status:
-            matches.isEmpty ? _AiSearchStatus.noMatches : _AiSearchStatus.ok,
+            result.complete ? _AiSearchStatus.ok : _AiSearchStatus.partial,
+        skipped: result.skipped,
       );
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[IA visual] error al ordenar: $e');
       }
-      return (profiles: const <SeedProfile>[], status: _AiSearchStatus.failed);
+      return (
+        profiles: const <SeedProfile>[],
+        status: _AiSearchStatus.failed,
+        skipped: 0,
+      );
     }
   }
 
-  /// Umbral mínimo de encaje para la búsqueda por prompt (combinado foto+datos).
+  /// Umbral mínimo de encaje para la búsqueda por prompt, de RESPALDO.
+  ///
+  /// Lo manda el backend (`PromptRanking.threshold`) y hoy vale 0: el filtro por
+  /// lo que el usuario escribió (veto de género, suelo de datos, exclusión de
+  /// quien no se pudo mirar) ya se aplica allí. Este 0.5 era un SEGUNDO filtro
+  /// sin calibrar sobre el score combinado, y como la parte visual aporta ~0.33
+  /// casi constante, el corte caía justo en "no se sabe nada": dejaba pasar a
+  /// quien no declaraba nada y tumbaba a quien encajaba de verdad pero tenía una
+  /// foto que puntuaba flojo. Sólo se usa si el backend es antiguo.
   static const double _kPromptThreshold = 0.5;
 
   /// FILTRA el feed dejando SOLO los que encajan con la descripción (prompt),
   /// ordenados por encaje. Si el motor no está disponible, devuelve vacío (mejor
   /// que mostrar falsos positivos) junto con el motivo, para poder explicárselo
   /// al usuario en vez de dejarle un feed en blanco.
-  Future<({List<SeedProfile> profiles, _AiSearchStatus status})> _sortByPrompt(
-      List<SeedProfile> profiles) async {
+  Future<
+      ({
+        List<SeedProfile> profiles,
+        _AiSearchStatus status,
+        int skipped,
+        List<String> signals,
+        bool visualOff
+      })> _sortByPrompt(List<SeedProfile> profiles) async {
     if (profiles.isEmpty) {
-      return (profiles: profiles, status: _AiSearchStatus.ok);
+      return (
+        profiles: profiles,
+        status: _AiSearchStatus.ok,
+        skipped: 0,
+        signals: const <String>[],
+        visualOff: false,
+      );
     }
     try {
-      final List<PromptMatch> ranking = await widget.aiVisualService!
+      final PromptRanking result = await widget.aiVisualService!
           .getPromptMatches(_filters.promptQuery.trim(),
               profiles.map((SeedProfile p) => p.id).toList());
+      final List<PromptMatch> ranking = result.matches;
       if (ranking.isEmpty) {
         return (
           profiles: const <SeedProfile>[],
-          status: _AiSearchStatus.unavailable
+          status: _AiSearchStatus.unavailable,
+          skipped: result.skipped,
+          signals: result.signals,
+          visualOff: result.visualDisabled,
         );
       }
       final Map<String, SeedProfile> byId = <String, SeedProfile>{
         for (final SeedProfile p in profiles) p.id: p,
       };
+      final double threshold = result.threshold ?? _kPromptThreshold;
       final List<SeedProfile> matches = <SeedProfile>[
         for (final PromptMatch m in ranking)
-          if (m.score >= _kPromptThreshold && byId.containsKey(m.uid))
-            byId[m.uid]!,
+          if (m.score >= threshold && byId.containsKey(m.uid)) byId[m.uid]!,
       ];
+      // Igual que arriba: sin haber mirado a todos no se puede afirmar que
+      // nadie encaje con lo que el usuario ha escrito.
+      if (matches.isEmpty) {
+        return (
+          profiles: matches,
+          status: result.complete
+              ? _AiSearchStatus.noMatches
+              : _AiSearchStatus.partial,
+          skipped: result.skipped,
+          signals: result.signals,
+          visualOff: result.visualDisabled,
+        );
+      }
+      // `visualDisabled` también cuenta como incompleto: sin el embedding del
+      // prompt el orden sale sólo de los datos declarados, que es bastante peor
+      // y el usuario tiene que saberlo. Va dentro de `complete` (lo mete el
+      // backend), no hace falta mirarlo aparte.
       return (
         profiles: matches,
-        status:
-            matches.isEmpty ? _AiSearchStatus.noMatches : _AiSearchStatus.ok,
+        status: result.complete
+            ? _AiSearchStatus.ok
+            : _AiSearchStatus.partial,
+        skipped: result.skipped,
+        signals: result.signals,
+        visualOff: result.visualDisabled,
       );
     } catch (e) {
       if (kDebugMode) debugPrint('[IA prompt] error: $e');
-      return (profiles: const <SeedProfile>[], status: _AiSearchStatus.failed);
+      return (
+        profiles: const <SeedProfile>[],
+        status: _AiSearchStatus.failed,
+        skipped: 0,
+        signals: const <String>[],
+        visualOff: false,
+      );
     }
   }
 
@@ -1299,18 +1401,36 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       }
       // IA visual (Pro): ordena por parecido a la foto de referencia.
       if (visualSearch) {
-        final ({List<SeedProfile> profiles, _AiSearchStatus status}) res =
-            await _sortByVisualReference(filtered);
-        filtered = res.profiles;
-        aiState =
-            _AiSearchState(byPrompt: false, status: res.status, query: '');
-      } else if (promptSearch) {
-        // IA por prompt (Pro): deja solo los que encajan con la descripción.
-        final ({List<SeedProfile> profiles, _AiSearchStatus status}) res =
-            await _sortByPrompt(filtered);
+        final ({
+          List<SeedProfile> profiles,
+          _AiSearchStatus status,
+          int skipped
+        }) res = await _sortByVisualReference(filtered);
         filtered = res.profiles;
         aiState = _AiSearchState(
-            byPrompt: true, status: res.status, query: promptQuery);
+          byPrompt: false,
+          status: res.status,
+          query: '',
+          skipped: res.skipped,
+        );
+      } else if (promptSearch) {
+        // IA por prompt (Pro): deja solo los que encajan con la descripción.
+        final ({
+          List<SeedProfile> profiles,
+          _AiSearchStatus status,
+          int skipped,
+          List<String> signals,
+          bool visualOff
+        }) res = await _sortByPrompt(filtered);
+        filtered = res.profiles;
+        aiState = _AiSearchState(
+          byPrompt: true,
+          status: res.status,
+          query: promptQuery,
+          signals: res.signals,
+          skipped: res.skipped,
+          visualOff: res.visualOff,
+        );
       }
       // Plus/Pro: quién te ha dado like -> badge + prioridad al frente del feed.
       Set<String> likedMe = const <String>{};
@@ -2279,18 +2399,43 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   Widget _aiSearchBanner(_AiSearchState ai) {
     final ThemeData theme = Theme.of(context);
     final bool inactive = ai.status == _AiSearchStatus.notEntitled;
-    final Color color =
-        inactive ? theme.colorScheme.outline : theme.colorScheme.primary;
+    // Resultado incompleto: el aviso va en el mismo banner, en color de
+    // advertencia, porque es lo único que separa "esto es todo" de "esto es lo
+    // que ha dado tiempo a mirar".
+    final bool partial = ai.status == _AiSearchStatus.partial;
+    // "Sólo datos declarados" también es un resultado degradado, así que se
+    // pinta con el mismo color de aviso que el incompleto.
+    final bool degraded = partial || ai.visualOff;
+    final Color color = inactive
+        ? theme.colorScheme.outline
+        : degraded
+            ? theme.colorScheme.tertiary
+            : theme.colorScheme.primary;
+    // El NÚMERO es lo que hace creíble el aviso: "no ha podido con todo el
+    // mundo" suena a excusa; "faltan 15 perfiles" es un hecho comprobable.
+    final String missing =
+        ai.skipped > 0 ? ' Faltan ${ai.skipped} perfiles por analizar.' : '';
     final String text = inactive
         ? 'Filtro IA guardado (${ai.label}): no se aplica, es de Attra Pro'
-        : 'Búsqueda IA activa: ${ai.label}';
+        : ai.visualOff
+            ? 'Búsqueda IA a medias (${ai.label}): no se ha podido analizar el '
+                'texto, así que el orden sale sólo de los datos del perfil.'
+            : partial
+                ? 'Búsqueda IA incompleta (${ai.label}).$missing '
+                    'Recarga para completarla.'
+                : 'Búsqueda IA activa: ${ai.label}';
     return Material(
       color: color.withValues(alpha: 0.10),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.auto_awesome, size: 16, color: color),
+            Row(
+          children: <Widget>[
+            Icon(degraded ? Icons.error_outline : Icons.auto_awesome,
+                size: 16, color: color),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -2301,10 +2446,56 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                     color: color, fontWeight: FontWeight.w700, fontSize: 13),
               ),
             ),
+            // Si el resultado está incompleto, lo útil es REINTENTAR (el fallo
+            // de cuota es transitorio y los candidatos que fallaron no se han
+            // marcado como consultados, así que la recarga vuelve a pedirlos).
+            if (degraded)
+              TextButton(
+                onPressed: _load,
+                child: const Text('Reintentar'),
+              ),
             TextButton(
               onPressed: _clearAiSearch,
               child: const Text('Quitar'),
             ),
+          ],
+            ),
+            // QUÉ HA ENTENDIDO la IA de la frase. El backend ya lo mandaba y el
+            // cliente lo tiraba, así que el usuario veía "Búsqueda IA activa" y
+            // nada más: no podía saber que "majo" se había leído como "empático"
+            // ni que una palabra suya se había ignorado. Enseñarlo es lo que le
+            // permite corregir la frase en vez de rendirse.
+            if (!inactive && ai.signals.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 24, right: 8, bottom: 2),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    Text('He buscado:',
+                        style: TextStyle(
+                            color: color.withValues(alpha: 0.85),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                    for (final String tag in ai.signals)
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          child: Text(tag,
+                              style: TextStyle(
+                                  color: color,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -2320,8 +2511,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     final String message;
     switch (ai.status) {
       case _AiSearchStatus.noMatches:
+        // Si se sabe QUÉ se entendió, se dice: "no encaja nadie" es mucho más
+        // útil cuando el usuario puede ver que su "majo" se leyó como "empático"
+        // y que el filtro exige datos que casi nadie rellena.
+        final String understood = ai.signals.isEmpty
+            ? ''
+            : ' He buscado: ${ai.signals.join(' · ')}.';
         message = byPrompt
-            ? 'Ninguno de los perfiles disponibles encaja con $what. Prueba con una descripción menos específica o quita el filtro para ver el feed completo.'
+            ? 'Ninguno de los perfiles disponibles encaja con $what.$understood Prueba con una descripción menos específica o quita el filtro para ver el feed completo.'
             : 'Ninguno de los perfiles disponibles se parece lo suficiente a $what. Quita el filtro para ver el feed completo.';
         break;
       case _AiSearchStatus.unavailable:
@@ -2331,6 +2528,19 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       case _AiSearchStatus.failed:
         message =
             'La búsqueda IA ha fallado (puede ser la conexión). Tu feed está vacío por este filtro, no porque no haya gente.';
+        break;
+      case _AiSearchStatus.partial:
+        // Se llega aquí si la IA sólo pudo analizar a una parte y NINGUNO de
+        // esos superó el umbral. No se puede afirmar que nadie encaje: no se ha
+        // mirado a todo el mundo.
+        message = ai.skipped > 0
+            ? 'La IA no ha podido analizar a ${ai.skipped} perfiles (suele ser '
+                'cuota del motor, y se recupera solo). De los que sí ha podido '
+                'mirar, ninguno encaja con $what. Reintenta antes de dar el '
+                'filtro por malo.'
+            : 'La IA no ha podido analizar a todos los perfiles (suele ser cuota '
+                'del motor, y se recupera solo). De los que sí ha podido mirar, '
+                'ninguno encaja con $what. Reintenta antes de dar el filtro por malo.';
         break;
       case _AiSearchStatus.ok:
       case _AiSearchStatus.notEntitled:

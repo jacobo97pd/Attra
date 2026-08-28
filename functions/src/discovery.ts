@@ -36,6 +36,12 @@ const PUBLIC_TRAITS: readonly PublicTraitDefinition[] = [
   { key: "height", group: "appearance", field: "heightCm" },
   { key: "zodiac", group: "profile", field: "zodiac" },
   { key: "eyes", group: "appearance", field: "eyeColor" },
+  // El color de pelo se recoge en el onboarding (`appearance.hairColor`) pero
+  // NO se publicaba aqui, asi que `traitValue(data, "hairColor")` era undefined
+  // para el 100% de los usuarios reales y la senal de pelo del buscador por
+  // prompt ("chica rubia", "morena") no podia casar con nadie: solo funcionaba
+  // contra los bots de seed_profiles, que si traen el campo anidado.
+  { key: "hair", group: "appearance", field: "hairColor" },
   { key: "bodyType", group: "appearance", field: "bodyType" },
   { key: "tattoos", group: "appearance", field: "tattoos" },
   { key: "glasses", group: "appearance", field: "glasses" },
