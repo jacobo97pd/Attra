@@ -153,8 +153,7 @@ class IapService extends ChangeNotifier {
   /// Compras que llegaron pero NO se pudieron entregar por un fallo temporal, y
   /// que por tanto se dejaron SIN cerrar a propósito. Permite reintentarlas en
   /// la misma sesión sin volver a pasar por la tienda.
-  final Map<String, PurchaseDetails> _undelivered =
-      <String, PurchaseDetails>{};
+  final Map<String, PurchaseDetails> _undelivered = <String, PurchaseDetails>{};
 
   /// Transacciones cuya entrega está EN VUELO ahora mismo, por clave de compra.
   ///
@@ -315,7 +314,8 @@ class IapService extends ChangeNotifier {
         continue;
       }
       final PurchaseDetails purchase = _purchaseFrom(tx);
-      switch (await _handleVerified(purchase, finish: () => _pending.finish(tx))) {
+      switch (
+          await _handleVerified(purchase, finish: () => _pending.finish(tx))) {
         case _DeliveryOutcome.delivered:
           delivered++;
         case _DeliveryOutcome.deliveredNotClosed:
@@ -342,7 +342,8 @@ class IapService extends ChangeNotifier {
   /// `pendingCompletePurchase` se deja en false a propósito: esta compra se
   /// cierra por id con `finish`, no con `completePurchase`, que en iOS espera
   /// un `SK2PurchaseDetails` real del plugin y no un objeto rehecho aquí.
-  PurchaseDetails _purchaseFrom(PendingStoreKitTransaction tx) => PurchaseDetails(
+  PurchaseDetails _purchaseFrom(PendingStoreKitTransaction tx) =>
+      PurchaseDetails(
         purchaseID: tx.transactionId.toString(),
         productID: tx.productId,
         verificationData: PurchaseVerificationData(

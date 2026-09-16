@@ -112,7 +112,8 @@ void main() {
     // grupo llega ordenado de más antigua a más reciente.
     List<Story> tres({String thumbnail = 'https://example.test/thumb.jpg'}) =>
         <Story>[
-          _video('v', thumbnail: thumbnail, at: DateTime(2026, 8, 10, 8, 43, 0)),
+          _video('v',
+              thumbnail: thumbnail, at: DateTime(2026, 8, 10, 8, 43, 0)),
           _photo('f1', at: DateTime(2026, 8, 10, 8, 43, 28)),
           _photo('f2', at: DateTime(2026, 8, 10, 8, 43, 48)),
         ];

@@ -90,7 +90,8 @@ class _StoryPreviewScreenState extends State<StoryPreviewScreen> {
             else
               const SizedBox.shrink()
           else
-            (widget.imageBuilder ?? _defaultImage)(File(widget.draft.file.path)),
+            (widget.imageBuilder ??
+                _defaultImage)(File(widget.draft.file.path)),
           Positioned(
             top: 0,
             left: 0,

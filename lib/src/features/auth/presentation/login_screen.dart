@@ -25,6 +25,7 @@ class LoginScreen extends StatefulWidget {
     required this.onSendPhoneCode,
     required this.onVerifyPhoneCode,
     required this.phoneCodeSent,
+    this.onTermsAccepted,
     this.isLoading = false,
     this.errorMessage,
   });
@@ -36,6 +37,9 @@ class LoginScreen extends StatefulWidget {
   final ValueChanged<String> onSendPhoneCode;
   final ValueChanged<String> onVerifyPhoneCode;
   final bool phoneCodeSent;
+
+  /// Solo se notifica al iniciar un acceso tras aceptar explícitamente.
+  final VoidCallback? onTermsAccepted;
   final bool isLoading;
   final String? errorMessage;
 
@@ -69,16 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
     _smsCodeController = TextEditingController()..addListener(_onInputChanged);
     _phoneFocus = FocusNode()..addListener(_onInputChanged);
     _smsFocus = FocusNode();
-    _stage = widget.phoneCodeSent ? _LoginStage.code : _LoginStage.methods;
-    if (_stage == _LoginStage.code) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _focusSms());
-    }
+    // Un formulario recreado no hereda la aceptación del formulario anterior.
+    _stage = _LoginStage.methods;
   }
 
   @override
   void didUpdateWidget(covariant LoginScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.phoneCodeSent && !oldWidget.phoneCodeSent) {
+    if (_termsAccepted && widget.phoneCodeSent && !oldWidget.phoneCodeSent) {
       setState(() {
         _stage = _LoginStage.code;
         _validationMessage = null;
@@ -141,12 +143,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (widget.isLoading) return;
     if (!_termsAccepted) {
       setState(() {
+        _stage = _LoginStage.methods;
         _termsWarning = true;
         _validationMessage = 'Para continuar, acepta las Condiciones de uso '
-            '(EULA) y la Política de privacidad.';
+            'y el EULA, y lee la Política de privacidad.';
       });
       return;
     }
+    widget.onTermsAccepted?.call();
     action();
   }
 
@@ -164,10 +168,16 @@ class _LoginScreenState extends State<LoginScreen> {
   void _openPhone() {
     if (widget.isLoading) return;
     setState(() {
-      _stage = _LoginStage.phone;
+      _stage = widget.phoneCodeSent ? _LoginStage.code : _LoginStage.phone;
       _validationMessage = null;
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focusPhone());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_stage == _LoginStage.code) {
+        _focusSms();
+      } else {
+        _focusPhone();
+      }
+    });
   }
 
   void _showMethods() {
@@ -200,7 +210,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     FocusScope.of(context).unfocus();
     setState(() => _validationMessage = null);
-    widget.onSendPhoneCode(_fullPhoneNumber);
+    _guardTerms(() => widget.onSendPhoneCode(_fullPhoneNumber));
   }
 
   void _verifyCode() {
@@ -215,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     FocusScope.of(context).unfocus();
     setState(() => _validationMessage = null);
-    widget.onVerifyPhoneCode(code);
+    _guardTerms(() => widget.onVerifyPhoneCode(code));
   }
 
   @override
@@ -368,7 +378,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ? IgnorePointer(
                     ignoring: widget.isLoading,
                     child: SignInWithAppleButton(
-                      onPressed: widget.onApplePressed,
+                      onPressed: () => _guardTerms(widget.onApplePressed),
                       style: SignInWithAppleButtonStyle.white,
                       height: 56,
                       borderRadius: const BorderRadius.all(
@@ -379,10 +389,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   )
                 : GestureDetector(
                     key: const ValueKey<String>('login-apple-blocked'),
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => _guardTerms(widget.onApplePressed),
                     child: IgnorePointer(
                       child: SignInWithAppleButton(
-                        onPressed: widget.onApplePressed,
+                        onPressed: () => _guardTerms(widget.onApplePressed),
                         style: SignInWithAppleButtonStyle.white,
                         height: 56,
                         borderRadius: const BorderRadius.all(
@@ -701,7 +712,7 @@ class _TermsGate extends StatelessWidget {
                   const Expanded(
                     child: Text(
                       'Tengo 18 años o más y acepto las Condiciones de uso '
-                      '(EULA) y la Política de privacidad. Attra tiene '
+                      'y el EULA, y he leído la Política de privacidad. Attra tiene '
                       'tolerancia cero con el contenido ofensivo y con los '
                       'usuarios abusivos.',
                       style: TextStyle(

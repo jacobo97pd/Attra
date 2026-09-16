@@ -52,7 +52,8 @@ void main() {
         _story('vieja', owner: 'x', minute: 10),
       ]);
 
-      expect(byOwner['x']!.map((Story s) => s.storyId), <String>['vieja', 'nueva']);
+      expect(byOwner['x']!.map((Story s) => s.storyId),
+          <String>['vieja', 'nueva']);
     });
 
     test('cada persona tiene su propio grupo', () {
@@ -120,7 +121,9 @@ void main() {
       // Contraste explícito: si algún día alguien unifica las dos funciones,
       // este test dice por qué no se puede.
       final Map<String, List<Story>> muro = StoryRepository.groupWallStories(
-        <Story>[_story('privada', owner: 'x', minute: 1, visibility: 'matches')],
+        <Story>[
+          _story('privada', owner: 'x', minute: 1, visibility: 'matches')
+        ],
       );
 
       expect(muro, isEmpty);

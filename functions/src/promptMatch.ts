@@ -109,10 +109,17 @@ const BODY_SYNONYMS: Record<string, string[]> = {
 /// 59 perfiles candidatos no declaran `interestedIn`. Para todos esos casos
 /// "chico" es la ÚNICA forma que tiene el usuario de acotar, y hasta ahora se
 /// ignoraba en silencio.
+/// Las identidades del onboarding (`_genderOptions`) van EXPLÍCITAS en la
+/// casilla que les corresponde. `trans_woman` ya caía en `female` de rebote,
+/// porque el guion bajo separa palabras y "woman" está en la lista, pero eso
+/// era un accidente del tokenizador: escrito aquí, no depende de él. Y
+/// `genderfluid`/`agender`, que no caían en ninguna, quedan donde toca en vez
+/// de colarse en cualquier búsqueda por género. Espejo de `GenderMatching` en
+/// lib/src/features/profile/domain/gender_matching.dart.
 const GENDER_SYNONYMS: Record<string, string[]> = {
-  male: ["chico", "chicos", "hombre", "hombres", "chaval", "chavales", "tio", "tios", "man", "men", "boy", "guy"],
-  female: ["chica", "chicas", "mujer", "mujeres", "chavala", "chavalas", "tia", "tias", "woman", "women", "girl"],
-  non_binary: ["no binario", "no binaria", "nobinario", "non binary", "nonbinary", "enby"],
+  male: ["chico", "chicos", "hombre", "hombres", "chaval", "chavales", "tio", "tios", "man", "men", "boy", "guy", "trans_man"],
+  female: ["chica", "chicas", "mujer", "mujeres", "chavala", "chavalas", "tia", "tias", "woman", "women", "girl", "trans_woman"],
+  non_binary: ["no binario", "no binaria", "nobinario", "non binary", "nonbinary", "enby", "genderfluid", "agender"],
 };
 
 /// PERSONALIDAD. Claves = catálogo real de `personalityTags` del perfil

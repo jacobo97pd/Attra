@@ -319,6 +319,37 @@ function queueDocFrom(c: LiveCriteria): DocumentData {
   };
 }
 
+/// Casillas de `interestedIn` que representan a una identidad de género.
+/// Espejo de `GenderMatching` en lib/src/features/profile/domain/
+/// gender_matching.dart: el onboarding ofrece ocho identidades y "a quién
+/// buscas" solo tres casillas, así que comparar los dos campos en crudo dejaba
+/// a cinco identidades sin emparejar con nadie. Un valor vacío o desconocido
+/// devuelve las tres: sin dato no se excluye.
+function genderBuckets(gender: string): string[] {
+  switch (gender) {
+  case "female":
+  case "trans_woman":
+    return ["female"];
+  case "male":
+  case "trans_man":
+    return ["male"];
+  case "non_binary":
+  case "genderfluid":
+  case "agender":
+    return ["non_binary"];
+  default:
+    return ["female", "male", "non_binary"];
+  }
+}
+
+/// ¿Alguien que busca `interestedIn` podría ver a alguien de género `gender`?
+function genderWants(interestedIn: string[], gender: string): boolean {
+  if (interestedIn.length === 0) return true;
+  if (gender.length === 0) return true;
+  if (interestedIn.includes(gender)) return true;
+  return genderBuckets(gender).some((b) => interestedIn.includes(b));
+}
+
 /// MISMOS filtros duros que el feed (`FeedFilter.apply`):
 ///   1. intención: tiene que haber solape de canal (dating/friends),
 ///   2. país: nunca de otro país (permisivo si falta el dato en un lado),
@@ -343,14 +374,8 @@ export function isLiveCompatible(a: LiveCriteria, b: LiveCriteria): boolean {
   }
 
   if (shared.includes("dating")) {
-    const aWantsB =
-      a.interestedIn.length === 0 ||
-      b.gender.length === 0 ||
-      a.interestedIn.includes(b.gender);
-    const bWantsA =
-      b.interestedIn.length === 0 ||
-      a.gender.length === 0 ||
-      b.interestedIn.includes(a.gender);
+    const aWantsB = genderWants(a.interestedIn, b.gender);
+    const bWantsA = genderWants(b.interestedIn, a.gender);
     if (!aWantsB || !bWantsA) return false;
   }
 

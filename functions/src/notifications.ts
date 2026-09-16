@@ -178,7 +178,8 @@ export const onMatchCreated = onDocumentCreated(
   { document: "matches/{matchId}", database: DATABASE, region: REGION },
   async (event) => {
     const data = event.data?.data() as DocumentData | undefined;
-    if (!data) return;
+    // Blocked pairs also have participants so both feeds can exclude them.
+    if (!data || data.status !== "active") return;
     const users: string[] = Array.isArray(data.users)
       ? (data.users as unknown[]).filter((u): u is string => typeof u === "string")
       : [];

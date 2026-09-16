@@ -46,7 +46,8 @@ void main() {
     expect(user.locationUpdatedAt, DateTime.utc(2026, 8, 5, 10, 30));
   });
 
-  test('sin marca: la política lo trata como "edad desconocida", no como fresca',
+  test(
+      'sin marca: la política lo trata como "edad desconocida", no como fresca',
       () {
     final AppUser user = userWith(<String, dynamic>{
       'latitude': lat,
@@ -110,7 +111,8 @@ void main() {
       expect(user.isTraveling, isTrue);
     });
 
-    test('un viaje que caducó ya no cuenta (el backend tampoco lo publica)', () {
+    test('un viaje que caducó ya no cuenta (el backend tampoco lo publica)',
+        () {
       // Es el caso más común: activó el viaje y nunca lo apagó. El backend caduca
       // a los 30 días y publica su ubicación REAL, mientras el cliente seguía
       // anclando su feed al destino, sin gastar GPS y sin avisar: sus coordenadas

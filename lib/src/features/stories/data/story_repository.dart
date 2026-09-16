@@ -141,9 +141,8 @@ class StoryRepository {
         .where('status', isEqualTo: 'active')
         .snapshots()
         .map((QuerySnapshot<Map<String, dynamic>> snap) => groupWallStories(
-              snap.docs.map(
-                  (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
-                      Story.fromMap(d.id, d.data())),
+              snap.docs.map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                  Story.fromMap(d.id, d.data())),
               excludeUid: excludeUid,
               excludedOwners: excludedOwners,
             ));
@@ -177,8 +176,9 @@ class StoryRepository {
       (byOwner[s.ownerUid] ??= <Story>[]).add(s);
     }
     for (final List<Story> group in byOwner.values) {
-      group.sort((Story a, Story b) => (a.createdAt?.millisecondsSinceEpoch ?? 0)
-          .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
+      group.sort((Story a, Story b) =>
+          (a.createdAt?.millisecondsSinceEpoch ?? 0)
+              .compareTo(b.createdAt?.millisecondsSinceEpoch ?? 0));
     }
     return byOwner;
   }

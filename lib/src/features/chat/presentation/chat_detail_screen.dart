@@ -39,7 +39,7 @@ import '../../anti_ghosting/presentation/date_follow_up_sheet.dart';
 import '../../safedate/data/safedate_service.dart';
 import '../../safedate/presentation/create_plan_sheet.dart';
 import '../../safedate/presentation/safety_check_sheet.dart';
-import '../../safety/domain/report.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_entry_card.dart';
 import '../../spark/presentation/spark_game_screen.dart';
@@ -1123,11 +1123,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         }
         break;
       case 'block':
-        if (await _confirm(
-            'Bloquear', 'No podreis volver a veros ni escribiros.')) {
-          await _run(() => widget.matchService.blockUser(widget.other.uid),
-              'Usuario bloqueado.');
-          if (mounted) Navigator.of(context).pop();
+        final SafetyActionResult result = await SafetyActions.block(
+          context,
+          matchService: widget.matchService,
+          uid: widget.other.uid,
+          displayName: widget.other.displayName,
+        );
+        if (mounted && result == SafetyActionResult.blocked) {
+          Navigator.of(context).pop();
         }
         break;
       case 'coach':
@@ -1437,31 +1440,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Future<void> _report() async {
-    final ReportReason? reason = await showModalBottomSheet<ReportReason>(
-      context: context,
-      builder: (BuildContext context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Reportar usuario'),
-            ),
-            for (final ReportReason r in ReportReason.values)
-              ListTile(
-                title: Text(r.label),
-                onTap: () => Navigator.of(context).pop(r),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (reason == null) return;
-    await _run(
-      () => widget.matchService
-          .reportUser(reportedUid: widget.other.uid, reason: reason.wireName)
-          .then((_) {}),
-      'Gracias, lo revisaremos.',
+    await SafetyActions.report(
+      context,
+      matchService: widget.matchService,
+      uid: widget.other.uid,
+      displayName: widget.other.displayName,
+      chatId: widget.chatId,
     );
   }
 
@@ -1504,11 +1488,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   value: 'unread', child: Text('Marcar como no leído')),
               if (kAppStoreValidationExperience) ...<PopupMenuEntry<String>>[
                 const PopupMenuItem<String>(
-                    value: 'coach', child: Text('Anti-Ghosting Coach')),
+                    value: 'coach', child: Text('Coach anti-ghosting')),
                 const PopupMenuItem<String>(
-                    value: 'compatibility', child: Text('AI Compatibility')),
+                    value: 'compatibility', child: Text('Compatibilidad con IA')),
                 const PopupMenuItem<String>(
-                    value: 'planner', child: Text('AI Date Planner')),
+                    value: 'planner', child: Text('Planificador de citas con IA')),
                 const PopupMenuDivider(),
               ],
               if (widget.safeDatePlanEnabled && widget.safeDateService != null)
@@ -1538,8 +1522,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           final bool canSend = chat?.status.canSendMessages ?? true;
           return Column(
             children: <Widget>[
-              // App Store validation: AI Challenge card at the very top of every
-              // conversation. The normal chat stays fully available below.
+              // Reto de IA arriba de la conversación. El chat normal sigue
+              // entero debajo.
               if (kAppStoreValidationExperience && canSend)
                 ChatAiChallengeCard(
                   onStartChallenge: _openAiDemoChallenge,

@@ -706,8 +706,7 @@ class _PeriodToggle extends StatelessWidget {
               child: _segment(
                   context, 'Mensual', !yearly, () => onChanged(false))),
           Expanded(
-              child: _segment(
-                  context, 'Anual · ahorra', yearly, () => onChanged(true))),
+              child: _segment(context, 'Anual', yearly, () => onChanged(true))),
         ],
       ),
     );

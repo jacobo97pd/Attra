@@ -1055,8 +1055,7 @@ class _TraitsPanel extends StatelessWidget {
           Text(
             'No deducimos edad, etnia ni sexo: el motor no los da y no los '
             'inventamos.',
-            style:
-                TextStyle(color: context.colors.textSecondary, fontSize: 11),
+            style: TextStyle(color: context.colors.textSecondary, fontSize: 11),
           ),
         ],
       ),

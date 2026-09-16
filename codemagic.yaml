@@ -60,19 +60,68 @@ workflows:
         script: flutter analyze
       - name: Flutter unit tests
         script: flutter test
+      - name: App review demo preparation tests
+        script: python3 -m unittest tool.test_seed_review_demo
       - name: Build Firebase Functions
         script: |
           cd functions
           npm ci
           npm run build
+          node --test test/*.test.js
       - name: Set up iOS code signing
         script: xcode-project use-profiles
       - name: Install iOS pods
         script: |
+          set -euo pipefail
+
+          # CocoaPods downloads binary pods with curl. Force HTTP/1.1 because
+          # dl.google.com can terminate long HTTP/2 streams with error 92.
+          export CURL_HOME="$CM_BUILD_DIR/.cocoapods-curl"
+          mkdir -p "$CURL_HOME"
+          cat > "$CURL_HOME/.curlrc" <<'CURLRC'
+          http1.1
+          retry-all-errors
+          retry-connrefused
+          retry-delay = 5
+          connect-timeout = 30
+          speed-limit = 1024
+          speed-time = 60
+          CURLRC
+
           cd ios
-          pod install --repo-update
+          max_attempts=4
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "CocoaPods install attempt $attempt of $max_attempts"
+            if [ "$attempt" -eq 1 ]; then
+              if pod install --repo-update; then
+                break
+              else
+                install_status=$?
+              fi
+            else
+              # The first attempt already refreshed the specs repository.
+              if pod install; then
+                break
+              else
+                install_status=$?
+              fi
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "CocoaPods installation failed after $max_attempts attempts." >&2
+              exit "$install_status"
+            fi
+
+            retry_delay=$((attempt * 15))
+            echo "CocoaPods download failed; retrying in ${retry_delay}s..." >&2
+            sleep "$retry_delay"
+            attempt=$((attempt + 1))
+          done
       - name: Build IPA
         script: |
+          set -euo pipefail
+          export CURL_HOME="$CM_BUILD_DIR/.cocoapods-curl"
           APP_VERSION_FULL="$(grep '^version:' pubspec.yaml | sed 's/version: //')"
           APP_VERSION="${APP_VERSION_FULL%%+*}"
           case "${PROJECT_BUILD_NUMBER:-}" in
@@ -81,8 +130,8 @@ workflows:
               exit 1
               ;;
           esac
-          if [ "$PROJECT_BUILD_NUMBER" -le 19 ]; then
-            echo "PROJECT_BUILD_NUMBER must be greater than 19." >&2
+          if [ "$PROJECT_BUILD_NUMBER" -le 61 ]; then
+            echo "PROJECT_BUILD_NUMBER must be greater than rejected build 61." >&2
             exit 1
           fi
           echo "Building iOS version $APP_VERSION ($PROJECT_BUILD_NUMBER)"
@@ -106,12 +155,13 @@ workflows:
               exit 1
               ;;
           esac
-          if [ "$CF_BUNDLE_VERSION" -le 19 ]; then
-            echo "Generated IPA CFBundleVersion must be greater than 19; got $CF_BUNDLE_VERSION." >&2
+          if [ "$CF_BUNDLE_VERSION" -le 61 ]; then
+            echo "Generated IPA CFBundleVersion must be greater than rejected build 61; got $CF_BUNDLE_VERSION." >&2
             exit 1
           fi
           echo "Verified generated IPA CFBundleVersion: $CF_BUNDLE_VERSION"
     artifacts:
+      - ios/Podfile.lock
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - flutter_drive.log

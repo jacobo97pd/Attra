@@ -589,8 +589,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     // El feed se cargó SIN ubicación: pasa de filtrar por país a filtrar por
     // radio, así que sí cambia.
     if (lat == null || lng == null) return true;
-    return LocationRefreshPolicy.distanceKm(lat, lng, fix.latitude,
-            fix.longitude) >=
+    return LocationRefreshPolicy.distanceKm(
+            lat, lng, fix.latitude, fix.longitude) >=
         LocationRefreshPolicy.significantMoveKm;
   }
 
@@ -603,8 +603,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// coordenadas de la carga ANTERIOR y disparaba un segundo `_load()` solapado
   /// con el primero.
   Future<void> _reloadFeed() async {
-    final bool reloaded = await _refreshLocation(
-        LocationRefreshTrigger.feedReload);
+    final bool reloaded =
+        await _refreshLocation(LocationRefreshTrigger.feedReload);
     if (!reloaded && mounted) await _load();
   }
 
@@ -710,8 +710,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // de hacer pasar media respuesta por la respuesta entera.
       return (
         profiles: matches,
-        status:
-            result.complete ? _AiSearchStatus.ok : _AiSearchStatus.partial,
+        status: result.complete ? _AiSearchStatus.ok : _AiSearchStatus.partial,
         skipped: result.skipped,
       );
     } catch (e) {
@@ -799,9 +798,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // backend), no hace falta mirarlo aparte.
       return (
         profiles: matches,
-        status: result.complete
-            ? _AiSearchStatus.ok
-            : _AiSearchStatus.partial,
+        status: result.complete ? _AiSearchStatus.ok : _AiSearchStatus.partial,
         skipped: result.skipped,
         signals: result.signals,
         visualOff: result.visualDisabled,
@@ -887,9 +884,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // Con timeout: la barrera del "a ciegas" espera a este flag, así que un
       // `get()` que tarda en volver (arranque en frío, red mala) dejaría
       // Discover en el esqueleto. Agotarlo cuenta como fallo, no como "apagado".
-      enabled = await svc
-          .storiesEnabled()
-          .timeout(const Duration(seconds: 6));
+      enabled = await svc.storiesEnabled().timeout(const Duration(seconds: 6));
     } catch (_) {
       // No se ha podido leer el flag, que NO es lo mismo que estar apagado. Se
       // sigue pintando el feed de perfiles (el default, para no dejar Discover
@@ -1054,8 +1049,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   BlindWallPerson? get _currentBlindPerson {
     if (_index < 0 || _index >= _profiles.length) return null;
     final SeedProfile profile = _profiles[_index];
-    final List<Story> stories =
-        _storiesByOwner[profile.id] ?? const <Story>[];
+    final List<Story> stories = _storiesByOwner[profile.id] ?? const <Story>[];
     if (stories.isEmpty) return null;
     return BlindWallPerson(
       uid: profile.id,
@@ -1106,9 +1100,11 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // no puede tener su propio historial ni su propio gate de plan, o serían
       // dos verdades distintas sobre lo mismo.
       onRewind: _onRewind,
-      onSafety: () {
+      onSafety: (Story story) async {
         final SeedProfile? p = _profileAtIndex();
-        if (p != null) unawaited(_openSafetyMenu(p));
+        if (p != null && p.id == story.ownerUid) {
+          await _openSafetyMenu(p, storyId: story.storyId);
+        }
       },
     );
     wall.sync(
@@ -1686,9 +1682,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         // que entender POR QUÉ no pasa nada y qué le daría cada plan.
         widget.metrics?.log(FeedMetricsService.rewindBlocked,
             uid: _uid,
-            targetUid: state.history.isEmpty
-                ? null
-                : state.history.last.targetUid,
+            targetUid:
+                state.history.isEmpty ? null : state.history.last.targetUid,
             meta: <String, dynamic>{'tier': _planLabel});
         _snack(state.lockedMessage);
         widget.onOpenUpgrade?.call();
@@ -2433,32 +2428,34 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Row(
-          children: <Widget>[
-            Icon(degraded ? Icons.error_outline : Icons.auto_awesome,
-                size: 16, color: color),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                text,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: color, fontWeight: FontWeight.w700, fontSize: 13),
-              ),
-            ),
-            // Si el resultado está incompleto, lo útil es REINTENTAR (el fallo
-            // de cuota es transitorio y los candidatos que fallaron no se han
-            // marcado como consultados, así que la recarga vuelve a pedirlos).
-            if (degraded)
-              TextButton(
-                onPressed: _load,
-                child: const Text('Reintentar'),
-              ),
-            TextButton(
-              onPressed: _clearAiSearch,
-              child: const Text('Quitar'),
-            ),
-          ],
+              children: <Widget>[
+                Icon(degraded ? Icons.error_outline : Icons.auto_awesome,
+                    size: 16, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13),
+                  ),
+                ),
+                // Si el resultado está incompleto, lo útil es REINTENTAR (el fallo
+                // de cuota es transitorio y los candidatos que fallaron no se han
+                // marcado como consultados, así que la recarga vuelve a pedirlos).
+                if (degraded)
+                  TextButton(
+                    onPressed: _load,
+                    child: const Text('Reintentar'),
+                  ),
+                TextButton(
+                  onPressed: _clearAiSearch,
+                  child: const Text('Quitar'),
+                ),
+              ],
             ),
             // QUÉ HA ENTENDIDO la IA de la frase. El backend ya lo mandaba y el
             // cliente lo tiraba, así que el usuario veía "Búsqueda IA activa" y
@@ -2514,9 +2511,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         // Si se sabe QUÉ se entendió, se dice: "no encaja nadie" es mucho más
         // útil cuando el usuario puede ver que su "majo" se leyó como "empático"
         // y que el filtro exige datos que casi nadie rellena.
-        final String understood = ai.signals.isEmpty
-            ? ''
-            : ' He buscado: ${ai.signals.join(' · ')}.';
+        final String understood =
+            ai.signals.isEmpty ? '' : ' He buscado: ${ai.signals.join(' · ')}.';
         message = byPrompt
             ? 'Ninguno de los perfiles disponibles encaja con $what.$understood Prueba con una descripción menos específica o quita el filtro para ver el feed completo.'
             : 'Ninguno de los perfiles disponibles se parece lo suficiente a $what. Quita el filtro para ver el feed completo.';
@@ -2843,12 +2839,13 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
 
   /// Guideline 1.2: reportar contenido objetable y bloquear usuarios abusivos
   /// desde el propio feed, sin necesidad de match ni de chat previo.
-  Future<void> _openSafetyMenu(SeedProfile profile) async {
+  Future<void> _openSafetyMenu(SeedProfile profile, {String? storyId}) async {
     final SafetyActionResult result = await SafetyActions.showSheet(
       context,
       matchService: widget.matchService,
       uid: profile.id,
       displayName: profile.displayName,
+      storyId: storyId,
     );
     if (!mounted || result != SafetyActionResult.blocked) return;
     // Bloqueado: fuera del feed inmediatamente. No basta con sacarlo de

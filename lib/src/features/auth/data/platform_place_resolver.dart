@@ -38,10 +38,11 @@ class PlatformPlaceResolver implements PlaceResolver {
         m.locality,
         m.subAdministrativeArea,
         m.administrativeArea,
-      ].firstWhere(
-        (String? v) => (v ?? '').trim().isNotEmpty,
-        orElse: () => '',
-      )!
+      ]
+          .firstWhere(
+            (String? v) => (v ?? '').trim().isNotEmpty,
+            orElse: () => '',
+          )!
           .trim();
       return ResolvedPlace(
         city: city,

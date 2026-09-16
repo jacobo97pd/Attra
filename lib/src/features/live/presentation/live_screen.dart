@@ -232,7 +232,8 @@ class _LiveScreenState extends State<LiveScreen> with WidgetsBindingObserver {
   /// No se reutiliza `SafetyActions.report` porque volvería a preguntar el
   /// motivo, que aquí ya está elegido; sí se copia su contrato de cara al
   /// usuario (mismo texto de confirmación y mismo aviso de fallo).
-  Future<void> _sendReportAfterSession(String peerUid, ReportReason reason) async {
+  Future<void> _sendReportAfterSession(
+      String peerUid, ReportReason reason) async {
     final ScaffoldMessengerState? messenger =
         ScaffoldMessenger.maybeOf(context);
     try {
@@ -927,9 +928,8 @@ class _CircleButton extends StatelessWidget {
       child: Tooltip(
         message: tooltip,
         child: Material(
-          color: danger
-              ? Colors.redAccent
-              : Colors.white.withValues(alpha: 0.16),
+          color:
+              danger ? Colors.redAccent : Colors.white.withValues(alpha: 0.16),
           shape: const CircleBorder(),
           child: InkWell(
             customBorder: const CircleBorder(),

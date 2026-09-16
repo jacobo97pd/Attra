@@ -71,7 +71,8 @@ void main() {
     final StoryPickResult result = await pickStoryMedia(gallery, photo);
 
     expect(result.isReady, isFalse);
-    expect(result.message, 'Esta foto está en HEIC y no hemos podido convertirla.');
+    expect(result.message,
+        'Esta foto está en HEIC y no hemos podido convertirla.');
     expect(result.message, isNot(contains('Exception')));
   });
 
@@ -126,7 +127,8 @@ class _FakeGallery implements StoryGallery {
   Future<bool> ensurePermission() async => true;
 
   @override
-  Future<List<GalleryItem>> load({required int page, int pageSize = 60}) async =>
+  Future<List<GalleryItem>> load(
+          {required int page, int pageSize = 60}) async =>
       const <GalleryItem>[];
 
   @override

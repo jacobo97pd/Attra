@@ -125,8 +125,8 @@ void main() {
     await _pasar(tester);
     final String segunda = _quien(tester);
     await _pasar(tester);
-    expect(service.passed,
-        <String>[primera.toLowerCase(), segunda.toLowerCase()]);
+    expect(
+        service.passed, <String>[primera.toLowerCase(), segunda.toLowerCase()]);
     // Dos gestos guardados: el contador lo dice sin tener que adivinarlo.
     expect(find.text('2'), findsOneWidget);
 

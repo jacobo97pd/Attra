@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../profile/domain/gender_matching.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../social/domain/intent_mode.dart';
 import 'feed_filters.dart';
@@ -69,19 +70,23 @@ class FeedFilter {
           myIntent.channels.contains(SocialChannel.dating) &&
               p.intentMode.channels.contains(SocialChannel.dating);
       if (datingOverlap) {
-        final bool iWantThem = myInterestedIn.isEmpty ||
-            p.gender.isEmpty ||
-            myInterestedIn.contains(p.gender);
-        final bool theyWantMe = p.interestedIn.isEmpty ||
-            myGender.isEmpty ||
-            p.interestedIn.contains(myGender);
+        // GenderMatching, y no `contains` a pelo: "a quién buscas" solo tiene
+        // tres casillas y el género tiene ocho identidades, así que comparar
+        // los dos campos en crudo dejaba fuera del feed a las cinco que no son
+        // una casilla exacta. Ver gender_matching.dart.
+        final bool iWantThem = GenderMatching.wants(myInterestedIn, p.gender);
+        final bool theyWantMe = GenderMatching.wants(p.interestedIn, myGender);
         if (!iWantThem || !theyWantMe) return false;
       }
 
       // --- Siempre duros ---
+      // "Mostrarme" usa el MISMO criterio que la compatibilidad de arriba: sus
+      // casillas son las tres de `interestedIn`, asi que comparando en crudo
+      // marcar "Mujeres" borraba del feed a las mujeres trans. El panel de
+      // filtros no puede deshacer lo que arregla GenderMatching.
       if (filters.showGenders.isNotEmpty &&
           p.gender.isNotEmpty &&
-          !filters.showGenders.contains(p.gender)) {
+          !GenderMatching.wants(filters.showGenders, p.gender)) {
         return false;
       }
       if (filters.onlyWithPhoto &&

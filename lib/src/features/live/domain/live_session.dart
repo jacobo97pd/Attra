@@ -281,10 +281,10 @@ class LiveSession {
   /// la pantalla; caen a un valor seguro (ver [LiveSessionStatus.fromValue]).
   factory LiveSession.fromMap(String id, Map<String, dynamic> map) {
     final List<String> users = _asStringList(map['users']);
-    final String a = _asString(map['userA']) ??
-        (users.isNotEmpty ? users.first : '');
-    final String b = _asString(map['userB']) ??
-        (users.length > 1 ? users[1] : '');
+    final String a =
+        _asString(map['userA']) ?? (users.isNotEmpty ? users.first : '');
+    final String b =
+        _asString(map['userB']) ?? (users.length > 1 ? users[1] : '');
 
     return LiveSession(
       id: id,

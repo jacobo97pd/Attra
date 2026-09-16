@@ -360,7 +360,6 @@ class StoryService {
     }
   }
 
-
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {
     try {

@@ -129,7 +129,8 @@ void main() {
 
     test('una cabecera mas corta que la firma no revienta', () {
       // Pasa de verdad con un fichero de iCloud a medio bajar.
-      expect(detectStoryImageFormat(const <int>[0xFF]), StoryImageFormat.unknown);
+      expect(
+          detectStoryImageFormat(const <int>[0xFF]), StoryImageFormat.unknown);
       expect(
         detectStoryImageFormat(const <int>[0x89, 0x50, 0x4E]),
         StoryImageFormat.unknown,

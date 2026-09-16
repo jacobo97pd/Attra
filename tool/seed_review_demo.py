@@ -10,8 +10,15 @@ content ... such as access to other users"). Este script deja la cuenta con:
   3. Likes RECIBIDOS de varios perfiles semilla -> la bandeja "Te han dado
      like" no aparece vacia y, al devolver el like, sale un match REAL.
   4. Dos matches ya creados con su chat y mensajes -> "Chats" tiene contenido.
-  5. Entitlement Pro activo -> el revisor ve todas las funciones de pago sin
-     tener que comprar nada.
+  5. Entitlement Pro activo -> acceso al plan sin tener que comprarlo.
+
+Con --with-stories prepara historias de demostracion con la misma vigencia de
+72 horas que las historias normales. --stories-only permite renovarlas sin
+restablecer chats. --peer-uid crea un chat con otra cuenta REAL de prueba para
+probar juegos y llamadas desde dos dispositivos; los mocks no responden solos.
+Los mocks estan en Espana: comprueba el feed con la ubicacion del dispositivo
+y, si procede, configura Modo viajes a Espana. El consentimiento de IA y la
+aceptacion de terminos se completan en la app; el script no los falsifica.
 
 Requisitos previos (una sola vez, en la consola de Firebase):
   - Authentication -> Sign-in method -> Phone -> "Phone numbers for testing":
@@ -22,15 +29,21 @@ Requisitos previos (una sola vez, en la consola de Firebase):
   - Sembrar los perfiles mock: `python tool/seed_mock_profiles.py`.
 
 Uso:
-  set GTOKEN=<gcloud auth print-access-token>
-  set DEMO_UID=<uid del usuario demo>
+  $env:GTOKEN = gcloud auth print-access-token
+  $env:DEMO_UID = "<uid del usuario demo>"
   python tool/seed_review_demo.py
+
+Para revisar todos los documentos sin credenciales ni acceso a Firebase:
+  python tool/seed_review_demo.py --dry-run --uid demo_offline
 
 Si la cuenta demo YA completo el onboarding en la app (perfil real, fotos
 propias), siembra solo el contenido y no pises el perfil:
-  set DEMO_KEEP_PROFILE=1
+  $env:DEMO_KEEP_PROFILE = "1"
 
-Idempotente: usa PATCH con ids deterministas, se puede re-ejecutar.
+Usa ids deterministas y se puede re-ejecutar; al hacerlo restablece los likes
+y los chats demo. No borra bloqueos, reportes ni mensajes de usuarios.
+Las escrituras se agrupan en un unico commit atomico y preservan los campos
+no incluidos, especialmente otros ajustes y consentimientos existentes.
 IMPORTANTE: los ids de like/match/chat replican los del backend
 (functions/src/ids.ts y lib/src/features/match/domain/pair_id.dart):
   like  -> `<fromUid>_<toUid>`
@@ -39,16 +52,20 @@ IMPORTANTE: los ids de like/match/chat replican los del backend
 """
 import json
 import os
+import argparse
+import copy
+import re
+from datetime import datetime, timedelta, timezone
+import urllib.error
+import urllib.parse
 import urllib.request
 
-TOKEN = os.environ["GTOKEN"]
+TOKEN = os.environ.get("GTOKEN", "").strip()
 PROJ = "attra-database"
 DEMO_UID = os.environ.get("DEMO_UID", "").strip()
-if not DEMO_UID:
-    raise SystemExit(
-        "Falta DEMO_UID. Inicia sesion una vez con el telefono de prueba y "
-        "exporta el UID: set DEMO_UID=<uid>"
-    )
+DRY_RUN = False
+PENDING_WRITES = {}
+SEED_FIELDS = {}
 
 HDR = {
     "Authorization": f"Bearer {TOKEN}",
@@ -70,14 +87,16 @@ LIKED_ME = [
 MATCHED = [
     ("mock_t_ana", [
         ("mock_t_ana", "Hola! Vi que tambien te gusta el padel 🎾"),
-        (DEMO_UID, "Si! Juego los martes. ¿Te apuntas a un partido?"),
+        (None, "Si! Juego los martes. ¿Te apuntas a un partido?"),
         ("mock_t_ana", "Me encantaria. ¿Esta semana te viene bien?"),
     ]),
     ("mock_t_ines", [
         ("mock_t_ines", "Tu foto del concierto es brutal, ¿quien tocaba?"),
-        (DEMO_UID, "Era un grupo indie de Barcelona, te paso el nombre"),
+        (None, "Era un grupo indie de Barcelona, te paso el nombre"),
     ]),
 ]
+# No reciben likes/matches del script: quedan disponibles para el feed.
+FEED_ONLY = ["mock_t_elena", "mock_t_clara"]
 
 # OJO con la FORMA del documento: AppUser.fromDocument NO lee estos datos de la
 # raiz, sino de los mapas `profile`, `preferences`, `location` y `settings`
@@ -87,7 +106,6 @@ _PHOTO_MAIN = "https://randomuser.me/api/portraits/men/32.jpg"
 _PHOTO_ALT = "https://randomuser.me/api/portraits/men/33.jpg"
 
 DEMO_PROFILE = {
-    "uid": DEMO_UID,
     "displayName": "Alex Demo",
     "email": "review.demo@attra.app",
     "photoUrl": _PHOTO_MAIN,
@@ -106,6 +124,8 @@ DEMO_PROFILE = {
         "pronouns": "he",
         "orientation": ["straight"],
         "birthDate": "1995-05-20T00:00:00Z",
+        "birthCity": "Madrid",
+        "languages": ["es", "en"],
         "bio": (
             "Cuenta de demostracion para la revision de la App Store. "
             "Perfil completo con matches, chats y likes recibidos."
@@ -122,7 +142,8 @@ DEMO_PROFILE = {
     # preferences.* -> a quien quiere ver.
     "preferences": {
         "interestedIn": ["female"],
-        "maxDistanceKm": 100,
+        # Los mocks estan repartidos por Espana; 100 km ocultaba casi todos.
+        "maxDistanceKm": 1000,
         "preferredAgeMin": 24,
         "preferredAgeMax": 40,
     },
@@ -142,6 +163,8 @@ def to_value(v):
     """Convierte un valor Python al formato tipado de Firestore REST."""
     if v is None:
         return {"nullValue": None}
+    if isinstance(v, datetime):
+        return {"timestampValue": v.astimezone(timezone.utc).isoformat()}
     if isinstance(v, bool):
         return {"booleanValue": v}
     if isinstance(v, int):
@@ -158,16 +181,139 @@ def to_value(v):
 
 
 def patch(path, data):
-    """PATCH idempotente sobre `documents/<path>` con updateMask."""
+    """Prepara un update; main confirma todo junto tras validar requisitos."""
     fields = {k: to_value(v) for k, v in data.items()}
-    mask = "&".join(f"updateMask.fieldPaths={k}" for k in data)
+    if DRY_RUN:
+        # Escapes JSON para que funcione tambien redirigido en PowerShell/cp1252.
+        print(json.dumps({"path": path, "fields": fields}))
+        return
+    def merge(target, source):
+        for key, value in source.items():
+            if isinstance(value, dict) and isinstance(target.get(key), dict):
+                merge(target[key], value)
+            else:
+                target[key] = copy.deepcopy(value)
+    merge(PENDING_WRITES.setdefault(path, {}), data)
+
+
+def field_paths(data, prefix=()):
+    """Mascaras de hojas; settings['tutorial.completed'] es una clave literal."""
+    for key, value in data.items():
+        escaped = key if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", key) else (
+            "`" + key.replace("\\", "\\\\").replace("`", "\\`") + "`"
+        )
+        parts = (*prefix, escaped)
+        if isinstance(value, dict) and value:
+            yield from field_paths(value, parts)
+        else:
+            yield ".".join(parts)
+
+
+def commit_writes():
+    """Firestore commit es atomico: no deja un perfil con contenido a medias."""
+    if DRY_RUN or not PENDING_WRITES:
+        return
+    writes = [{
+        "update": {
+            "name": f"projects/{PROJ}/databases/{PROJ}/documents/{path}",
+            "fields": {key: to_value(value) for key, value in data.items()},
+        },
+        "updateMask": {"fieldPaths": list(field_paths(data))},
+    } for path, data in PENDING_WRITES.items()]
     req = urllib.request.Request(
-        f"{BASE}/{path}?{mask}",
-        data=json.dumps({"fields": fields}).encode(),
-        method="PATCH",
+        f"{BASE}:commit",
+        data=json.dumps({"writes": writes}).encode(),
+        method="POST",
         headers=HDR,
     )
-    urllib.request.urlopen(req).read()
+    with urllib.request.urlopen(req, timeout=30) as response:
+        response.read()
+
+
+def require_document(path):
+    """Detecta prerequisitos ausentes ANTES de crear contenido parcial."""
+    req = urllib.request.Request(
+        f"{BASE}/{urllib.parse.quote(path, safe='/')}", headers=HDR
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.load(response).get("fields", {})
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+        raise SystemExit(
+            f"Falta {path}. Inicia sesion con la cuenta demo y ejecuta "
+            "python tool/seed_mock_profiles.py antes de preparar la revision."
+        ) from error
+
+
+def check_prerequisites(keep_profile, peer_uid=None):
+    fields = require_document(f"users/{DEMO_UID}")
+    if keep_profile and not all(
+        fields.get(key, {}).get("booleanValue") is True
+        for key in ("onboardingCompleted", "profileCompleted")
+    ):
+        raise SystemExit(
+            "DEMO_KEEP_PROFILE requiere completar el onboarding de la cuenta."
+        )
+    for uid in LIKED_ME + [uid for uid, _ in MATCHED] + FEED_ONLY:
+        fields = require_document(f"seed_profiles/{uid}")
+        SEED_FIELDS[uid] = fields
+        if (fields.get("isBot", {}).get("booleanValue") is not True
+                or not fields.get("photoUrl", {}).get("stringValue")
+                or not fields.get("displayName", {}).get("stringValue")):
+            raise SystemExit(
+                f"Perfil semilla incompleto: {uid}. Ejecuta "
+                "python tool/seed_mock_profiles.py."
+            )
+    if peer_uid:
+        require_document(f"users/{peer_uid}")
+
+
+def check_only(keep_profile, peer_uid):
+    """Comprueba acceso y contenido existente sin escribir ni exponer secretos."""
+    check_prerequisites(keep_profile, peer_uid)
+    flags = require_document("config/featureFlags")
+    print("Requisitos de perfil y perfiles semilla: OK.")
+    print("storiesEnabled=" + str(
+        flags.get("storiesEnabled", {}).get("booleanValue", False)))
+    print("Comprobacion terminada. No se ha escrito en Firebase. "
+          "El acceso desde la app y el contenido vigente requieren validacion.")
+
+
+def seed_stories():
+    """Contenido demo identificado; no cambia la caducidad normal de 72 h."""
+    mock_names = ["Maria", "Laura", "Carmen", "Valeria", "Ana", "Ines",
+                  "Elena", "Clara"]
+    owners = LIKED_ME + [uid for uid, _ in MATCHED] + FEED_ONLY
+    for index, (uid, name) in enumerate(zip(owners, mock_names), 1):
+        fields = SEED_FIELDS.get(uid, {})
+        photo = fields.get("photoUrl", {}).get("stringValue") or (
+            f"https://randomuser.me/api/portraits/women/{index}.jpg"
+        )
+        display_name = fields.get("displayName", {}).get("stringValue", name)
+        story_id = f"review_demo_{uid}"
+        patch(f"stories/{story_id}", {
+            "storyId": story_id,
+            "ownerUid": uid,
+            "displayName": display_name,
+            "mediaType": "image",
+            "imageUrl": photo,
+            "imagePath": "",
+            "thumbnailUrl": photo,
+            "thumbnailPath": "",
+            "videoUrl": "",
+            "videoPath": "",
+            "caption": "Historia de demostracion - contenido de prueba",
+            "overlays": [],
+            "visibility": "discovery",
+            "status": "active",
+            "durationSeconds": 0,
+            "createdAt": STAMP,
+            "expiresAt": STAMP + timedelta(hours=72),
+        })
+    print("Preparadas 8 historias demo; caducan a las 72 h. "
+          "Renueva con --stories-only antes de que caduquen.")
 
 
 def pair_id(a, b):
@@ -179,32 +325,52 @@ def directed_id(from_uid, to_uid):
     return f"{from_uid}_{to_uid}"
 
 
-# Marca temporal fija: el backend usa serverTimestamp, pero al sembrar por REST
-# basta una fecha valida para ordenar. Se puede sobrescribir por env.
-STAMP = os.environ.get("DEMO_STAMP", "2026-08-01T10:00:00Z")
+# Firestore debe recibir Timestamp, igual que los mensajes enviados por la app.
+# Las cadenas ISO se ordenan por tipo, separadas de los mensajes reales.
+STAMP = None
 
 
 def seed_profile():
-    patch(f"users/{DEMO_UID}", DEMO_PROFILE)
+    profile = DEMO_PROFILE["profile"]
+    preferences = DEMO_PROFILE["preferences"]
+    birth_date = datetime.fromisoformat(profile["birthDate"].replace("Z", "+00:00"))
+    today = STAMP.date()
+    age = today.year - birth_date.year - (
+        (today.month, today.day) < (birth_date.month, birth_date.day)
+    )
+    patch(f"users/{DEMO_UID}", {
+        **DEMO_PROFILE,
+        "uid": DEMO_UID,
+        "profile": {**profile, "birthDate": birth_date},
+        "updatedAt": STAMP,
+    })
     discovery = {
         "uid": DEMO_UID,
-        "displayName": DEMO_PROFILE["displayName"],
-        "age": DEMO_PROFILE["age"],
-        "gender": DEMO_PROFILE["gender"],
-        "interestedIn": DEMO_PROFILE["interestedIn"],
-        "orientation": DEMO_PROFILE["orientation"],
+        "displayName": profile["visibleName"],
+        "age": age,
+        "gender": profile["gender"],
+        "interestedIn": preferences["interestedIn"],
         "photoUrl": DEMO_PROFILE["photoUrl"],
-        "currentCity": DEMO_PROFILE["currentCity"],
-        "geo": DEMO_PROFILE["geo"],
+        "photos": DEMO_PROFILE["photos"],
+        "bio": profile["bio"],
+        "currentCity": profile["currentCity"],
+        "currentCountryName": profile["currentCountryName"],
+        "jobTitle": profile["jobTitle"],
+        "company": profile["company"],
+        "relationshipIntent": profile["relationshipIntent"],
+        "intentMode": profile["intentMode"],
+        "interests": profile["interests"],
+        # Igual que DiscoveryPublisher: coordenadas publicas aproximadas.
+        "geo": {key: round(value, 2) for key, value in DEMO_PROFILE["geo"].items()},
         "isBot": False,
-        "visible": True,
+        "updatedAt": STAMP,
     }
     patch(f"discovery/{DEMO_UID}", discovery)
-    print(f"OK perfil demo: users/{DEMO_UID} + discovery/{DEMO_UID}")
+    print(f"Preparado perfil demo: users/{DEMO_UID} + discovery/{DEMO_UID}")
 
 
 def seed_entitlement():
-    """Pro activo para que el revisor vea TODAS las funciones sin comprar.
+    """Pro activo; consentimientos y flags de producto siguen aplicando.
 
     OJO con la coleccion: el cliente lee `userEntitlements/{uid}`
     (lib/src/features/monetization/data/entitlement_service.dart) y las reglas
@@ -222,11 +388,21 @@ def seed_entitlement():
             "tier": "pro",
             "source": "admin",
             "isLifetime": True,
+            "expiresAt": None,
+            "renewsAt": None,
+            # [] activa defaultFeaturesForTier(pro), incluso si antes habia
+            # una lista explicita de features de un tier inferior.
+            "features": [],
             "productId": "app_review_demo",
             "note": "Cuenta de revision de App Store. Concesion manual.",
+            "updatedAt": STAMP,
         },
     )
-    print(f"OK entitlement Pro: userEntitlements/{DEMO_UID}")
+    patch(f"users/{DEMO_UID}", {
+        "subscriptionTier": "pro",
+        "hasActiveSubscription": True,
+    })
+    print(f"Preparado entitlement Pro: userEntitlements/{DEMO_UID}")
 
 
 def seed_received_likes():
@@ -246,7 +422,7 @@ def seed_received_likes():
                 "createdAt": STAMP,
             },
         )
-        print(f"OK like recibido de {uid}")
+        print(f"Preparado like recibido de {uid}")
 
 
 def seed_match(other_uid, messages):
@@ -254,6 +430,9 @@ def seed_match(other_uid, messages):
     mid = pair_id(DEMO_UID, other_uid)
     user_a, user_b = sorted([DEMO_UID, other_uid])
     users = [user_a, user_b]
+    messages = [(sender or DEMO_UID, text) for sender, text in messages]
+    # Cada mensaje tiene su propia fecha; el resumen apunta al ultimo.
+    last_message_at = STAMP + timedelta(seconds=len(messages) - 1)
 
     patch(
         f"matches/{mid}",
@@ -290,10 +469,10 @@ def seed_match(other_uid, messages):
             "lastMessage": last_text,
             "lastMessageType": "text",
             "lastMessageSenderId": last_sender,
-            "lastMessageAt": STAMP,
+            "lastMessageAt": last_message_at,
             "realMessageCount": len(messages),
             "createdAt": STAMP,
-            "updatedAt": STAMP,
+            "updatedAt": last_message_at,
         },
     )
 
@@ -322,32 +501,113 @@ def seed_match(other_uid, messages):
                 "type": "text",
                 "text": text,
                 "status": "sent",
-                "createdAt": STAMP,
+                "createdAt": STAMP + timedelta(seconds=i),
             },
         )
-    print(f"OK match+chat con {other_uid}: {len(messages)} mensajes")
+    print(f"Preparado match+chat con {other_uid}: {len(messages)} mensajes")
 
 
-def main():
+def main(argv=None):
+    global DEMO_UID, DRY_RUN, STAMP, HDR
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--uid", default=DEMO_UID)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true",
+                      help="Muestra el payload REST sin acceso a Firebase.")
+    mode.add_argument("--check-only", action="store_true",
+                      help="Comprueba requisitos en Firebase sin escribir.")
+    parser.add_argument("--keep-profile", action="store_true",
+                        help="Conserva el perfil existente; concede Pro y contenido.")
+    parser.add_argument("--peer-uid", help="UID de otra cuenta real de prueba.")
+    parser.add_argument("--with-stories", action="store_true",
+                        help="Incluye 8 historias demo de 72 h para A ciegas.")
+    parser.add_argument("--stories-only", action="store_true",
+                        help="Renueva solo historias demo; conserva perfil y chats.")
+    parser.add_argument("--travel-spain", action="store_true",
+                        help="Configura Modo viajes a Espana para ver los mocks desde cualquier pais.")
+    args = parser.parse_args(argv)
+    DEMO_UID = args.uid.strip()
+    DRY_RUN = args.dry_run
+    def valid_uid(uid):
+        return (bool(uid) and len(uid) <= 128 and "/" not in uid
+                and uid not in (".", "..") and not any(ord(c) < 32 for c in uid))
+    if not valid_uid(DEMO_UID):
+        parser.error("Indica un UID valido mediante --uid o DEMO_UID.")
+    peer_uid = (args.peer_uid or "").strip()
+    if args.peer_uid and (not valid_uid(peer_uid) or peer_uid == DEMO_UID
+                         or peer_uid.startswith("mock_")):
+        parser.error("--peer-uid requiere otra cuenta real de prueba, no un mock.")
+    if not DRY_RUN and not TOKEN:
+        parser.error("Falta GTOKEN (gcloud auth print-access-token).")
+    HDR = {**HDR, "Authorization": f"Bearer {TOKEN}"}
+    PENDING_WRITES.clear()
+    SEED_FIELDS.clear()
+    try:
+        STAMP = datetime.fromisoformat(
+            os.environ.get("DEMO_STAMP", "").replace("Z", "+00:00")
+        ) if os.environ.get("DEMO_STAMP") else (
+            datetime.now(timezone.utc) - timedelta(minutes=5)
+        )
+        if STAMP.tzinfo is None:
+            raise ValueError("DEMO_STAMP debe incluir zona horaria")
+        STAMP = STAMP.astimezone(timezone.utc)
+    except ValueError as error:
+        parser.error(str(error))
     # Si la cuenta ya completo el onboarding en la app, su perfil es real y
     # NO hay que pisarlo: bastaria con sembrar el contenido. Ademas, el
     # repositorio restaura displayName/photoUrl desde profile.* en cada login,
     # asi que sobrescribirlos aqui dejaria el perfil a medias.
-    if os.environ.get("DEMO_KEEP_PROFILE", "").strip() in ("1", "true", "yes"):
-        print("DEMO_KEEP_PROFILE activo: no se toca el perfil existente.")
-    else:
-        seed_profile()
-    seed_entitlement()
-    seed_received_likes()
-    for other_uid, messages in MATCHED:
-        seed_match(other_uid, messages)
+    keep_profile = args.keep_profile or os.environ.get("DEMO_KEEP_PROFILE", "").strip().lower() in (
+        "1", "true", "yes"
+    )
+    if args.check_only:
+        check_only(keep_profile, peer_uid)
+        return
+    if not DRY_RUN:
+        check_prerequisites(keep_profile, peer_uid)
+    if not args.stories_only:
+        if keep_profile:
+            print("Se conserva el perfil y se prepara la concesion Pro.")
+        else:
+            seed_profile()
+        if args.travel_spain:
+            patch(f"users/{DEMO_UID}", {
+                "preferences": {"maxDistanceKm": 1000},
+                "settings": {"travel": {
+                    "active": True, "iso2": "ES", "country": "Espa\u00f1a",
+                    "city": "",
+                }},
+            })
+        seed_entitlement()
+        seed_received_likes()
+        for other_uid, messages in MATCHED:
+            seed_match(other_uid, messages)
+        if peer_uid:
+            seed_match(peer_uid, [
+                (peer_uid, "Hola, esta cuenta de prueba permite revisar juegos y llamadas desde otro dispositivo."),
+                (None, "Perfecto, podemos probar las funciones de chat juntos."),
+            ])
+    if args.with_stories or args.stories_only:
+        seed_stories()
+    if DRY_RUN:
+        print("Simulacion terminada. No se ha leido ni escrito en Firebase.")
+        return
+    commit_writes()
     print(
-        "\nCuenta demo lista. Recuerda:\n"
+        "\nDatos demo preparados. Verificacion en dispositivo pendiente:\n"
         "  - Telefono de prueba y codigo fijo dados de alta en Firebase Auth.\n"
         "  - Esos mismos datos en App Store Connect -> App Review "
         "Information.\n"
         "  - Verifica en la app: feed con perfiles, likes recibidos, chats "
-        "con historial y funciones Pro visibles."
+        "con historial y funciones Pro visibles.\n"
+        "  - Los mocks estan en Espana: revisa ubicacion/Modo viajes.\n"
+        "  - Si storiesEnabled activa A ciegas, usa --with-stories y renueva "
+        "con --stories-only al menos cada 72 h durante la revision.\n"
+        "  - Los mocks no responden a juegos ni llamadas; prepara otra "
+        "cuenta real de prueba para esos flujos.\n"
+        "  - Acepta terminos y consentimiento IA desde la app cuando se pidan.\n"
+        "  - Si reutilizas la cuenta, revisa bloqueos, matches previos y "
+        "filtros: este script no borra esas acciones."
     )
 
 

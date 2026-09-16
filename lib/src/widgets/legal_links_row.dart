@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/config/legal_links.dart';
 
-/// Fila de enlaces legales FUNCIONALES (EULA + privacidad).
+/// Enlaces a las condiciones de la comunidad, EULA de Apple y privacidad.
 ///
 /// Se usa en el login (antes de registrarse) y en el paywall de suscripciones,
 /// donde App Store exige enlaces que abran realmente los documentos
@@ -29,7 +29,7 @@ class AttraLegalLinksRow extends StatelessWidget {
     final ScaffoldMessengerState? messenger =
         ScaffoldMessenger.maybeOf(context);
     final bool opened = await LegalLinks.open(url);
-    if (opened || messenger == null) return;
+    if (opened || messenger == null || !messenger.mounted) return;
     messenger.showSnackBar(
       SnackBar(content: Text('No se pudo abrir el enlace: $url')),
     );
@@ -45,8 +45,16 @@ class AttraLegalLinksRow extends StatelessWidget {
       children: <Widget>[
         _LegalLink(
           key: const ValueKey<String>('legal-link-terms'),
-          label: 'Condiciones de uso (EULA)',
+          label: 'Condiciones de uso',
           url: LegalLinks.termsUrl,
+          color: linkColor,
+          fontSize: fontSize,
+        ),
+        _Separator(color: linkColor, fontSize: fontSize),
+        _LegalLink(
+          key: const ValueKey<String>('legal-link-eula'),
+          label: 'EULA de Apple',
+          url: LegalLinks.eulaUrl,
           color: linkColor,
           fontSize: fontSize,
         ),

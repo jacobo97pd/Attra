@@ -124,8 +124,7 @@ class RewindState {
   bool get canUndo => remaining > 0;
 
   /// El gesto que se desharía al pulsar. `null` si no se puede deshacer nada.
-  RewindEntry? get pending =>
-      canUndo ? history[history.length - 1] : null;
+  RewindEntry? get pending => canUndo ? history[history.length - 1] : null;
 
   RewindStatus get status {
     if (isLocked) return RewindStatus.locked;

@@ -38,8 +38,9 @@ class StoryImageConversionException implements Exception, StoryUserFacingError {
   final Object? cause;
 
   @override
-  String toString() =>
-      cause == null ? message : 'StoryImageConversionException: $message ($cause)';
+  String toString() => cause == null
+      ? message
+      : 'StoryImageConversionException: $message ($cause)';
 }
 
 /// Tamaño al que se le pide al transcodificador que deje la imagen.

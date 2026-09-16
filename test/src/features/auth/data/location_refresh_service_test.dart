@@ -103,8 +103,7 @@ void main() {
         timestamp: clock.subtract(const Duration(hours: 5)),
         fromCache: true,
       ),
-      current: const LocationFix(
-          latitude: valenciaLat, longitude: valenciaLng),
+      current: const LocationFix(latitude: valenciaLat, longitude: valenciaLng),
     );
 
     final LocationRefreshOutcome out = await service(source).refresh(
@@ -170,11 +169,13 @@ void main() {
       expect(source.lastKnownCalls, 0);
       expect(source.currentFixCalls, 0);
       expect(out.notice, LocationNotice.permissionAskable,
-          reason: 'antes esto se tragaba en silencio y el usuario veía gente de '
+          reason:
+              'antes esto se tragaba en silencio y el usuario veía gente de '
               'otra ciudad sin saber por qué');
     });
 
-    test('gesto explícito: pide permiso y, si lo dan, refresca en el mismo acto',
+    test(
+        'gesto explícito: pide permiso y, si lo dan, refresca en el mismo acto',
         () async {
       final _FakeSource source = _FakeSource(
         permission: LocationAuthorization.denied,
@@ -208,7 +209,8 @@ void main() {
       expect(out.notice, LocationNotice.permissionBlocked);
     });
 
-    test('localización del dispositivo apagada: se dice, no se intenta', () async {
+    test('localización del dispositivo apagada: se dice, no se intenta',
+        () async {
       final _FakeSource source =
           _FakeSource(permission: LocationAuthorization.serviceDisabled);
 
@@ -343,8 +345,8 @@ void main() {
     // Segunda ronda con el usuario recargado pero SIN marca resuelta todavía.
     clock = clock.add(LocationRefreshPolicy.fixCooldown * 2);
     final LocationRefreshOutcome out = await svc.refresh(
-      stored: const StoredLocation(
-          latitude: valenciaLat, longitude: valenciaLng),
+      stored:
+          const StoredLocation(latitude: valenciaLat, longitude: valenciaLng),
       trigger: LocationRefreshTrigger.appResume,
     );
 
@@ -528,7 +530,8 @@ void main() {
     );
 
     expect(first.persistFailed, isTrue,
-        reason: 'no se puede dar por guardada: la ronda siguiente debe reintentar');
+        reason:
+            'no se puede dar por guardada: la ronda siguiente debe reintentar');
 
     persist.neverCompletes = false;
     clock = clock.add(LocationRefreshPolicy.fixCooldown * 2);
@@ -644,7 +647,8 @@ class _FakeSource implements DeviceLocationSource {
   }
 
   @override
-  Future<LocationFix?> currentFix({Duration timeout = const Duration(seconds: 8)}) async {
+  Future<LocationFix?> currentFix(
+      {Duration timeout = const Duration(seconds: 8)}) async {
     currentFixCalls++;
     return current;
   }

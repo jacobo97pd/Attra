@@ -56,7 +56,8 @@ void main() {
 
     test('no hay auto-transiciones', () {
       for (final LiveSessionStatus s in LiveSessionStatus.values) {
-        expect(canTransition(s, s), isFalse, reason: '${s.wireName} -> si mismo');
+        expect(canTransition(s, s), isFalse,
+            reason: '${s.wireName} -> si mismo');
       }
     });
 
@@ -114,8 +115,7 @@ void main() {
 
     test('respeta el endsAt que ya hubiera escrito el servidor', () {
       final DateTime serverEnd = now.add(const Duration(minutes: 1));
-      final LiveSession? s =
-          startSession(session(endsAt: serverEnd), now: now);
+      final LiveSession? s = startSession(session(endsAt: serverEnd), now: now);
       expect(s!.endsAt, serverEnd);
     });
   });
@@ -199,8 +199,7 @@ void main() {
       final LiveSession s =
           session(status: LiveSessionStatus.active, startedAt: started);
       final LiveEndReason? reason = expiryEndReason(s, now: late);
-      final LiveSession? closed =
-          endSession(s, reason: reason!, now: late);
+      final LiveSession? closed = endSession(s, reason: reason!, now: late);
       expect(closed!.status, LiveSessionStatus.ended);
       expect(closed.endReason, LiveEndReason.timeout);
       expect(closed.remaining(now: late), Duration.zero);
@@ -278,8 +277,7 @@ void main() {
     });
 
     test('nadie ha decidido -> pendiente sin efectos', () {
-      final LiveVerdictResolution r =
-          resolveVerdicts(uidA: 'aaa', uidB: 'bbb');
+      final LiveVerdictResolution r = resolveVerdicts(uidA: 'aaa', uidB: 'bbb');
       expect(r.outcome, LiveMatchOutcome.pending);
       expect(r.dislikedBy, isEmpty);
     });

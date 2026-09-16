@@ -96,13 +96,17 @@ test("dos emisiones separadas en el tiempo dan credenciales distintas", () => {
   assert.notStrictEqual(first.credential, second.credential);
 });
 
-test("el TTL se recorta a [1 h, 4 h] y la basura cae al valor por defecto", () => {
+test("el TTL se recorta a [5 min, 1 h] y acepta configuracion numerica", () => {
   assert.strictEqual(clampTurnTtlSeconds(60), LIVE_TURN_MIN_TTL_SECONDS);
   assert.strictEqual(clampTurnTtlSeconds(999999), LIVE_TURN_MAX_TTL_SECONDS);
-  assert.strictEqual(clampTurnTtlSeconds("7200"), 7200);
-  assert.strictEqual(clampTurnTtlSeconds(undefined), LIVE_TURN_DEFAULT_TTL_SECONDS);
-  assert.strictEqual(clampTurnTtlSeconds("no-es-un-numero"), LIVE_TURN_DEFAULT_TTL_SECONDS);
-  assert.strictEqual(clampTurnTtlSeconds(-1), LIVE_TURN_DEFAULT_TTL_SECONDS);
+  assert.strictEqual(clampTurnTtlSeconds("7200"), LIVE_TURN_MAX_TTL_SECONDS);
+  assert.strictEqual(clampTurnTtlSeconds("1800"), 1800);
+});
+
+test("el TTL ausente o invalido usa los 15 minutos por defecto", () => {
+  for (const raw of [undefined, null, "", "  ", "no-es-un-numero", -1, 0, NaN, Infinity]) {
+    assert.strictEqual(clampTurnTtlSeconds(raw), LIVE_TURN_DEFAULT_TTL_SECONDS);
+  }
 });
 
 test("un uid con ':' no puede romper el parseo de la caducidad", () => {

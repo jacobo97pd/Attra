@@ -257,6 +257,14 @@ class SessionController extends ChangeNotifier {
 
   String? _phoneVerificationId;
   ConfirmationResult? _phoneConfirmationResult;
+  bool _termsAcceptedForSignIn = false;
+  int _authRevision = 0;
+
+  /// Lo llama el formulario al continuar con la casilla del EULA marcada.
+  /// Restaurar una sesión de Firebase no constituye una nueva aceptación.
+  void confirmTermsAcceptedForSignIn() {
+    _termsAcceptedForSignIn = true;
+  }
 
   SessionState _state = const SessionState.initializing();
   SessionState get state => _state;
@@ -342,13 +350,15 @@ class SessionController extends ChangeNotifier {
           await _authService.startPhoneSignIn(normalizedPhone);
 
       if (phoneSession.completedSignIn) {
-        _emit(
-          _state.copyWith(
-            status: SessionStatus.loadingProfile,
-            clearErrorMessage: true,
-            phoneCodeSent: false,
-          ),
-        );
+        if (_state.status == SessionStatus.authenticating) {
+          _emit(
+            _state.copyWith(
+              status: SessionStatus.loadingProfile,
+              clearErrorMessage: true,
+              phoneCodeSent: false,
+            ),
+          );
+        }
         return;
       }
 
@@ -400,13 +410,15 @@ class SessionController extends ChangeNotifier {
         verificationId: _phoneVerificationId,
         confirmationResult: _phoneConfirmationResult,
       );
-      _emit(
-        _state.copyWith(
-          status: SessionStatus.loadingProfile,
-          clearErrorMessage: true,
-          phoneCodeSent: false,
-        ),
-      );
+      if (_state.status == SessionStatus.authenticating) {
+        _emit(
+          _state.copyWith(
+            status: SessionStatus.loadingProfile,
+            clearErrorMessage: true,
+            phoneCodeSent: false,
+          ),
+        );
+      }
     } on AuthFailure catch (error) {
       _emit(
         _state.copyWith(
@@ -603,6 +615,8 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    _authRevision++;
+    _termsAcceptedForSignIn = false;
     final SessionState previousState = _state;
     _emit(
       SessionState(
@@ -960,7 +974,9 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _handleAuthStateChange(User? firebaseUser) async {
+    final int revision = ++_authRevision;
     if (firebaseUser == null) {
+      _termsAcceptedForSignIn = false;
       _emit(
         _state.copyWith(
           status: SessionStatus.unauthenticated,
@@ -972,6 +988,8 @@ class SessionController extends ChangeNotifier {
       return;
     }
 
+    final bool acceptedTerms = _termsAcceptedForSignIn;
+    _termsAcceptedForSignIn = false;
     _clearPhoneFlow();
 
     _emit(
@@ -982,39 +1000,74 @@ class SessionController extends ChangeNotifier {
       ),
     );
 
+    AppUser user;
+    String? profileError;
     try {
       final UserSyncResult syncResult =
           await _userRepository.syncUserFromAuth(firebaseUser);
+      user = syncResult.user;
+    } catch (error) {
+      user = _buildFallbackUser(firebaseUser);
+      profileError = _profileSyncErrorMessage(error);
+    }
+    if (_isDisposed || revision != _authRevision) return;
 
-      // Guideline 1.2: constancia de la aceptacion del EULA marcada en el
-      // login. Nunca lanza, asi que no puede bloquear la entrada.
-      await _userRepository.recordTermsAcceptance(firebaseUser.uid);
-
-      if (syncResult.needsOnboarding) {
-        _emit(
-          SessionState(
-            status: SessionStatus.onboardingRequired,
-            user: syncResult.user,
-          ),
-        );
+    // Una sesión restaurada puede pertenecer a una versión anterior al EULA.
+    // No da acceso al contenido hasta comprobar o recoger su aceptación.
+    try {
+      if (acceptedTerms) {
+        await _userRepository.recordTermsAcceptance(user.uid);
+      } else if (!await _userRepository.hasAcceptedCurrentTerms(user.uid)) {
+        if (_isDisposed || revision != _authRevision) return;
+        _emit(SessionState(status: SessionStatus.termsRequired, user: user));
         return;
       }
-
+    } catch (_) {
+      if (_isDisposed || revision != _authRevision) return;
       _emit(
         SessionState(
-          status: SessionStatus.authenticated,
-          user: syncResult.user,
+          status: SessionStatus.termsRequired,
+          user: user,
+          errorMessage:
+              'No se pudo confirmar la aceptación de las condiciones. '
+              'Comprueba tu conexión e inténtalo de nuevo.',
         ),
       );
-    } catch (error) {
-      _emit(
-        SessionState(
-          status: SessionStatus.onboardingRequired,
-          user: _buildFallbackUser(firebaseUser),
-          errorMessage: _profileSyncErrorMessage(error),
-        ),
-      );
+      return;
     }
+    if (_isDisposed || revision != _authRevision) return;
+    _continueUserSession(user, errorMessage: profileError);
+  }
+
+  /// Solo se llama al pulsar Continuar con la casilla marcada en el gate.
+  Future<void> acceptTermsForCurrentSession() async {
+    final AppUser? user = _state.user;
+    if (_state.status != SessionStatus.termsRequired || user == null) return;
+    final int revision = _authRevision;
+    _emit(SessionState(status: SessionStatus.acceptingTerms, user: user));
+    try {
+      await _userRepository.recordTermsAcceptance(user.uid);
+      if (_isDisposed || revision != _authRevision) return;
+      _continueUserSession(user);
+    } catch (_) {
+      if (_isDisposed || revision != _authRevision) return;
+      _emit(SessionState(
+        status: SessionStatus.termsRequired,
+        user: user,
+        errorMessage: 'No se pudo guardar la aceptación. '
+            'Comprueba tu conexión e inténtalo de nuevo.',
+      ));
+    }
+  }
+
+  void _continueUserSession(AppUser user, {String? errorMessage}) {
+    _emit(SessionState(
+      status: user.onboardingCompleted && user.profileCompleted
+          ? SessionStatus.authenticated
+          : SessionStatus.onboardingRequired,
+      user: user,
+      errorMessage: errorMessage,
+    ));
   }
 
   String _profileSyncErrorMessage(Object error) {
@@ -1075,12 +1128,19 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _refreshAuthenticatedUser(String uid) async {
+    final int revision = _authRevision;
     final SessionState previous = _state;
     if (previous.status != SessionStatus.authenticated ||
         previous.user == null) {
       return;
     }
     final AppUser updated = await _userRepository.fetchByUid(uid);
+    if (_isDisposed ||
+        revision != _authRevision ||
+        _state.status != SessionStatus.authenticated ||
+        _state.user?.uid != uid) {
+      return;
+    }
     _emit(
       SessionState(
         status: SessionStatus.authenticated,

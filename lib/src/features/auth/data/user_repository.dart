@@ -196,19 +196,21 @@ class UserRepository {
   /// cerrada de claves de primer nivel, asi que anadir campos nuevos ahi
   /// tumbaria TODA la escritura con permission-denied.
   ///
-  /// Id determinista por version: el ledger es inmutable (`update` prohibido),
-  /// asi que solo se crea si no existe. Nunca propaga errores: dejar constancia
-  /// no puede impedir entrar en la app.
+  /// Id determinista por version: el ledger es inmutable (`update` prohibido).
+  /// La transacción evita que dos dispositivos intenten modificar el mismo
+  /// consentimiento. El acceso espera la confirmación del servidor y permite
+  /// reintentar si no se pudo guardar.
   Future<void> recordTermsAcceptance(String uid) async {
-    if (uid.isEmpty) return;
-    try {
-      final DocumentReference<Map<String, dynamic>> ref = _usersCollection
-          .doc(uid)
-          .collection('consentRecords')
-          .doc('terms_${LegalLinks.termsVersion}');
-      final DocumentSnapshot<Map<String, dynamic>> snapshot = await ref.get();
-      if (snapshot.exists) return;
-      await ref.set(<String, dynamic>{
+    if (uid.isEmpty) throw ArgumentError.value(uid, 'uid');
+    final DocumentReference<Map<String, dynamic>> ref = _termsRecord(uid);
+    await _firestore.runTransaction<void>((Transaction transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot =
+          await transaction.get(ref);
+      if (snapshot.exists) {
+        if (_isCurrentTermsAcceptance(snapshot.data())) return;
+        throw StateError('El registro de aceptación existente no es válido.');
+      }
+      transaction.set(ref, <String, dynamic>{
         'purpose': 'terms_of_use',
         'granted': true,
         // Mismo vocabulario que LegalBasis del catalogo de ajustes.
@@ -217,10 +219,24 @@ class UserRepository {
         'termsVersion': LegalLinks.termsVersion,
         'recordedAt': FieldValue.serverTimestamp(),
       });
-    } catch (error) {
-      debugPrint('[Attra][Terms] no se pudo registrar la aceptacion: $error');
-    }
+    });
   }
+
+  DocumentReference<Map<String, dynamic>> _termsRecord(String uid) =>
+      _usersCollection
+          .doc(uid)
+          .collection('consentRecords')
+          .doc('terms_${LegalLinks.termsVersion}');
+
+  Future<bool> hasAcceptedCurrentTerms(String uid) async {
+    final Map<String, dynamic>? record = (await _termsRecord(uid).get()).data();
+    return _isCurrentTermsAcceptance(record);
+  }
+
+  bool _isCurrentTermsAcceptance(Map<String, dynamic>? record) =>
+      record?['granted'] == true &&
+      record?['purpose'] == 'terms_of_use' &&
+      record?['termsVersion'] == LegalLinks.termsVersion;
 
   Future<AppUser> fetchByUid(String uid) async {
     final DocumentSnapshot<Map<String, dynamic>> snapshot =
@@ -580,7 +596,8 @@ class UserRepository {
             'location': <String, dynamic>{
               'latitude': latitude,
               'longitude': longitude,
-              if (permissionStatus != null) 'permissionStatus': permissionStatus,
+              if (permissionStatus != null)
+                'permissionStatus': permissionStatus,
               if (permissionGranted != null)
                 'permissionGranted': permissionGranted,
               'fixedAt': Timestamp.fromDate(fixedAt.toUtc()),
@@ -1133,7 +1150,19 @@ class UserRepository {
     await refreshProfileCompletion(uid);
   }
 
-  Future<List<SeedProfile>> fetchSeedProfiles({int limit = 30}) async {
+  /// Perfiles semilla (mocks) para rellenar el feed.
+  ///
+  /// El tope era 30 y la consulta NO lleva `orderBy`, asi que Firestore
+  /// devolvia los 30 primeros por id de documento y siempre LOS MISMOS: con la
+  /// coleccion por encima de 30 documentos, todo lo que ordenara despues no
+  /// existia para el feed. Los perfiles sembrados para cubrir identidades,
+  /// orientaciones y modos (tool/seed_identity_matrix.py, prefijo `mock_ix_`)
+  /// caian justo ahi, detras de los `mock_fm_*` y los `mock_giulia_*`.
+  ///
+  /// `seed_profiles` es una coleccion de demo, de documentos pequenos y de
+  /// tamano controlado, asi que se lee entera y el filtrado real lo hace
+  /// FeedFilter. El tope se mantiene por seguridad, no por coste.
+  Future<List<SeedProfile>> fetchSeedProfiles({int limit = 150}) async {
     final QuerySnapshot<Map<String, dynamic>> snapshot =
         await _seedProfilesCollection
             .where('isBot', isEqualTo: true)

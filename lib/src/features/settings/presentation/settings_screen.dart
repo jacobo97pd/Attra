@@ -135,12 +135,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _NavRow(
                   icon: Icons.description_outlined,
                   color: AppColors.gold,
-                  title: 'Condiciones de uso (EULA)',
+                  title: 'Condiciones de uso',
                   subtitle:
                       'Normas de la comunidad, tolerancia cero y suscripciones',
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => AttraLegalLinksRow.openOrWarn(
                       context, LegalLinks.termsUrl),
+                ),
+                _NavRow(
+                  icon: Icons.article_outlined,
+                  color: AppColors.gold,
+                  title: 'EULA de Apple',
+                  subtitle: 'Licencia estándar para la app de App Store',
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () => AttraLegalLinksRow.openOrWarn(
+                      context, LegalLinks.eulaUrl),
                 ),
                 _NavRow(
                   icon: Icons.privacy_tip_outlined,

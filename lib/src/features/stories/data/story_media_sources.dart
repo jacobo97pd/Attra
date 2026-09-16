@@ -251,21 +251,18 @@ class DeviceStoryCamera implements StoryCamera {
     // la vista previa eso es lo natural, pero en la foto guardada no: el texto
     // sale al revés y la cara no es la que ve el resto del mundo.
     if (!shouldUnmirrorSelfie(
-      isFrontLens:
-          _cameras[_index].lensDirection == CameraLensDirection.front,
+      isFrontLens: _cameras[_index].lensDirection == CameraLensDirection.front,
       platformMirrors: _platformMirrorsFrontCamera,
     )) {
       return shot;
     }
 
     try {
-      final Uint8List? fixed =
-          unmirrorImageBytes(await shot.readAsBytes());
+      final Uint8List? fixed = unmirrorImageBytes(await shot.readAsBytes());
       if (fixed == null) return shot;
       // Se escribe AL LADO del original en vez de sobrescribirlo: si algo va mal
       // a mitad, el archivo bueno de la cámara sigue intacto.
-      final String path =
-          '${shot.path}.unmirrored.jpg';
+      final String path = '${shot.path}.unmirrored.jpg';
       await File(path).writeAsBytes(fixed, flush: true);
       return XFile(path);
     } catch (error) {

@@ -23,6 +23,7 @@ typedef PersistDeviceLocation = Future<void> Function({
   required DateTime fixedAt,
   String? permissionStatus,
   bool? permissionGranted,
+
   /// Ciudad y pais resueltos de esas coordenadas. `null` = no se pudo, y
   /// entonces se CONSERVAN los que ya habia: media verdad (coordenadas nuevas,
   /// pais viejo) es peor que el dato entero viejo.
@@ -148,10 +149,9 @@ class LocationRefreshService {
       );
 
       if (plan.askPermission) {
-        permission = await _source
-            .requestAuthorization()
-            .timeout(LocationRefreshPolicy.deviceCallTimeout,
-                onTimeout: () => LocationAuthorization.unknown);
+        permission = await _source.requestAuthorization().timeout(
+            LocationRefreshPolicy.deviceCallTimeout,
+            onTimeout: () => LocationAuthorization.unknown);
         // El gesto ya se gastó y el sistema ha contestado que no: el aviso tiene
         // que dejar de ofrecer un botón que vuelve a no abrir nada (iOS
         // `restricted`, Screen Time/MDM). Si la respuesta es `unknown` no se
@@ -203,8 +203,8 @@ class LocationRefreshService {
         final Duration? age = cached == null
             ? null
             : LocationRefreshPolicy.cacheAge(fix: cached, now: _clock());
-        final bool cacheIsAsGoodAsAFix = age != null &&
-            age <= LocationRefreshPolicy.cacheTrustedForFix;
+        final bool cacheIsAsGoodAsAFix =
+            age != null && age <= LocationRefreshPolicy.cacheTrustedForFix;
         if (cacheIsAsGoodAsAFix) {
           fix = cached;
         } else {
@@ -279,8 +279,8 @@ class LocationRefreshService {
             (decision.reason == LocationPersistReason.moved ||
                 decision.reason == LocationPersistReason.noCoordinates)) {
           try {
-            place = await _placeResolver
-                .resolve(latitude: fix.latitude, longitude: fix.longitude);
+            place = await _placeResolver.resolve(
+                latitude: fix.latitude, longitude: fix.longitude);
           } catch (error) {
             // Blindaje del CONTRATO, no del PlatformPlaceResolver (ese ya
             // captura por dentro). No poder nombrar la ciudad jamas puede
@@ -355,14 +355,13 @@ class LocationRefreshService {
 
   /// Estado del permiso, con tope de tiempo: un canal nativo que no contesta no
   /// puede dejar el refresco colgado (y con él `_inFlight`) el resto de la sesión.
-  Future<LocationAuthorization> _authorization() => _source
-      .authorization()
-      .timeout(LocationRefreshPolicy.deviceCallTimeout,
+  Future<LocationAuthorization> _authorization() =>
+      _source.authorization().timeout(LocationRefreshPolicy.deviceCallTimeout,
           onTimeout: () => LocationAuthorization.unknown);
 
-  Future<LocationFix?> _lastKnownFix() => _source.lastKnownFix().timeout(
-      LocationRefreshPolicy.deviceCallTimeout,
-      onTimeout: () => null);
+  Future<LocationFix?> _lastKnownFix() => _source
+      .lastKnownFix()
+      .timeout(LocationRefreshPolicy.deviceCallTimeout, onTimeout: () => null);
 
   LocationNotice _notice(
     StoredLocation stored,

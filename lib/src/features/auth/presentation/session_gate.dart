@@ -6,6 +6,7 @@ import '../../splash/presentation/splash_screen.dart';
 import 'login_screen.dart';
 import 'session_controller.dart';
 import 'session_state.dart';
+import 'terms_acceptance_screen.dart';
 
 class SessionGate extends StatelessWidget {
   const SessionGate({super.key, required this.controller});
@@ -32,6 +33,7 @@ class SessionGate extends StatelessWidget {
               isLoading: state.status == SessionStatus.authenticating,
               errorMessage: state.errorMessage,
               phoneCodeSent: state.phoneCodeSent,
+              onTermsAccepted: controller.confirmTermsAcceptedForSignIn,
               onGooglePressed: controller.signInWithGoogle,
               onApplePressed: controller.signInWithApple,
               onSendPhoneCode: controller.sendPhoneCode,
@@ -51,6 +53,15 @@ class SessionGate extends StatelessWidget {
               onGenerateVoiceProfile: controller.generateOnboardingVoiceProfile,
               onSubmitOnboarding: controller.submitOnboarding,
               onLogout: controller.signOut,
+            );
+            break;
+          case SessionStatus.termsRequired:
+          case SessionStatus.acceptingTerms:
+            screen = TermsAcceptanceScreen(
+              isLoading: state.status == SessionStatus.acceptingTerms,
+              errorMessage: state.errorMessage,
+              onAccept: controller.acceptTermsForCurrentSession,
+              onSignOut: controller.signOut,
             );
             break;
           case SessionStatus.authenticated:
@@ -122,6 +133,9 @@ class SessionGate extends StatelessWidget {
           SessionStatus.unauthenticated ||
           SessionStatus.authenticating =>
             'login',
+          SessionStatus.termsRequired ||
+          SessionStatus.acceptingTerms =>
+            'terms-${state.user?.uid}',
           _ => state.status,
         };
 

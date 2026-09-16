@@ -10,21 +10,26 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// Las mismas URLs deben estar en App Store Connect:
 /// - Privacy Policy URL  -> [privacyUrl]
-/// - EULA (Custom)       -> [termsUrl]
+/// - App Description EULA -> [eulaUrl] (licencia estándar de Apple)
+/// - Condiciones de la comunidad -> [termsUrl]
 class LegalLinks {
   const LegalLinks._();
 
   /// Raíz del sitio público (Firebase Hosting del proyecto attra-database).
   static const String baseUrl = 'https://attra-database.web.app';
 
-  /// Versión del EULA aceptada en el login. Se guarda en `users/{uid}` para
-  /// dejar constancia de la aceptación. Súbela al publicar un EULA nuevo.
-  static const String termsVersion = '2026-08-05';
+  /// Versión de las condiciones aceptadas en el login. Se guarda en
+  /// `users/{uid}/consentRecords`. Súbela al publicar nuevas condiciones.
+  static const String termsVersion = '2026-09-13';
 
-  /// Condiciones de uso / contrato de licencia de usuario final (EULA).
+  /// Condiciones de uso del servicio y normas de la comunidad.
   /// Incluye la cláusula de tolerancia cero con contenido ofensivo y usuarios
   /// abusivos que exige la Guideline 1.2.
   static const String termsUrl = '$baseUrl/terms.html';
+
+  /// Contrato de licencia estándar aplicable a la app distribuida por Apple.
+  static const String eulaUrl =
+      'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
   /// Política de privacidad.
   static const String privacyUrl = '$baseUrl/privacy.html';

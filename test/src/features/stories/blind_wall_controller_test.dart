@@ -9,8 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// acción (like/Attra) se contaba distinto según la hicieras desde la tarjeta o
 /// desde el visor, y el gate de likes, el rewind, las métricas y los anuncios se
 /// quedaban fuera. Este test fija que todo pasa por los callbacks del feed.
-Story _story(String owner, String id) =>
-    Story.fromMap(id, <String, dynamic>{
+Story _story(String owner, String id) => Story.fromMap(id, <String, dynamic>{
       'ownerUid': owner,
       'mediaType': 'image',
       'imageUrl': 'https://example.test/$id.jpg',
@@ -54,7 +53,7 @@ void main() {
       onSkip: () => calls.add('skip'),
       onStoriesSeen: (List<Story> s) => calls.add('seen:${s.length}'),
       onRewind: () async => calls.add('rewind'),
-      onSafety: () => calls.add('safety'),
+      onSafety: (Story story) async => calls.add('safety:${story.storyId}'),
     );
   });
 
@@ -67,7 +66,7 @@ void main() {
       await controller.onPass();
       await controller.onSuperAttra();
       controller.onSkip();
-      controller.onSafety!();
+      await controller.onSafety!(_story('a', 'story-a'));
       // La marcha atrás también: el visor no puede llamar a `rewindFeedAction`
       // por su cuenta ni llevar su propio historial (el gate de plan, el
       // `_excluded` y el `_consumed` que hay que limpiar viven en el feed).
@@ -78,7 +77,7 @@ void main() {
         'pass',
         'attra',
         'skip',
-        'safety',
+        'safety:story-a',
         'rewind',
       ]);
     });
@@ -128,9 +127,7 @@ void main() {
       controller.addListener(() => notifications++);
 
       controller.sync(
-          person: _person('a', stories: 3),
-          shouldClose: false,
-          rewind: _libre);
+          person: _person('a', stories: 3), shouldClose: false, rewind: _libre);
       expect(notifications, 1);
       expect(controller.current?.stories.length, 3);
     });
@@ -161,8 +158,7 @@ void main() {
       final RewindState plus = const RewindState(tier: RewindTier.plus).record(
         const RewindEntry(targetUid: 'z', kind: FeedActionKind.pass),
       );
-      controller.sync(
-          person: _person('a'), shouldClose: false, rewind: plus);
+      controller.sync(person: _person('a'), shouldClose: false, rewind: plus);
       expect(controller.rewind.status, RewindStatus.ready);
 
       int notifications = 0;

@@ -124,7 +124,9 @@ class _StoryComposerScreenState extends State<StoryComposerScreen> {
         );
       }
     } catch (_) {
-      if (mounted) _say('No hemos podido abrir tu galería. Inténtalo de nuevo.');
+      if (mounted) {
+        _say('No hemos podido abrir tu galería. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _galleryLoading = false);
     }
@@ -511,8 +513,8 @@ class _GalleryTile extends StatelessWidget {
               alignment: Alignment.bottomRight,
               child: Padding(
                 padding: EdgeInsets.all(4),
-                child: Icon(Icons.videocam_rounded,
-                    size: 16, color: Colors.white),
+                child:
+                    Icon(Icons.videocam_rounded, size: 16, color: Colors.white),
               ),
             ),
         ],

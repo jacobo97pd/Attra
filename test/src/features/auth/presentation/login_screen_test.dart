@@ -1,6 +1,7 @@
 import 'package:attra/src/features/auth/presentation/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 void main() {
   testWidgets('empieza con una elección simple y sin pedir el teléfono',
@@ -29,9 +30,13 @@ void main() {
     (WidgetTester tester) async {
       _usePortraitViewport(tester);
       bool googlePressed = false;
+      int termsAccepted = 0;
 
       await tester.pumpWidget(
-        _LoginHost(onGooglePressed: () => googlePressed = true),
+        _LoginHost(
+          onGooglePressed: () => googlePressed = true,
+          onTermsAccepted: () => termsAccepted++,
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -53,6 +58,7 @@ void main() {
       // Sin marcar la casilla, ningún método de acceso avanza.
       await _tap(tester, 'login-google-button');
       expect(googlePressed, isFalse);
+      expect(termsAccepted, 0);
 
       await _tap(tester, 'login-phone-button');
       expect(find.byKey(const ValueKey<String>('login-phone')), findsNothing);
@@ -63,11 +69,68 @@ void main() {
 
       // Tras aceptar, el acceso funciona.
       await _acceptTerms(tester);
+      expect(termsAccepted, 0);
       await _tap(tester, 'login-google-button');
       expect(googlePressed, isTrue);
+      expect(termsAccepted, 1);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('Apple también requiere una aceptación explícita',
+      (WidgetTester tester) async {
+    _usePortraitViewport(tester);
+    bool applePressed = false;
+    int termsAccepted = 0;
+    await tester.pumpWidget(_LoginHost(
+      onApplePressed: () => applePressed = true,
+      onTermsAccepted: () => termsAccepted++,
+    ));
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'login-apple-blocked');
+    expect(applePressed, isFalse);
+    expect(termsAccepted, 0);
+    expect(
+        find.textContaining('acepta las Condiciones de uso'), findsOneWidget);
+
+    await _acceptTerms(tester);
+    final Finder appleButton = find.byType(SignInWithAppleButton);
+    await tester.ensureVisible(appleButton);
+    await tester.tap(appleButton);
+    await tester.pumpAndSettle();
+    expect(applePressed, isTrue);
+    expect(termsAccepted, 1);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+      'un SMS pendiente no permite saltarse los términos al recrear login',
+      (WidgetTester tester) async {
+    _usePortraitViewport(tester);
+    String? verifiedCode;
+    await tester.pumpWidget(_LoginHost(
+      initialPhoneCodeSent: true,
+      onVerifyPhoneCode: (String value) => verifiedCode = value,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.byKey(const ValueKey<String>('login-terms-gate')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('login-code')), findsNothing);
+    await _tap(tester, 'login-phone-button');
+    expect(find.byType(TextField), findsNothing);
+    expect(verifiedCode, isNull);
+
+    await _acceptTerms(tester);
+    await _tap(tester, 'login-phone-button');
+    expect(find.byKey(const ValueKey<String>('login-code')), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text('Verificar código'));
+    await tester.pumpAndSettle();
+    expect(verifiedCode, '123456');
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'abre teléfono, conserva el número al pasar a SMS y entrega ambos valores',
@@ -155,28 +218,40 @@ Future<void> _tap(WidgetTester tester, String key) async {
 /// Marca la aceptación del EULA, obligatoria antes de cualquier método de
 /// acceso (App Store Guideline 1.2).
 Future<void> _acceptTerms(WidgetTester tester) async {
-  await _tap(tester, 'login-terms-checkbox');
+  // La fila completa puede ser más alta que el viewport con texto ampliado.
+  // El control real conserva un objetivo visible de tamaño táctil.
+  final Finder checkbox = find.byType(Checkbox);
+  await tester.ensureVisible(checkbox);
+  await tester.pumpAndSettle();
+  await tester.tap(checkbox);
+  await tester.pumpAndSettle();
 }
 
 class _LoginHost extends StatefulWidget {
   const _LoginHost({
     this.onGooglePressed,
+    this.onApplePressed,
+    this.onTermsAccepted,
     this.onSendPhoneCode,
     this.onVerifyPhoneCode,
     this.textScale = 1,
+    this.initialPhoneCodeSent = false,
   });
 
   final VoidCallback? onGooglePressed;
+  final VoidCallback? onApplePressed;
+  final VoidCallback? onTermsAccepted;
   final ValueChanged<String>? onSendPhoneCode;
   final ValueChanged<String>? onVerifyPhoneCode;
   final double textScale;
+  final bool initialPhoneCodeSent;
 
   @override
   State<_LoginHost> createState() => _LoginHostState();
 }
 
 class _LoginHostState extends State<_LoginHost> {
-  bool _phoneCodeSent = false;
+  late bool _phoneCodeSent = widget.initialPhoneCodeSent;
 
   @override
   Widget build(BuildContext context) {
@@ -192,7 +267,8 @@ class _LoginHostState extends State<_LoginHost> {
       home: LoginScreen(
         phoneCodeSent: _phoneCodeSent,
         onGooglePressed: () => widget.onGooglePressed?.call(),
-        onApplePressed: () {},
+        onApplePressed: () => widget.onApplePressed?.call(),
+        onTermsAccepted: widget.onTermsAccepted,
         onSendPhoneCode: (String value) {
           widget.onSendPhoneCode?.call(value);
           setState(() => _phoneCodeSent = true);

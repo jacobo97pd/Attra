@@ -221,9 +221,8 @@ void main() {
     service.deliver =
         (PurchaseDetails _) async => const IapDeliveryResult(delivered: true);
 
-    await service
-        .init(productIds: <String>{'attra_pro_monthly'})
-        .timeout(const Duration(seconds: 5));
+    await service.init(productIds: <String>{'attra_pro_monthly'}).timeout(
+        const Duration(seconds: 5));
 
     // Y si el usuario reintenta la compra, se le dice la verdad: el plan está
     // activo, pero el producto puede seguir bloqueado. Prometerle que ya puede

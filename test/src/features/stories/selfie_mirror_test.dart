@@ -20,9 +20,7 @@ Uint8List _asymmetricJpeg({int width = 8, int height = 4}) {
       image.setPixel(
         x,
         y,
-        x < width ~/ 2
-            ? img.ColorRgb8(255, 0, 0)
-            : img.ColorRgb8(0, 0, 255),
+        x < width ~/ 2 ? img.ColorRgb8(255, 0, 0) : img.ColorRgb8(0, 0, 255),
       );
     }
   }

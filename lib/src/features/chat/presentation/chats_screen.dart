@@ -162,6 +162,7 @@ class ChatsScreen extends StatelessWidget {
         initialIndex: 0,
         currentUid: currentUid,
         storyService: storyService!,
+        matchService: matchService,
       ),
     ));
   }
@@ -336,7 +337,8 @@ class ChatsScreen extends StatelessWidget {
                     summaries: summaries,
                     stories: storyFor(nuevos[i]),
                     onTap: () => _open(context, nuevos[i]),
-                    onOpenStory: (List<Story> group) => _openStory(context, group),
+                    onOpenStory: (List<Story> group) =>
+                        _openStory(context, group),
                   ),
                 ),
               ),
@@ -515,6 +517,7 @@ class _RingAvatar extends StatelessWidget {
   final String photoUrl;
   final String name;
   final double radius;
+
   /// Grupo completo de historias vivas de esa persona (puede tener hasta 5).
   final List<Story>? stories;
   final void Function(List<Story> stories)? onOpenStory;
@@ -570,6 +573,7 @@ class _NewMatchAvatar extends StatelessWidget {
   final String currentUid;
   final ProfileSummaryRepository summaries;
   final VoidCallback onTap;
+
   /// Grupo completo de historias vivas de esa persona (puede tener hasta 5).
   final List<Story>? stories;
   final void Function(List<Story> stories)? onOpenStory;
@@ -639,6 +643,7 @@ class _ConversationRow extends StatelessWidget {
   final String currentUid;
   final ProfileSummaryRepository summaries;
   final VoidCallback onTap;
+
   /// Grupo completo de historias vivas de esa persona (puede tener hasta 5).
   final List<Story>? stories;
   final void Function(List<Story> stories)? onOpenStory;
@@ -722,28 +727,30 @@ class _ChatsEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    // App Store validation: never a dead screen — offer guided paths.
+    // Que la pantalla no se quede muerta: se ofrecen caminos guiados.
+    // Los textos van en castellano como el resto de la app; estaban en
+    // ingles y se colaban tal cual en una interfaz en castellano.
     if (kAppStoreValidationExperience) {
       return ListView(
         padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
         children: <Widget>[
           Icon(Icons.auto_awesome, size: 48, color: theme.colorScheme.primary),
           const SizedBox(height: 14),
-          Text('No conversations yet. Start with a challenge',
+          Text('Aún no hay conversaciones. Empieza por un reto',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleLarge
                   ?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Text(
-            'Attra is about better conversations. Try the AI-guided flow now, '
-            'explore games, or find someone to connect with.',
+            'Attra va de conversaciones mejores. Prueba el reto guiado, '
+            'echa un vistazo a los juegos o busca a alguien con quien hablar.',
             textAlign: TextAlign.center,
             style: TextStyle(color: theme.colorScheme.outline),
           ),
           const SizedBox(height: 22),
           _EmptyAction(
             icon: Icons.psychology_alt_rounded,
-            label: 'Try a Demo Challenge',
+            label: 'Probar un reto de ejemplo',
             primary: true,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -753,14 +760,14 @@ class _ChatsEmpty extends StatelessWidget {
           const SizedBox(height: 10),
           _EmptyAction(
             icon: Icons.sports_esports_rounded,
-            label: 'Explore Conversation Games',
+            label: 'Ver los juegos de conversación',
             onTap: onOpenPlay,
           ),
           const SizedBox(height: 10),
           if (onDiscover != null)
             _EmptyAction(
               icon: Icons.explore_rounded,
-              label: 'Discover People',
+              label: 'Descubrir personas',
               onTap: onDiscover!,
             ),
         ],

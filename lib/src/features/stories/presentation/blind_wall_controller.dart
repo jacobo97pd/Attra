@@ -75,7 +75,7 @@ class BlindWallController extends ChangeNotifier {
 
   /// Reportar / bloquear (Guideline 1.2): el contenido de una historia también
   /// tiene que poder denunciarse desde donde se ve.
-  final VoidCallback? onSafety;
+  final Future<void> Function(Story story)? onSafety;
 
   BlindWallPerson? _current;
   bool _shouldClose = false;

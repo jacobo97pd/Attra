@@ -186,7 +186,6 @@ class ChatService {
     }
   }
 
-
   String _genId() {
     final int ts = DateTime.now().millisecondsSinceEpoch;
     // 0x7FFFFFFF (2^31-1) es seguro en web; `1 << 32` desborda a 0 en dart2js.
@@ -479,8 +478,7 @@ Future<ProcessedChatImage> processChatImageBytes(
     // lo que pasa con un HEIC recibido por WhatsApp o Drive. Es el mismo fallo
     // que rompía las historias, y aquí acababa en "No se pudo procesar la
     // imagen." sin salida posible.
-    final Uint8List? converted =
-        await transcode(bytes, maxSide);
+    final Uint8List? converted = await transcode(bytes, maxSide);
     if (converted != null) decoded = _decodeChatImage(converted);
   }
   if (decoded == null) {

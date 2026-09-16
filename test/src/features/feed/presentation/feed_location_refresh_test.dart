@@ -23,8 +23,7 @@ void main() {
     _usePhoneViewport(tester);
     final _FakeSource source = _FakeSource(
       permission: LocationAuthorization.granted,
-      current: const LocationFix(
-          latitude: valenciaLat, longitude: valenciaLng),
+      current: const LocationFix(latitude: valenciaLat, longitude: valenciaLng),
     );
     final _Saved saved = _Saved();
 
@@ -250,7 +249,8 @@ void main() {
     // La política rechaza guardar una caché ANTERIOR a lo ya guardado ("sería
     // retroceder"). Adoptarla igualmente filtraba el feed desde un punto que
     // `discovery/{uid}` no publica: dabas likes a gente que no te podía ver.
-    final DateTime storedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final DateTime storedAt =
+        DateTime.now().subtract(const Duration(minutes: 5));
     final _FakeSource source = _FakeSource(
       permission: LocationAuthorization.granted,
       cached: LocationFix(

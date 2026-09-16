@@ -598,8 +598,7 @@ class LocationRefreshPolicy {
   /// Distancia haversine en km. Duplica la de `FeedFilter._distanceKm` porque
   /// allí es privada y este módulo no debe depender del feed (lo usa también la
   /// capa de datos).
-  static double distanceKm(
-      double lat1, double lon1, double lat2, double lon2) {
+  static double distanceKm(double lat1, double lon1, double lat2, double lon2) {
     const double r = 6371;
     final double dLat = _rad(lat2 - lat1);
     final double dLon = _rad(lon2 - lon1);

@@ -109,8 +109,7 @@ class _MyStoryButtonState extends State<MyStoryButton> {
               subtitle: Text(mine.length == 1
                   ? '1 historia viva. Puedes borrarla desde el visor.'
                   : '${mine.length} historias vivas. Puedes borrarlas desde el visor.'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(_MyStoryAction.view),
+              onTap: () => Navigator.of(sheetContext).pop(_MyStoryAction.view),
             ),
             ListTile(
               enabled: !atMax,

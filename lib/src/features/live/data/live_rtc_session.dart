@@ -186,13 +186,13 @@ class LiveRtcSession {
     // Escuchar ANTES de ofertar: si el peer ya publicó su SDP (porque llegó
     // primero), no queremos perdérnoslo por una carrera.
     _signalSub = _service.watchSignal(sessionId, peerUid).listen(
-          _onPeerSignal,
-          onError: (Object _) {
-            // Un fallo del canal de señalización deja la llamada sin poder
-            // negociar: es un fallo de conexión a todos los efectos.
-            _fail();
-          },
-        );
+      _onPeerSignal,
+      onError: (Object _) {
+        // Un fallo del canal de señalización deja la llamada sin poder
+        // negociar: es un fallo de conexión a todos los efectos.
+        _fail();
+      },
+    );
 
     if (isCaller) {
       final RTCSessionDescription offer = await pc.createOffer(
@@ -217,17 +217,15 @@ class LiveRtcSession {
     // Best-effort y sin await: bloquear la recolección ICE por una escritura
     // lenta alargaría el establecimiento de la llamada.
     unawaited(
-      _service
-          .publishCandidate(
-            sessionId: sessionId,
-            uid: selfUid,
-            candidate: <String, dynamic>{
-              'candidate': candidate.candidate,
-              'sdpMid': candidate.sdpMid,
-              'sdpMLineIndex': candidate.sdpMLineIndex,
-            },
-          )
-          .catchError((Object _) {}),
+      _service.publishCandidate(
+        sessionId: sessionId,
+        uid: selfUid,
+        candidate: <String, dynamic>{
+          'candidate': candidate.candidate,
+          'sdpMid': candidate.sdpMid,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        },
+      ).catchError((Object _) {}),
     );
   }
 
@@ -278,8 +276,7 @@ class LiveRtcSession {
       // El que oferta solo acepta 'answer' y el que responde solo 'offer'.
       // Aceptar cualquier cosa permitiría a un cliente modificado renegociar
       // la sesión a su gusto en mitad de la llamada.
-      final bool expected =
-          isCaller ? type == 'answer' : type == 'offer';
+      final bool expected = isCaller ? type == 'answer' : type == 'offer';
       if (expected) {
         try {
           await pc.setRemoteDescription(
@@ -321,7 +318,9 @@ class LiveRtcSession {
           try {
             await pc.addCandidate(candidate);
           } catch (error) {
-            if (kDebugMode) debugPrint('[live] candidato ICE rechazado: $error');
+            if (kDebugMode) {
+              debugPrint('[live] candidato ICE rechazado: $error');
+            }
           }
         } else {
           _pendingRemoteCandidates.add(candidate);

@@ -535,7 +535,9 @@ class LiveController extends ChangeNotifier {
       await rtc.start();
     } on LiveMediaException catch (error) {
       _message = error.message;
-      _set(error.permissionDenied ? LivePhase.permissionDenied : LivePhase.error);
+      _set(error.permissionDenied
+          ? LivePhase.permissionDenied
+          : LivePhase.error);
       // Sin cámara no hay sesión posible: cerramos para no dejar al otro
       // esperando un vídeo que nunca llegará.
       await _closeSession(LiveEndReason.left, keepPhase: true);

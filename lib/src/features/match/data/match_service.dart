@@ -117,6 +117,7 @@ class MatchService {
     String? matchId,
     String? chatId,
     String? messageId,
+    String? storyId,
   }) async {
     final Map<String, dynamic> data =
         await _call('reportUser', <String, dynamic>{
@@ -126,6 +127,7 @@ class MatchService {
       if (matchId != null) 'matchId': matchId,
       if (chatId != null) 'chatId': chatId,
       if (messageId != null) 'messageId': messageId,
+      if (storyId != null) 'storyId': storyId,
     });
     return (data['reportId'] as String?) ?? '';
   }

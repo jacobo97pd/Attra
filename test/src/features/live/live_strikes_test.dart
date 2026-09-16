@@ -171,7 +171,8 @@ void main() {
     test('decisionAt deriva la sancion vigente del recuento', () {
       const LiveStrikes s = LiveStrikes(uid: 'aaa', count: 2);
       expect(s.decisionAt(now).action, LiveStrikeAction.temporaryBlock);
-      expect(s.decisionAt(now).blockedUntil, now.add(const Duration(hours: 24)));
+      expect(
+          s.decisionAt(now).blockedUntil, now.add(const Duration(hours: 24)));
     });
   });
 

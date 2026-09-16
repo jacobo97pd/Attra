@@ -76,6 +76,7 @@ class Report {
     this.matchId,
     this.chatId,
     this.messageId,
+    this.storyId,
     this.createdAt,
   });
 
@@ -88,6 +89,7 @@ class Report {
   final String? matchId;
   final String? chatId;
   final String? messageId;
+  final String? storyId;
   final DateTime? createdAt;
 
   factory Report.fromMap(String id, Map<String, dynamic> map) {
@@ -101,6 +103,7 @@ class Report {
       matchId: map['matchId'] as String?,
       chatId: map['chatId'] as String?,
       messageId: map['messageId'] as String?,
+      storyId: map['storyId'] as String?,
       createdAt: _asDate(map['createdAt']),
     );
   }
@@ -115,6 +118,7 @@ class Report {
       if (matchId != null) 'matchId': matchId,
       if (chatId != null) 'chatId': chatId,
       if (messageId != null) 'messageId': messageId,
+      if (storyId != null) 'storyId': storyId,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }

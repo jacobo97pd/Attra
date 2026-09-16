@@ -69,7 +69,8 @@ void main() {
         },
       );
       expect(wall.profiles, isEmpty,
-          reason: 'el limpiador corre cada hora: puede haber caducadas activas');
+          reason:
+              'el limpiador corre cada hora: puede haber caducadas activas');
     });
   });
 
@@ -170,7 +171,8 @@ void main() {
       expect(wall.index, wall.profiles.length);
     });
 
-    test('quien publica mientras tanto sí entra, aunque el muro estuviera al fin',
+    test(
+        'quien publica mientras tanto sí entra, aunque el muro estuviera al fin',
         () {
       final StoryWall wall = buildStoryWall(
         rankedPool: <SeedProfile>[...pool, _profile('d')],
@@ -233,7 +235,8 @@ void main() {
         'imageUrl': 'https://example.test/v.jpg',
         'status': 'active',
         'createdAt': DateTime(2026, 1, 1).toIso8601String(),
-        'expiresAt': DateTime.now().add(const Duration(hours: 2)).toIso8601String(),
+        'expiresAt':
+            DateTime.now().add(const Duration(hours: 2)).toIso8601String(),
       });
       final Story nueva = Story.fromMap('n', <String, dynamic>{
         'ownerUid': 'a',
@@ -241,7 +244,8 @@ void main() {
         'imageUrl': 'https://example.test/n.jpg',
         'status': 'active',
         'createdAt': DateTime(2026, 2, 1).toIso8601String(),
-        'expiresAt': DateTime.now().add(const Duration(hours: 2)).toIso8601String(),
+        'expiresAt':
+            DateTime.now().add(const Duration(hours: 2)).toIso8601String(),
       });
       final Map<String, List<Story>> byOwner =
           StoryRepository.groupWallStories(<Story>[nueva, vieja]);

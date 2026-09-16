@@ -67,7 +67,8 @@ void main() {
     expect(
       RegExp(r'stories:\s*<Story>\[').hasMatch(button),
       isFalse,
-      reason: 'una lista de un elemento es el patrón heredado de cuando solo se '
+      reason:
+          'una lista de un elemento es el patrón heredado de cuando solo se '
           'admitía UNA historia por persona',
     );
   });

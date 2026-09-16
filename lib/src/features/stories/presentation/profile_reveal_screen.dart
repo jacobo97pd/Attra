@@ -93,8 +93,8 @@ class _ProfileRevealScreenState extends State<ProfileRevealScreen>
           AnimatedBuilder(
             animation: _controller,
             builder: (BuildContext context, Widget? child) {
-              final double blur =
-                  _maxBlur * (1 - Curves.easeOutCubic.transform(_controller.value));
+              final double blur = _maxBlur *
+                  (1 - Curves.easeOutCubic.transform(_controller.value));
               return ImageFiltered(
                 imageFilter: ui.ImageFilter.blur(
                   sigmaX: blur,

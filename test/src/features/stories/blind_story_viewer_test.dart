@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attra/src/features/feed/domain/rewind_policy.dart';
 import 'package:attra/src/features/stories/domain/story.dart';
 import 'package:attra/src/features/stories/presentation/blind_story_viewer_screen.dart';
@@ -62,11 +64,13 @@ void main() {
   late List<String> acciones;
   late BlindWallController controller;
   late Future<bool> Function() gate;
+  late Future<void> Function(Story story) safety;
 
   setUp(() {
     vistas = <String>[];
     acciones = <String>[];
     gate = () async => true;
+    safety = (Story story) async => acciones.add('safety:${story.storyId}');
     controller = BlindWallController(
       beforeLike: () => gate(),
       onLike: () async => acciones.add('like'),
@@ -76,6 +80,7 @@ void main() {
       onStoriesSeen: (List<Story> s) =>
           vistas.addAll(s.map((Story x) => x.storyId)),
       onRewind: () async => acciones.add('rewind'),
+      onSafety: (Story story) => safety(story),
     );
   });
 
@@ -118,6 +123,25 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(d));
     await tester.pump(const Duration(milliseconds: 150));
   }
+
+  testWidgets('seguridad conserva la historia y reanuda al cerrar la hoja',
+      (WidgetTester tester) async {
+    final Completer<void> dismissed = Completer<void>();
+    safety = (Story story) {
+      acciones.add('safety:${story.storyId}');
+      return dismissed.future;
+    };
+    await abrir(tester, <Story>[_brokenMedia('s1'), _brokenMedia('s2')]);
+    await tester.tap(find.byKey(const ValueKey<String>('blind-viewer-safety')));
+    await tester.pump(const Duration(seconds: 4));
+    expect(vistas, <String>['s1']);
+    expect(acciones, <String>['safety:s1']);
+    dismissed.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
+    expect(vistas, <String>['s1', 's2']);
+    await cerrar(tester);
+  });
 
   testWidgets('tocando a la derecha se llega a las TRES', (
     WidgetTester tester,
@@ -304,7 +328,8 @@ void main() {
       WidgetTester tester,
     ) async {
       await abrir(tester, <Story>[_photo('s1')],
-          rewind: const RewindState(tier: RewindTier.plus, usedInSession: true));
+          rewind:
+              const RewindState(tier: RewindTier.plus, usedInSession: true));
       await tester.tap(boton);
       await tester.pump();
       expect(acciones, <String>['rewind'],
@@ -313,7 +338,8 @@ void main() {
       await cerrar(tester);
     });
 
-    testWidgets('sin poder deshacer, NO reinicia la historia que estás viendo', (
+    testWidgets('sin poder deshacer, NO reinicia la historia que estás viendo',
+        (
       WidgetTester tester,
     ) async {
       // El botón dorado es el gancho de Free: está diseñado para que lo pulse.
@@ -335,7 +361,8 @@ void main() {
 
       // Mismo caso con Plus sin nada guardado: tampoco hay nada que recargar.
       await abrir(tester, <Story>[_photo('s1', seconds: 6)],
-          rewind: const RewindState(tier: RewindTier.plus, usedInSession: true));
+          rewind:
+              const RewindState(tier: RewindTier.plus, usedInSession: true));
       final int marcasAntes = vistas.length;
       await tester.tap(boton);
       await tester.pump();

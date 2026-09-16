@@ -254,9 +254,11 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
       if (!mounted || !identical(_video, controller)) return;
       controller
         ..addListener(_onVideoTick)
-        ..setVolume(1)
-        ..play();
-      _armVideoWatchdog(controller, story);
+        ..setVolume(1);
+      if (!_paused) {
+        controller.play();
+        _armVideoWatchdog(controller, story);
+      }
       setState(() {});
     } catch (_) {
       if (mounted && identical(_video, controller)) {
@@ -274,6 +276,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
     if (!mounted) return;
     setState(() => _mediaError = message);
     _mediaWatchdog?.cancel();
+    if (_paused) return;
     _mediaWatchdog = Timer(_mediaErrorHold, () {
       if (mounted) _next();
     });
@@ -362,7 +365,6 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   void _pause() {
-    if (_mediaError != null) return;
     // El reloj de seguridad se para con el dedo encima: si siguiera corriendo,
     // mantener pulsado para leer un texto acabaría saltando de historia.
     _mediaWatchdog?.cancel();
@@ -371,7 +373,11 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   }
 
   void _resume() {
-    if (_mediaError != null) return;
+    setState(() => _paused = false);
+    if (_mediaError != null) {
+      _failMedia(_mediaError!);
+      return;
+    }
     _lastImageTick = DateTime.now();
     final VideoPlayerController? controller = _video;
     if (controller != null && controller.value.isInitialized) {
@@ -587,8 +593,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           _SwipeStamp(
-                            progress:
-                                (-_dx / _swipeThreshold).clamp(0.0, 1.0),
+                            progress: (-_dx / _swipeThreshold).clamp(0.0, 1.0),
                             icon: Icons.close_rounded,
                             label: 'Paso',
                           ),
@@ -662,7 +667,8 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   Widget _videoLayer() {
     final VideoPlayerController? controller = _video;
     if (controller == null || !controller.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
+      return const Center(
+          child: CircularProgressIndicator(color: Colors.white));
     }
     return FittedBox(
       fit: BoxFit.cover,
@@ -745,9 +751,12 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
               key: const ValueKey<String>('blind-viewer-safety'),
               tooltip: 'Reportar o bloquear',
               icon: const Icon(Icons.more_vert, color: Colors.white),
-              onPressed: () {
+              onPressed: () async {
+                final Story? target = _story;
+                if (target == null || _locked) return;
                 _pause();
-                widget.controller.onSafety!();
+                await widget.controller.onSafety!(target);
+                if (mounted) _resume();
               },
             ),
           IconButton(
@@ -927,8 +936,7 @@ class _ActionButton extends StatelessWidget {
         : small
             ? 48
             : 56;
-    final Color iconColor =
-        (onTap == null || dimmed) ? Colors.white38 : color;
+    final Color iconColor = (onTap == null || dimmed) ? Colors.white38 : color;
     final Widget button = Semantics(
       button: true,
       enabled: onTap != null,

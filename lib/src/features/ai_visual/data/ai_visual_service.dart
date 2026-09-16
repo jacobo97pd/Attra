@@ -383,8 +383,8 @@ class AiVisualService {
     final String status = (data['status'] as String?) ?? 'unknown';
     final Object? rawTraits = data['traits'];
     final ReferenceTraits? traits = rawTraits is Map
-        ? ReferenceTraits.fromMap(rawTraits
-            .map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
+        ? ReferenceTraits.fromMap(
+            rawTraits.map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
         : null;
     switch (status) {
       case 'ready':
@@ -528,8 +528,8 @@ class AiVisualService {
       threshold = (data['threshold'] as num?)?.toDouble();
       final Map<dynamic, dynamic>? rawTraits = data['traits'] as Map?;
       if (rawTraits != null) {
-        traits = ReferenceTraits.fromMap(rawTraits.map(
-            (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v)));
+        traits = ReferenceTraits.fromMap(rawTraits.map((dynamic k, dynamic v) =>
+            MapEntry<String, dynamic>(k.toString(), v)));
       }
       final List<dynamic> ranking =
           (data['ranking'] as List<dynamic>?) ?? <dynamic>[];
@@ -545,12 +545,11 @@ class AiVisualService {
       // en la siguiente recarga. Antes se marcaban todos y esos candidatos
       // quedaban excluidos para siempre bajo esta referencia.
       final Set<String> failed = <String>{
-        for (final dynamic u in (data['skippedUids'] as List<dynamic>?) ??
-            const <dynamic>[])
+        for (final dynamic u
+            in (data['skippedUids'] as List<dynamic>?) ?? const <dynamic>[])
           u.toString(),
       };
-      _queriedUids
-          .addAll(pending.where((String uid) => !failed.contains(uid)));
+      _queriedUids.addAll(pending.where((String uid) => !failed.contains(uid)));
       complete = data['complete'] != false;
       skipped = (data['skipped'] as num?)?.toInt() ?? failed.length;
     }
@@ -628,8 +627,8 @@ class AiVisualService {
       // Igual que en getVisualMatches: los que fallaron por cuota NO se marcan
       // como consultados, para que la siguiente recarga vuelva a intentarlos.
       final Set<String> failed = <String>{
-        for (final dynamic u in (data['skippedUids'] as List<dynamic>?) ??
-            const <dynamic>[])
+        for (final dynamic u
+            in (data['skippedUids'] as List<dynamic>?) ?? const <dynamic>[])
           u.toString(),
       };
       _promptQueried
@@ -639,8 +638,8 @@ class AiVisualService {
       visualDisabled = data['visualDisabled'] == true;
       promptThreshold = (data['threshold'] as num?)?.toDouble();
       final Map<dynamic, dynamic>? rawSignals = data['signals'] as Map?;
-      signals = _readSignals(rawSignals?.map(
-          (dynamic k, dynamic v) => MapEntry<String, dynamic>(k.toString(), v)));
+      signals = _readSignals(rawSignals?.map((dynamic k, dynamic v) =>
+          MapEntry<String, dynamic>(k.toString(), v)));
     }
     final List<PromptMatch> result = <PromptMatch>[];
     for (final String uid in candidateUids) {

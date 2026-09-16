@@ -5,6 +5,8 @@ enum SessionStatus {
   unauthenticated,
   authenticating,
   loadingProfile,
+  termsRequired,
+  acceptingTerms,
   onboardingRequired,
   authenticated,
   signingOut,

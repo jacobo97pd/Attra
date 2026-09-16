@@ -48,8 +48,8 @@ class LiveQueueTicket {
   factory LiveQueueTicket.fromMap(Map<String, dynamic> map) {
     final String? id = (map['sessionId'] as Object?)?.toString();
     return LiveQueueTicket(
-      waiting: map['status']?.toString() == 'waiting' ||
-          (id == null || id.isEmpty),
+      waiting:
+          map['status']?.toString() == 'waiting' || (id == null || id.isEmpty),
       sessionId: (id ?? '').isEmpty ? null : id,
       blockedUntil: liveDateFromValue(map['blockedUntil']),
       permanentlyBlocked: map['permanentlyBlocked'] == true,
@@ -526,8 +526,7 @@ class LiveService {
       }
       return <String, dynamic>{};
     } on FirebaseFunctionsException catch (error) {
-      throw LiveServiceException(error.message ?? error.code,
-          code: error.code);
+      throw LiveServiceException(error.message ?? error.code, code: error.code);
     }
   }
 }

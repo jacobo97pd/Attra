@@ -52,7 +52,7 @@ export const rankingOnMatch = onDocumentCreated(
   { document: "matches/{matchId}", database: DATABASE, region: REGION },
   async (event) => {
     const d = event.data?.data() as DocumentData | undefined;
-    if (!d) return;
+    if (!d || d.status !== "active") return;
     const users: string[] = Array.isArray(d.users)
       ? (d.users as unknown[]).filter((u): u is string => typeof u === "string")
       : [];

@@ -44,8 +44,7 @@ void main() {
 
   group('Free no puede', () {
     test('el botón se ve, pero bloqueado', () {
-      final RewindState state =
-          const RewindState().record(_gesto('a'));
+      final RewindState state = const RewindState().record(_gesto('a'));
       expect(state.status, RewindStatus.locked);
       expect(state.canUndo, isFalse);
       expect(state.remaining, 0);
@@ -98,8 +97,7 @@ void main() {
 
     test('agotado, el mensaje distingue "ya lo has usado" de "aún no"', () {
       const RewindState virgen = RewindState(tier: RewindTier.plus);
-      final RewindState gastado =
-          virgen.record(_gesto('a')).undo();
+      final RewindState gastado = virgen.record(_gesto('a')).undo();
       expect(virgen.emptyMessage, contains('Todavía'));
       expect(gastado.emptyMessage, contains('Ya has deshecho'));
       expect(gastado.hint, 'Ya no queda nada que deshacer');
@@ -147,7 +145,8 @@ void main() {
   });
 
   group('Deshacer el gesto QUE ES, no el último de la pila', () {
-    test('llega otro gesto mientras se deshace: se quita el que se deshizo', () {
+    test('llega otro gesto mientras se deshace: se quita el que se deshizo',
+        () {
       // La llamada al backend tarda y la tarjeta seguía aceptando deslizamientos:
       // quitando "el último" se descartaba el gesto RECIÉN hecho (perfectamente
       // deshacible) y se dejaba en la pila el que el servidor ya había borrado,

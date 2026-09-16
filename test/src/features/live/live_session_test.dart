@@ -43,13 +43,15 @@ void main() {
     });
 
     test('tolera mayusculas y espacios', () {
-      expect(LiveSessionStatus.fromValue('  ACTIVE '), LiveSessionStatus.active);
+      expect(
+          LiveSessionStatus.fromValue('  ACTIVE '), LiveSessionStatus.active);
     });
 
     test('desconocido/nulo cae a ended (fail-closed: nunca abrir video)', () {
       expect(LiveSessionStatus.fromValue(null), LiveSessionStatus.ended);
       expect(LiveSessionStatus.fromValue(''), LiveSessionStatus.ended);
-      expect(LiveSessionStatus.fromValue('connecting'), LiveSessionStatus.ended);
+      expect(
+          LiveSessionStatus.fromValue('connecting'), LiveSessionStatus.ended);
       expect(LiveSessionStatus.fromValue(42), LiveSessionStatus.ended);
     });
 

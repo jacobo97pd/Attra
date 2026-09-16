@@ -37,7 +37,7 @@
 ///
 ///   LIVE_TURN_SECRET=<el mismo valor que `static-auth-secret` en coturn>
 ///   LIVE_TURN_URLS=turn:turn.attra.app:3478?transport=udp,turns:turn.attra.app:5349?transport=tcp
-///   LIVE_TURN_TTL_SECONDS=7200        # opcional; se recorta a [1 h, 4 h]
+///   LIVE_TURN_TTL_SECONDS=900         # opcional; se recorta a [5 min, 1 h]
 ///
 /// Formato de las URL: `turn:` o `turns:` + host + puerto (+ `?transport=`).
 /// Conviene publicar al menos UDP 3478 y TLS 5349/tcp: las redes corporativas
@@ -158,7 +158,7 @@ export function parseTurnUrls(raw: unknown): string[] {
   return urls;
 }
 
-/// TTL efectivo: valor configurado recortado a [1 h, 4 h]; basura -> defecto.
+/// TTL efectivo: valor configurado recortado a [5 min, 1 h]; basura -> defecto.
 export function clampTurnTtlSeconds(raw: unknown): number {
   const parsed =
     typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);

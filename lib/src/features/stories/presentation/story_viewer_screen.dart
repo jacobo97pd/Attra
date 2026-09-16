@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../match/data/match_service.dart';
+import '../../safety/presentation/safety_actions.dart';
 import '../data/story_service.dart';
 import '../domain/story.dart';
 import '../domain/story_composer.dart';
@@ -21,12 +23,14 @@ class StoryViewerScreen extends StatefulWidget {
     required this.initialIndex,
     required this.currentUid,
     required this.storyService,
+    this.matchService,
   });
 
   final List<Story> stories;
   final int initialIndex;
   final String currentUid;
   final StoryService storyService;
+  final MatchService? matchService;
 
   @override
   State<StoryViewerScreen> createState() => _StoryViewerScreenState();
@@ -140,9 +144,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       if (!mounted || !identical(_controller, c)) return;
       c
         ..addListener(_onTick)
-        ..setVolume(1)
-        ..play();
-      _armVideoWatchdog(c, s);
+        ..setVolume(1);
+      if (!_paused) {
+        c.play();
+        _armVideoWatchdog(c, s);
+      }
       setState(() {});
     } catch (_) {
       if (!mounted || !identical(_controller, c)) return;
@@ -158,6 +164,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
     if (!mounted) return;
     setState(() => _mediaError = message);
     _mediaWatchdog?.cancel();
+    if (_paused) return;
     _mediaWatchdog = Timer(_mediaErrorHold, () {
       if (mounted) _next();
     });
@@ -229,7 +236,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   void _pause() {
-    if (_mediaError != null) return;
     // El reloj de seguridad se para con el dedo encima: si siguiera corriendo,
     // mantener pulsado para leer un texto acabaría saltando de historia.
     _mediaWatchdog?.cancel();
@@ -238,7 +244,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
   }
 
   void _resume() {
-    if (_mediaError != null) return;
+    setState(() => _paused = false);
+    if (_mediaError != null) {
+      _failMedia(_mediaError!);
+      return;
+    }
     _lastImageTick = DateTime.now();
     final VideoPlayerController? c = _controller;
     if (c != null && c.value.isInitialized) {
@@ -281,7 +291,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
         'matched' => '¡Match! Ya podéis chatear 🎉',
         // Con match ya hecho la reacción viaja como mensaje al chat: no cuesta
         // un Attra, así que tampoco se anuncia como tal.
-        'message' => r.chargedAttra ? 'Enviaste un Attra ⭐' : 'Respuesta enviada 💬',
+        'message' =>
+          r.chargedAttra ? 'Enviaste un Attra ⭐' : 'Respuesta enviada 💬',
         _ => r.chargedAttra
             ? 'Attra enviado ⭐ Si te corresponde, haréis match.'
             : 'Like enviado ❤️ Si te corresponde, haréis match.',
@@ -324,6 +335,27 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
       behavior: SnackBarBehavior.floating,
       backgroundColor: AppColors.surface,
     ));
+  }
+
+  Future<void> _openSafety() async {
+    final MatchService? service = widget.matchService;
+    if (service == null || _isMine) return;
+    final Story target = _story;
+    _replyFocus.unfocus();
+    _pause();
+    final SafetyActionResult result = await SafetyActions.showSheet(
+      context,
+      matchService: service,
+      uid: target.ownerUid,
+      displayName: target.displayName,
+      storyId: target.storyId,
+    );
+    if (!mounted) return;
+    if (result == SafetyActionResult.blocked) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _resume();
   }
 
   @override
@@ -510,6 +542,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> {
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.white),
               onPressed: _confirmDelete,
+            ),
+          if (!_isMine && widget.matchService != null)
+            IconButton(
+              key: const ValueKey<String>('story-viewer-safety'),
+              tooltip: 'Reportar o bloquear',
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onPressed: _openSafety,
             ),
           IconButton(
             icon: const Icon(Icons.close_rounded, color: Colors.white),

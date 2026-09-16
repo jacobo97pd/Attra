@@ -25,6 +25,7 @@ class SafetyActions {
     required String displayName,
     String? chatId,
     String? messageId,
+    String? storyId,
   }) async {
     if (uid.isEmpty) return SafetyActionResult.none;
     final String name =
@@ -67,6 +68,7 @@ class SafetyActions {
           displayName: name,
           chatId: chatId,
           messageId: messageId,
+          storyId: storyId,
         );
       case _SafetyChoice.block:
         return block(
@@ -86,12 +88,14 @@ class SafetyActions {
     required String displayName,
     String? chatId,
     String? messageId,
+    String? storyId,
   }) async {
     final ReportReason? reason = await showModalBottomSheet<ReportReason>(
       context: context,
       showDragHandle: true,
       builder: (BuildContext sheetContext) => SafeArea(
-        child: Column(
+        child: SingleChildScrollView(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Padding(
@@ -111,7 +115,7 @@ class SafetyActions {
               ),
             const SizedBox(height: 8),
           ],
-        ),
+        )),
       ),
     );
     if (reason == null || !context.mounted) return SafetyActionResult.none;
@@ -124,6 +128,7 @@ class SafetyActions {
         reason: reason.wireName,
         chatId: chatId,
         messageId: messageId,
+        storyId: storyId,
       );
       messenger?.showSnackBar(
         const SnackBar(

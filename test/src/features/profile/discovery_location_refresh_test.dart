@@ -177,8 +177,8 @@ void main() {
       final DateTime now = DateTime.utc(2026, 8, 5, 12, 0);
       expect(
         LocationRefreshPolicy.decide(
-          stored: const StoredLocation(
-              latitude: kMadridLat, longitude: kMadridLng),
+          stored:
+              const StoredLocation(latitude: kMadridLat, longitude: kMadridLng),
           now: now,
           permission: LocationAuthorization.granted,
           trigger: LocationRefreshTrigger.appStart,

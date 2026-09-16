@@ -59,6 +59,16 @@ FLAGS = {
     # Corte de emergencia independiente del master switch: permite apagar el
     # directo en caliente sin perder la configuracion de lanzamiento.
     "feature_live_kill_switch": ("booleanValue", False),
+    # --- MURO DE HISTORIAS "A CIEGAS" -----------------------------------
+    # APAGADO A PROPOSITO. Con esto en true, la pestana Descubrir sustituye las
+    # tarjetas de perfil por el muro "A ciegas", que se vacia solo a las 72 h
+    # (las historias caducan) y deja la pantalla principal sin nada que ver:
+    # justo el fallo 2.1(a) por el que Apple ya rechazo la app. Con el flag en
+    # false, Descubrir vuelve a mostrar perfiles, que es contenido permanente y
+    # no caduca. StoryRepository.storiesEnabled ya usa false como default, pero
+    # se siembra EXPLICITAMENTE para poder auditar desde la consola que esta
+    # apagado en vez de depender de la ausencia de la clave.
+    "storiesEnabled": ("booleanValue", False),
     "weeklyFreeAttras": ("integerValue", "0"),
     # --- Pack mensual incluido en cada plan (grants.ts) ------------------
     # Free pasa de 0 a 1 Attra/mes: es el gancho de conversion, sin probar el

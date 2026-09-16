@@ -177,7 +177,8 @@ void main() {
       expect(p.reason, LocationRefreshReason.cooldown);
       expect(p.requestFix, isFalse);
       expect(p.readCache, isTrue,
-          reason: 'la lectura barata NO se limita: es gratis y es la que detecta '
+          reason:
+              'la lectura barata NO se limita: es gratis y es la que detecta '
               'que has llegado a otra ciudad');
     });
 
@@ -213,7 +214,8 @@ void main() {
       expect(p.reason, LocationRefreshReason.forced);
       expect(p.requestFix, isTrue);
       expect(p.askPermission, isFalse,
-          reason: '"Recargar" no habla de ubicación: un diálogo del sistema ahí '
+          reason:
+              '"Recargar" no habla de ubicación: un diálogo del sistema ahí '
               'no se entendería y iOS lo penaliza');
     });
 
@@ -325,7 +327,8 @@ void main() {
 
       expect(p.reason, LocationRefreshReason.traveling);
       expect(p.requestFix, isFalse,
-          reason: 'el feed está anclado al destino: un fix activo solo gastaría '
+          reason:
+              'el feed está anclado al destino: un fix activo solo gastaría '
               'batería sin cambiar nada de lo que ve el usuario');
       expect(p.readCache, isTrue,
           reason: 'la ubicación REAL tiene que seguir guardándose en '
@@ -440,7 +443,8 @@ void main() {
       expect(d.reason, LocationPersistReason.moved);
     });
 
-    test('el umbral que pida el feed nunca sube del tope ni baja del suelo', () {
+    test('el umbral que pida el feed nunca sube del tope ni baja del suelo',
+        () {
       // Por debajo de 1 km la escritura no cambiaría nada: las coordenadas
       // públicas se redondean a ~1,1 km.
       expect(
@@ -582,7 +586,8 @@ void main() {
       );
     });
 
-    test('permiso denegado pero con ubicación buena: no se miente ni se mendiga',
+    test(
+        'permiso denegado pero con ubicación buena: no se miente ni se mendiga',
         () {
       // Es el estado de "Permitir una vez" en iOS: la sesión guardó coordenadas
       // buenas y en el arranque siguiente el sistema devuelve notDetermined, que
@@ -650,11 +655,12 @@ void main() {
       expect(notice(stored: madrid()), LocationNotice.none);
     });
 
-    test('viajando no hay aviso de ubicación (el feed del destino es a propósito)',
+    test(
+        'viajando no hay aviso de ubicación (el feed del destino es a propósito)',
         () {
       expect(
-        notice(stored: madrid(age: const Duration(days: 30)),
-            travelActive: true),
+        notice(
+            stored: madrid(age: const Duration(days: 30)), travelActive: true),
         LocationNotice.none,
       );
     });

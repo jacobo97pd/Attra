@@ -43,17 +43,39 @@ export async function applyBlock(
   }
   const matchId = pairId(blockerUid, blockedUid);
   const now = FieldValue.serverTimestamp();
-  const batch = db.batch();
-  batch.set(col.blocks.doc(directedId(blockerUid, blockedUid)), {
-    blockerUid,
-    blockedUid,
-    matchId,
-    chatId: matchId,
-    createdAt: now,
+  await db.runTransaction(async (tx) => {
+    const likeRefs = [
+      col.likes.doc(directedId(blockerUid, blockedUid)),
+      col.likes.doc(directedId(blockedUid, blockerUid)),
+    ];
+    const likes = await tx.getAll(...likeRefs);
+    tx.set(col.blocks.doc(directedId(blockerUid, blockedUid)), {
+      blockerUid,
+      blockedUid,
+      matchId,
+      chatId: matchId,
+      createdAt: now,
+    });
+    // The pair remains excluded from BOTH discovery feeds, even when these
+    // people had no match yet. Without users, the blocked pair was invisible
+    // to the participant query used by fetchExcludedUids.
+    tx.set(col.matches.doc(matchId), {
+      users: [blockerUid, blockedUid].sort(),
+      status: "blocked",
+      updatedAt: now,
+    }, { merge: true });
+    tx.set(col.chats.doc(matchId), { status: "blocked", updatedAt: now }, { merge: true });
+    // Hide pending interactions from both inboxes without deleting evidence.
+    for (const like of likes) {
+      if (!like.exists) continue;
+      tx.update(like.ref, {
+        status: "cancelled",
+        cancelReason: "blocked",
+        cancelledBy: blockerUid,
+        updatedAt: now,
+      });
+    }
   });
-  batch.set(col.matches.doc(matchId), { status: "blocked", updatedAt: now }, { merge: true });
-  batch.set(col.chats.doc(matchId), { status: "blocked", updatedAt: now }, { merge: true });
-  await batch.commit();
 }
 
 /// Registro de reporte reutilizable. Nunca revela al reportado quién reporta.
@@ -65,6 +87,7 @@ export async function createReport(params: {
   matchId?: string | null;
   chatId?: string | null;
   messageId?: string | null;
+  storyId?: string | null;
 }): Promise<string> {
   if (params.reporterUid === params.reportedUid) {
     throw new HttpsError("invalid-argument", "Parametro invalido.");
@@ -79,6 +102,7 @@ export async function createReport(params: {
     matchId: params.matchId ?? null,
     chatId: params.chatId ?? null,
     messageId: params.messageId ?? null,
+    storyId: params.storyId ?? null,
     createdAt: FieldValue.serverTimestamp(),
   });
   return reportRef.id;
@@ -107,6 +131,9 @@ export const reportUser = onCall({ region: REGION }, async (request) => {
     matchId: request.data?.matchId ?? null,
     chatId: request.data?.chatId ?? null,
     messageId: request.data?.messageId ?? null,
+    storyId: request.data?.storyId == null
+      ? null
+      : requireStringArg(request.data.storyId, "storyId"),
   });
   return { reportId };
 });

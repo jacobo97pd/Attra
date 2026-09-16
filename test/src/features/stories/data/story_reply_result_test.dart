@@ -30,7 +30,8 @@ void main() {
       expect(r.insufficientAttras, isFalse);
     });
 
-    test('con match ya hecho la ⭐ es un mensaje: no se cobra ni se anuncia', () {
+    test('con match ya hecho la ⭐ es un mensaje: no se cobra ni se anuncia',
+        () {
       final StoryReplyResult r = StoryReplyResult.fromMap(
         <String, dynamic>{
           'outcome': 'message',
