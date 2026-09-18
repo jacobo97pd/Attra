@@ -19,9 +19,15 @@ caducan a las 72 horas, de modo que la pantalla principal se vaciaba sola si la
 revisión se demoraba, y había que resembrarlas a mano contrarreloj. Un perfil no
 caduca. Todo el recorrido de este documento se apoya ahora en perfiles.
 
-`pubspec.yaml` indica `1.0.81+89`. CI puede sustituir el número de build;
-seleccionar una build nueva que contenga estas correcciones. Codemagic rechaza
-números de build iguales o inferiores a la build 61 rechazada.
+`pubspec.yaml` indica `1.0.82+90`. De ahí sale **solo el nombre de versión**
+(`--build-name`, codemagic.yaml:125-126): el número de build lo pone la variable
+**`PROJECT_BUILD_NUMBER`** de Codemagic, no el `+90`. Poner ahí un número mayor
+que el de la última build subida; Codemagic rechaza números iguales o inferiores
+a la build 61 rechazada.
+
+El registro de versión de App Store Connect tiene que llamarse **1.0.82** para
+que acepte esta build: Apple revisó «1.0 (61)», así que si el registro sigue
+siendo `1.0` hay que crear el de `1.0.82` o cambiar el nombre de versión aquí.
 
 Validación local: **863 tests Flutter, 54 tests de backend y 23 tests Python de
 preparación de la demo** superados; `flutter analyze` sin incidencias. Los endpoints de denuncia/bloqueo
