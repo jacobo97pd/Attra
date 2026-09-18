@@ -19,17 +19,17 @@ caducan a las 72 horas, de modo que la pantalla principal se vaciaba sola si la
 revisión se demoraba, y había que resembrarlas a mano contrarreloj. Un perfil no
 caduca. Todo el recorrido de este documento se apoya ahora en perfiles.
 
-`pubspec.yaml` indica `1.0.82+90`. De ahí sale **solo el nombre de versión**
+`pubspec.yaml` indica `1.0.83+91`. De ahí sale **solo el nombre de versión**
 (`--build-name`, codemagic.yaml:125-126): el número de build lo pone la variable
 **`PROJECT_BUILD_NUMBER`** de Codemagic, no el `+90`. Poner ahí un número mayor
 que el de la última build subida; Codemagic rechaza números iguales o inferiores
 a la build 61 rechazada.
 
-El registro de versión de App Store Connect tiene que llamarse **1.0.82** para
+El registro de versión de App Store Connect tiene que llamarse **1.0.83** para
 que acepte esta build: Apple revisó «1.0 (61)», así que si el registro sigue
-siendo `1.0` hay que crear el de `1.0.82` o cambiar el nombre de versión aquí.
+siendo `1.0` hay que crear el de `1.0.83` o cambiar el nombre de versión aquí.
 
-Validación local: **863 tests Flutter, 54 tests de backend y 23 tests Python de
+Validación local: **868 tests Flutter, 65 tests de backend y 23 tests Python de
 preparación de la demo** superados; `flutter analyze` sin incidencias. Los endpoints de denuncia/bloqueo
 y los triggers asociados también se han desplegado. Esto no acredita el funcionamiento de
 StoreKit, las llamadas ni las vistas en un dispositivo físico.
@@ -235,6 +235,20 @@ antes no se habían probado. Se anotan aquí porque cambian lo que el revisor ve
 3. **Textos en inglés dentro de una interfaz en castellano.** El estado vacío de
    Chats y tres entradas del menú ⋮ de una conversación estaban en inglés
    («No conversations yet», «AI Compatibility»...). Traducidos.
+
+4. **Se pagaba y el plan no llegaba.** Tres eslabones rotos en la misma
+   cadena: (a) `verifyPurchase` trataba un recibo ya visto devolviendo sin tocar
+   nada, así que si el entitlement se había perdido, «restaurar compras» decía
+   que restauraba y no restauraba; (b) en iOS el recibo cambia en cada llamada,
+   así que cada reintento entraba como compra nueva y regalaba un periodo (en
+   producción había nueve apuntes de la misma suscripción); (c) el cliente leía
+   el plan UNA vez, de modo que el tier concedido segundos después de la compra
+   —o al renovarse— no llegaba hasta reiniciar la app. Ahora un duplicado
+   reconcilia el entitlement, reentregar la misma suscripción vigente no alarga
+   nada, y el cliente escucha `userEntitlements` y los flags en vivo (los
+   streams ya existían y no los usaba nadie). `verifyPurchase` desplegado el
+   18-sep-2026. La decisión de qué conceder vive en `resolveGrant`, con 11
+   tests.
 
 **Pendiente, no bloqueante:** el módulo `lib/src/features/connection_lab/`
 (1.761 líneas: Demo Challenge, Anti-Ghosting Coach, AI Compatibility, AI Date

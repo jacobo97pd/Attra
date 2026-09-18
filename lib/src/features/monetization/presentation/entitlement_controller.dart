@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../auth/domain/app_user.dart';
@@ -35,6 +37,19 @@ class EntitlementController extends ChangeNotifier {
   UserEntitlements _entitlements;
   MonetizationFeatureFlags _flags = const MonetizationFeatureFlags();
   bool _loading = true;
+
+  /// Suscripciones EN VIVO al entitlement y a los flags.
+  ///
+  /// Antes esto era solo `getEntitlements()`, una lectura única, y el plan se
+  /// quedaba congelado hasta que algo volvía a llamar a [load]. Con una compra
+  /// recién hecha eso significa pagar y que la app siga diciendo que no tienes
+  /// el plan: el backend concede el tier unos instantes después (reintento,
+  /// entrega por el enrutador al arrancar, renovación automática) y nadie se
+  /// entera. `watchEntitlements` y `watchFlags` ya existían en los servicios y
+  /// no los usaba nadie.
+  StreamSubscription<UserEntitlements>? _entitlementsSub;
+  StreamSubscription<MonetizationFeatureFlags>? _flagsSub;
+  bool _disposed = false;
 
   bool get isLoading => _loading;
   MonetizationFeatureFlags get flags => _flags;
@@ -180,6 +195,63 @@ class EntitlementController extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+    _escuchar();
+  }
+
+  /// Engancha las suscripciones una sola vez. Idempotente: [load] se llama
+  /// desde varios sitios (arranque, compra, ajustes) y no debe acumularlas.
+  void _escuchar() {
+    if (_disposed) return;
+    _entitlementsSub ??= _suscribir<UserEntitlements>(
+      () => _entitlementService.watchEntitlements(_uid),
+      (UserEntitlements value) => _entitlements = value,
+      'entitlements',
+    );
+    _flagsSub ??= _suscribir<MonetizationFeatureFlags>(
+      _featureFlagService.watchFlags,
+      (MonetizationFeatureFlags value) => _flags = value,
+      'flags',
+    );
+  }
+
+  StreamSubscription<T>? _suscribir<T>(
+    Stream<T> Function() abrir,
+    void Function(T value) aplicar,
+    String etiqueta,
+  ) {
+    try {
+      return abrir().listen(
+        (T value) {
+          // Un evento que llega después de dispose haría estallar
+          // notifyListeners sobre un objeto ya destruido.
+          if (_disposed) return;
+          aplicar(value);
+          notifyListeners();
+        },
+        // Un error del stream (sin red, permisos) NO puede degradar a free:
+        // se conserva lo último bueno que se leyó.
+        onError: (Object error) {
+          if (kDebugMode) {
+            debugPrint('[Attra][Entitlements] stream $etiqueta: $error');
+          }
+        },
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[Attra][Entitlements] no se pudo escuchar $etiqueta: $error');
+      }
+      return null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _entitlementsSub?.cancel();
+    _flagsSub?.cancel();
+    _entitlementsSub = null;
+    _flagsSub = null;
+    super.dispose();
   }
 
   /// Actualiza el AppUser cacheado (consent/saldo espejo) cuando cambia la

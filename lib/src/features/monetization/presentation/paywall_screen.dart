@@ -288,6 +288,20 @@ class _PaywallScreenState extends State<PaywallScreen> {
   bool get _canPurchase =>
       widget.iapService != null || widget.verifySubscription != null;
 
+  /// La tienda no ha devuelto este producto, así que no se puede comprar.
+  ///
+  /// El botón ya se desactivaba, pero SIN decir nada: seguía poniendo "Hazte
+  /// Pro" y no pasaba nada al tocarlo. Quien quería Pro se quedaba mirando un
+  /// botón muerto y acababa comprando el plan que sí respondía, que es Plus y
+  /// NO incluye la IA visual. Pagar y no tener lo que se buscaba empieza aquí.
+  bool _ofertaNoDisponible(ProductDetails? offer) =>
+      _canPurchase && offer == null;
+
+  static const String _avisoSinOferta =
+      'Ahora mismo la tienda no está devolviendo este plan. Cierra y vuelve a '
+      'abrir la pantalla; si sigue igual, inténtalo más tarde. No compres otro '
+      'plan esperando estas funciones: cada plan incluye solo lo que lista.';
+
   /// Restaurar con RESPUESTA. Antes el botón no decía nada: ni cuando restauraba
   /// ni cuando no había nada que restaurar, así que parecía roto. Apple exige
   /// que el restaurar sea funcional y verificable.
@@ -534,7 +548,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           ? 'Plan actual'
                           : currentTier.atLeast(SubscriptionTier.plus)
                               ? 'Incluido en tu plan'
-                              : 'Hazte Plus',
+                              : _ofertaNoDisponible(plusOffer)
+                                  ? 'No disponible ahora mismo'
+                                  : 'Hazte Plus',
+                      note: _ofertaNoDisponible(plusOffer)
+                          ? _avisoSinOferta
+                          : null,
                       // Sin precio de la tienda no se puede comprar: dejar el
                       // botón activo solo lleva a un error (Guideline 3.1.2(c)).
                       onTap: (currentTier.atLeast(SubscriptionTier.plus) ||
@@ -568,14 +587,18 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       // explícito (así lo exige `hasFeature`, que lo comprueba
                       // antes que el tier). Venderlas sin decirlo dejaría al
                       // usuario pagando por algo que aún no puede usar.
-                      note: 'Las funciones con IA visual necesitan tu '
-                          'consentimiento explícito: lo das (y lo retiras) '
-                          'cuando quieras desde la pantalla de IA.',
+                      note: _ofertaNoDisponible(proOffer)
+                          ? _avisoSinOferta
+                          : 'Las funciones con IA visual necesitan tu '
+                              'consentimiento explícito: lo das (y lo retiras) '
+                              'cuando quieras desde la pantalla de IA.',
                       gradient: AppColors.pro,
                       owned: currentTier == SubscriptionTier.pro,
                       ctaLabel: currentTier == SubscriptionTier.pro
                           ? 'Plan actual'
-                          : 'Hazte Pro',
+                          : _ofertaNoDisponible(proOffer)
+                              ? 'No disponible ahora mismo'
+                              : 'Hazte Pro',
                       onTap: (currentTier == SubscriptionTier.pro ||
                               _busy ||
                               proOffer == null)
