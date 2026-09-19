@@ -310,6 +310,27 @@ class UserRepository {
         );
   }
 
+  /// Concede/retira el consentimiento para que la IA lea la conversación y
+  /// proponga respuestas.
+  ///
+  /// Va SEPARADO del de la IA visual a propósito: son dos tratamientos
+  /// distintos (una cara frente a los mensajes de dos personas) y quien acepta
+  /// uno no tiene por qué aceptar el otro. Mezclarlos en un único interruptor
+  /// convertiría un consentimiento en un cheque en blanco.
+  Future<void> setChatSuggestionsConsent({
+    required String uid,
+    required bool granted,
+  }) async {
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'chatSuggestionsConsent': granted,
+            'chatSuggestionsConsentVersion': granted ? 1 : 0,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }),
+          SetOptions(merge: true),
+        );
+  }
+
   /// Datos crudos del documento de usuario (para editar rasgos/visibilidad).
   Future<Map<String, dynamic>> fetchUserData(String uid) async {
     final DocumentSnapshot<Map<String, dynamic>> snap =

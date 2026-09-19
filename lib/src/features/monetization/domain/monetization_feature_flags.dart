@@ -13,6 +13,7 @@ class MonetizationFeatureFlags {
     this.aiProcessingEnabled = true,
     this.aiKillSwitch = false,
     this.sparkEnabled = false,
+    this.chatSuggestionsEnabled = false,
     this.matchJourneyEnabled = false,
     this.icebreakersEnabled = false,
     this.miniGamesEnabled = false,
@@ -60,6 +61,7 @@ class MonetizationFeatureFlags {
         aiProcessingEnabled = false,
         aiKillSwitch = true,
         sparkEnabled = false,
+        chatSuggestionsEnabled = false,
         matchJourneyEnabled = false,
         icebreakersEnabled = false,
         miniGamesEnabled = false,
@@ -109,6 +111,11 @@ class MonetizationFeatureFlags {
   /// Attra Spark (juego de 5 min para romper el hielo tras un match). OPT-IN
   /// por flag remoto: si está desactivado, la app funciona igual que siempre.
   final bool sparkEnabled;
+
+  /// Sugerencias de respuesta en el chat (`chat_suggestions_enabled`).
+  /// Default FALSE: manda una conversación privada a un modelo, así que se
+  /// enciende a propósito, no por olvido.
+  final bool chatSuggestionsEnabled;
 
   /// Attra Match Journey: recorrido guiado del match (icebreaker → minijuego →
   /// conversación → plan). Todos OPT-IN (default false) — la app va igual si off.
@@ -201,6 +208,8 @@ class MonetizationFeatureFlags {
       aiKillSwitch: readBool('aiKillSwitch', false),
       // Acepta snake_case (spark_enabled) y camelCase (sparkEnabled).
       sparkEnabled: readBool('spark_enabled', readBool('sparkEnabled', false)),
+      chatSuggestionsEnabled: readBool('chat_suggestions_enabled',
+          readBool('chatSuggestionsEnabled', false)),
       matchJourneyEnabled: readBool(
           'match_journey_enabled', readBool('matchJourneyEnabled', false)),
       icebreakersEnabled: readBool(

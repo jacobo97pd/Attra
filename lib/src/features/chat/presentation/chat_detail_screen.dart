@@ -48,7 +48,9 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../data/chat_service.dart';
 import '../domain/chat.dart';
+import '../data/reply_suggestion_service.dart';
 import '../domain/chat_message.dart';
+import '../domain/reply_suggestion_policy.dart';
 import 'date_proposal_sheet.dart';
 import 'voice_note_bubble.dart';
 
@@ -78,6 +80,9 @@ class ChatDetailScreen extends StatefulWidget {
     this.chatGameEnabled = false,
     this.closeGracefullyEnabled = false,
     this.nudgesEnabled = false,
+    this.replySuggestionService,
+    this.replySuggestionsEnabled = false,
+    this.onRequestSuggestionConsent,
     this.dateFollowupEnabled = false,
     this.datePlansEnabled = false,
     this.datePlanService,
@@ -130,6 +135,16 @@ class ChatDetailScreen extends StatefulWidget {
   /// Attra Clear §5: muestra nudges in-chat cuando llevas tiempo sin responder.
   final bool nudgesEnabled;
 
+  /// Sugerencias de respuesta (Pro + consentimiento). Nulo = función apagada.
+  final ReplySuggestionService? replySuggestionService;
+
+  /// Ya comprobado arriba: plan Pro vigente, consentimiento dado y flag remoto.
+  /// Aquí solo se decide CUÁNDO enseñarlas, no si se tiene derecho.
+  final bool replySuggestionsEnabled;
+
+  /// Se llama cuando alguien con Pro las pide sin haber dado consentimiento.
+  final VoidCallback? onRequestSuggestionConsent;
+
   /// Attra Clear §6: muestra el follow-up "¿Cómo fue la cita?" tras una cita.
   final bool dateFollowupEnabled;
 
@@ -158,6 +173,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   static const int _maxRecordSeconds = 90;
 
   final TextEditingController _input = TextEditingController();
+  List<String> _suggestions = const <String>[];
+  bool _loadingSuggestions = false;
+  DateTime? _lastSuggestedAt;
   final FocusNode _inputFocus = FocusNode();
   final ImagePicker _picker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
@@ -1315,16 +1333,64 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     ));
   }
 
-  /// Drops an AI-suggested opener into the input for the user to review/edit —
-  /// never auto-sends.
-  void _suggestOpener() {
-    final String first = widget.other.displayName.trim().split(' ').first;
-    final String who = first.isEmpty ? '' : ' $first';
-    _input.text =
-        'Hey$who, quick one. What’s a small, ordinary thing that reliably '
-        'makes your day better? 🙂';
+  /// Propone cómo seguir la conversación. NUNCA envía: deja el texto en la
+  /// caja para que se lea, se cambie o se borre.
+  ///
+  /// Esto era una frase FIJA escrita a mano, en inglés, idéntica para cada
+  /// persona y cada conversación, y se presentaba como "AI-suggested". Ahora lo
+  /// propone de verdad el modelo a partir de los últimos mensajes.
+  Future<void> _suggestReplies() async {
+    final ReplySuggestionService? service = widget.replySuggestionService;
+    if (service == null || _loadingSuggestions) return;
+    setState(() => _loadingSuggestions = true);
+    try {
+      final List<String> propuestas =
+          await service.suggest(chatId: widget.chatId);
+      if (!mounted) return;
+      setState(() {
+        _suggestions = propuestas;
+        _lastSuggestedAt = DateTime.now();
+      });
+      if (propuestas.isEmpty) _decir('No se me ocurre nada ahora mismo.');
+    } on ReplySuggestionException catch (e) {
+      if (!mounted) return;
+      // Sin consentimiento no se insiste con un error: se ofrece darlo, que es
+      // lo que la persona necesita hacer.
+      if (e.needsConsent && widget.onRequestSuggestionConsent != null) {
+        widget.onRequestSuggestionConsent!.call();
+        return;
+      }
+      _decir(e.message);
+    } finally {
+      if (mounted) setState(() => _loadingSuggestions = false);
+    }
+  }
+
+  /// Coloca la sugerencia elegida en la caja y quita el resto.
+  void _usarSugerencia(String texto) {
+    _input.text = texto;
     _input.selection = TextSelection.collapsed(offset: _input.text.length);
     _inputFocus.requestFocus();
+    setState(() => _suggestions = const <String>[]);
+  }
+
+  void _decir(String mensaje) {
+    final ScaffoldMessengerState? m = ScaffoldMessenger.maybeOf(context);
+    m?.showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  /// ¿Se pinta el botón? La política vive en el dominio y está probada.
+  bool get _ofrecerSugerencias {
+    if (!widget.replySuggestionsEnabled ||
+        widget.replySuggestionService == null) {
+      return false;
+    }
+    return ReplySuggestionPolicy.shouldOffer(
+      messages: _lastMessages,
+      myUid: widget.currentUid,
+      now: DateTime.now(),
+      lastSuggestedAt: _lastSuggestedAt,
+    );
   }
 
   void _openCoach() {
@@ -1527,7 +1593,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               if (kAppStoreValidationExperience && canSend)
                 ChatAiChallengeCard(
                   onStartChallenge: _openAiDemoChallenge,
-                  onSuggestOpener: _suggestOpener,
+                  onSuggestOpener: _suggestReplies,
                   onPlayGame: () => _openIcebreaker(canSend),
                 ),
               // Match Journey (Fase 8): card de recorrido guiado. Opt-in, cerrable.
@@ -1595,7 +1661,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   onCancel: _cancelRecording,
                   onSend: _stopAndSend,
                 )
-              else
+              else ...<Widget>[
+                if (_ofrecerSugerencias || _suggestions.isNotEmpty)
+                  _SuggestionBar(
+                    suggestions: _suggestions,
+                    loading: _loadingSuggestions,
+                    onAsk: _suggestReplies,
+                    onPick: _usarSugerencia,
+                    onDismiss: () =>
+                        setState(() => _suggestions = const <String>[]),
+                  ),
                 _Composer(
                   controller: _input,
                   focusNode: _inputFocus,
@@ -1608,6 +1683,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   onGames: () => _openIcebreaker(canSend),
                   onMic: () => _startRecording(canSend),
                 ),
+              ],
             ],
           );
         },
@@ -3176,6 +3252,105 @@ class _SystemLine extends StatelessWidget {
             ),
           ),
           const Expanded(child: Divider()),
+        ],
+      ),
+    );
+  }
+}
+
+/// Barra de sugerencias de respuesta, encima de la caja de texto.
+///
+/// Dos estados: el botón para pedirlas, y las propuestas ya generadas. Nunca
+/// envía nada por su cuenta; al tocar una, el texto va a la caja y la persona
+/// decide. Se puede cerrar: quien no la quiera no tiene que usarla.
+class _SuggestionBar extends StatelessWidget {
+  const _SuggestionBar({
+    required this.suggestions,
+    required this.loading,
+    required this.onAsk,
+    required this.onPick,
+    required this.onDismiss,
+  });
+
+  final List<String> suggestions;
+  final bool loading;
+  final VoidCallback onAsk;
+  final ValueChanged<String> onPick;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (suggestions.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+          child: TextButton.icon(
+            onPressed: loading ? null : onAsk,
+            icon: loading
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome, size: 18),
+            label: Text(loading ? 'Pensando…' : '¿Te ayudo a responder?'),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.auto_awesome,
+                  size: 15, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Toca una para editarla antes de enviar',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Cerrar sugerencias',
+                onPressed: onDismiss,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          // En columna y no en fila horizontal: son frases, y en un carrusel
+          // lateral no se leen enteras sin desplazarlas una a una.
+          ...suggestions.map(
+            (String s) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: InkWell(
+                key: ValueKey<String>('reply-suggestion-$s'),
+                onTap: () => onPick(s),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: theme.colorScheme.outlineVariant),
+                  ),
+                  child: Text(s, style: theme.textTheme.bodyMedium),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -7,6 +7,7 @@ import 'package:attra/src/features/auth/domain/app_user.dart';
 import 'package:attra/src/features/auth/presentation/session_controller.dart';
 import 'package:attra/src/features/auth/presentation/session_state.dart';
 import 'package:attra/src/features/chat/data/chat_service.dart';
+import 'package:attra/src/features/chat/data/reply_suggestion_service.dart';
 import 'package:attra/src/features/feed/data/ranking_signals_repository.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
 import 'package:attra/src/features/monetization/data/entitlement_service.dart';
@@ -41,6 +42,7 @@ void main() {
       rankingSignalsRepository: _UnusedRanking(),
       storyService: _UnusedStories(),
       aiVisualService: _UnusedAi(),
+      replySuggestionService: _UnusedSuggestions(),
     );
   });
 
@@ -372,6 +374,9 @@ AppUser _appUser(String uid, {bool completedOnboarding = true}) => AppUser(
 // Una llamada accidental falla para evitar dependencia de Firebase o la red.
 class _UnusedOnboarding extends _UnexpectedCalls
     implements OnboardingRepository {}
+
+class _UnusedSuggestions extends _UnexpectedCalls
+    implements ReplySuggestionService {}
 
 class _UnusedVoice extends _UnexpectedCalls implements VoiceProfileService {}
 

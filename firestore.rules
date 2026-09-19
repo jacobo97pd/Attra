@@ -58,6 +58,8 @@ service cloud.firestore {
         'aiVisualConsent',
         'aiVisualConsentVersion',
         'aiVisualEnabled',
+        'chatSuggestionsConsent',
+        'chatSuggestionsConsentVersion',
         'onboardingDraft',
         'onboardingDraftUpdatedAt',
         'profilePrompts'

@@ -19,6 +19,8 @@ class AppUser {
     this.attrasBalance = 0,
     this.aiVisualConsent = false,
     this.aiVisualConsentVersion = 0,
+    this.chatSuggestionsConsent = false,
+    this.chatSuggestionsConsentVersion = 0,
     this.aiVisualEnabled = false,
     this.gender = '',
     this.interestedIn = const <String>[],
@@ -70,6 +72,11 @@ class AppUser {
   final int attrasBalance;
   final bool aiVisualConsent;
   final int aiVisualConsentVersion;
+
+  /// Consentimiento para que la IA lea la conversación y proponga respuestas.
+  /// Independiente del de la IA visual: son dos tratamientos distintos.
+  final bool chatSuggestionsConsent;
+  final int chatSuggestionsConsentVersion;
   final bool aiVisualEnabled;
 
   /// Consumibles comprados (saldo en `users/{uid}.wallet`).
@@ -249,6 +256,9 @@ class AppUser {
       attrasBalance: _asInt(data['attrasBalance']),
       aiVisualConsent: _asBool(data['aiVisualConsent']),
       aiVisualConsentVersion: _asInt(data['aiVisualConsentVersion']),
+      chatSuggestionsConsent: _asBool(data['chatSuggestionsConsent']),
+      chatSuggestionsConsentVersion:
+          _asInt(data['chatSuggestionsConsentVersion']),
       aiVisualEnabled: _asBool(data['aiVisualEnabled']),
       gender: (profile['gender'] as String?) ?? '',
       interestedIn: _asStringList(preferences['interestedIn']),

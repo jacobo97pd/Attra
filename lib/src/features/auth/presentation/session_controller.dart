@@ -12,6 +12,7 @@ import '../../onboarding/domain/onboarding_draft.dart';
 import '../../onboarding/domain/voice_profile_suggestion.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../chat/data/chat_service.dart';
+import '../../chat/data/reply_suggestion_service.dart';
 import '../../date_plans/data/date_plan_service.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/data/friend_mode_service.dart';
@@ -57,6 +58,7 @@ class SessionController extends ChangeNotifier {
     required RankingSignalsRepository rankingSignalsRepository,
     required StoryService storyService,
     required AiVisualService aiVisualService,
+    required ReplySuggestionService replySuggestionService,
     BoostService? boostService,
     SparkService? sparkService,
     FeedMetricsService? feedMetricsService,
@@ -80,6 +82,7 @@ class SessionController extends ChangeNotifier {
         _integrationConnector = integrationConnector,
         _storyService = storyService,
         _aiVisualService = aiVisualService,
+        _replySuggestionService = replySuggestionService,
         _userRepository = userRepository,
         _onboardingRepository = onboardingRepository,
         _voiceProfileService = voiceProfileService,
@@ -110,6 +113,7 @@ class SessionController extends ChangeNotifier {
   final IntegrationConnector? _integrationConnector;
   final StoryService _storyService;
   final AiVisualService _aiVisualService;
+  final ReplySuggestionService _replySuggestionService;
   final SparkService? _sparkService;
   final DatePlanService? _datePlanService;
   final FriendModeService? _friendModeService;
@@ -158,6 +162,21 @@ class SessionController extends ChangeNotifier {
     final String? uid = _state.user?.uid;
     if (uid == null) return;
     await _userRepository.setAiVisualConsent(uid: uid, granted: granted);
+    await _refreshAuthenticatedUser(uid);
+  }
+
+  /// Servicio de sugerencias de respuesta en el chat (Pro + consentimiento).
+  ReplySuggestionService get replySuggestionService => _replySuggestionService;
+
+  /// Concede/retira el consentimiento para que la IA lea la conversación.
+  ///
+  /// Separado del de IA visual a propósito: ahí el dato es una cara, aquí son
+  /// los mensajes de dos personas. Un solo interruptor para ambos sería un
+  /// consentimiento que autoriza algo que no se preguntó.
+  Future<void> setChatSuggestionsConsent(bool granted) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.setChatSuggestionsConsent(uid: uid, granted: granted);
     await _refreshAuthenticatedUser(uid);
   }
 

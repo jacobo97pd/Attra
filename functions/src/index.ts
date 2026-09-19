@@ -116,6 +116,7 @@ export {
 } from "./safedate";
 export { grantConsumable } from "./consumables";
 export { verifyPurchase } from "./subscriptions";
+export { suggestReplies } from "./chatSuggestions";
 export {
   startChatGame,
   respondChatGame,

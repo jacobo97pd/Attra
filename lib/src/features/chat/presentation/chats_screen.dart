@@ -22,6 +22,7 @@ import '../../social/domain/friend_group.dart';
 import '../../social/presentation/group_avatar.dart';
 import '../../social/presentation/group_chat_screen.dart';
 import '../data/chat_service.dart';
+import '../data/reply_suggestion_service.dart';
 import '../domain/chat.dart';
 import '../domain/chat_message.dart';
 import 'chat_detail_screen.dart';
@@ -60,6 +61,9 @@ class ChatsScreen extends StatelessWidget {
     this.antiGhostingEnabled = false,
     this.closeGracefullyEnabled = false,
     this.nudgesEnabled = false,
+    this.replySuggestionService,
+    this.replySuggestionsEnabled = false,
+    this.onRequestSuggestionConsent,
     this.dateFollowupEnabled = false,
     this.onDiscover,
     this.onOpenPlay,
@@ -90,6 +94,11 @@ class ChatsScreen extends StatelessWidget {
 
   /// Attra Clear §5: habilita los nudges in-chat.
   final bool nudgesEnabled;
+
+  /// Sugerencias de respuesta en el chat (Pro + consentimiento + flag).
+  final ReplySuggestionService? replySuggestionService;
+  final bool replySuggestionsEnabled;
+  final VoidCallback? onRequestSuggestionConsent;
 
   /// Attra Clear §6: habilita el follow-up post-cita.
   final bool dateFollowupEnabled;
@@ -212,6 +221,9 @@ class ChatsScreen extends StatelessWidget {
         chatGameEnabled: chatGameEnabled,
         closeGracefullyEnabled: closeGracefullyEnabled,
         nudgesEnabled: nudgesEnabled,
+        replySuggestionService: replySuggestionService,
+        replySuggestionsEnabled: replySuggestionsEnabled,
+        onRequestSuggestionConsent: onRequestSuggestionConsent,
         dateFollowupEnabled: dateFollowupEnabled,
         onOpenUpgrade: onOpenUpgrade,
       ),

@@ -26,6 +26,7 @@ import '../../social/data/social_discovery_service.dart';
 import '../../social/presentation/groups_screen.dart';
 import '../../social/presentation/intent_mode_selector.dart';
 import '../../social/domain/intent_mode.dart';
+import '../../chat/data/reply_suggestion_service.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
@@ -108,6 +109,8 @@ class HomeShell extends StatefulWidget {
     required this.storyService,
     required this.aiVisualService,
     required this.onSetAiConsent,
+    required this.replySuggestionService,
+    required this.onSetChatSuggestionsConsent,
     required this.onSetSlowDating,
     this.onSetBusyMode,
     required this.onSetThemeMode,
@@ -203,6 +206,10 @@ class HomeShell extends StatefulWidget {
   final StoryService storyService;
   final AiVisualService aiVisualService;
   final Future<void> Function(bool granted) onSetAiConsent;
+
+  /// Sugerencias de respuesta en el chat (Pro + consentimiento propio).
+  final ReplySuggestionService replySuggestionService;
+  final Future<void> Function(bool granted) onSetChatSuggestionsConsent;
   final Future<void> Function(bool value) onSetSlowDating;
 
   /// Attra Clear §4: activa/desactiva el modo ocupado. Opcional.
@@ -451,6 +458,42 @@ class _HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
+  /// Pide el consentimiento para las sugerencias de respuesta.
+  ///
+  /// Se pregunta aquí y no se da por supuesto con el de la IA visual: lo que
+  /// se trata son los mensajes de DOS personas, y la otra no está delante para
+  /// consentir nada. Por eso el texto dice exactamente qué se manda, qué NO se
+  /// guarda y que nada se envía solo.
+  Future<void> _pedirConsentimientoSugerencias() async {
+    final bool? acepta = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('¿Te sugerimos respuestas?'),
+        content: const Text(
+          'Para proponerte cómo seguir, se envían los últimos mensajes de esa '
+          'conversación a la IA en el momento en que las pides.\n\n'
+          '· No se guardan los mensajes en ningún sitio nuevo.\n'
+          '· No se manda nada sin que tú lo leas: la sugerencia va a la caja '
+          'de texto y tú decides.\n'
+          '· Puedes retirarlo cuando quieras desde Ajustes.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Ahora no'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Acepto'),
+          ),
+        ],
+      ),
+    );
+    if (acepta == true) {
+      await widget.onSetChatSuggestionsConsent(true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppLocalizations l10n = AppLocalizations.of(context);
@@ -654,6 +697,18 @@ class _HomeShellState extends State<HomeShell> {
                   _antiGhosting.enabled && _antiGhosting.closeGracefullyEnabled,
               nudgesEnabled:
                   _antiGhosting.enabled && _antiGhosting.nudgesEnabled,
+              replySuggestionService: widget.replySuggestionService,
+              // Las TRES puertas juntas: plan, consentimiento y flag remoto.
+              // La pantalla solo decide CUÁNDO enseñarlas; el backend vuelve a
+              // comprobarlo todo porque el cliente no manda en esto.
+              replySuggestionsEnabled:
+                  (_entitlementController?.hasFeature(
+                              PremiumFeature.aiReplySuggestions) ??
+                          false) &&
+                      (widget.user?.chatSuggestionsConsent ?? false) &&
+                      (_entitlementController?.flags.chatSuggestionsEnabled ??
+                          false),
+              onRequestSuggestionConsent: _pedirConsentimientoSugerencias,
               dateFollowupEnabled:
                   _antiGhosting.enabled && _antiGhosting.dateFollowupEnabled,
               onDiscover: () => goTo(_HomeDestination.discover),

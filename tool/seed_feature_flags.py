@@ -69,6 +69,12 @@ FLAGS = {
     # se siembra EXPLICITAMENTE para poder auditar desde la consola que esta
     # apagado en vez de depender de la ausencia de la clave.
     "storiesEnabled": ("booleanValue", False),
+    # --- SUGERENCIAS DE RESPUESTA EN EL CHAT ----------------------------
+    # DARK LAUNCH en FALSE. La funcion manda los ultimos mensajes de una
+    # conversacion a Gemini, asi que no se enciende hasta que (a) el parrafo
+    # nuevo de privacy.html este PUBLICADO y (b) se quiera activar de verdad.
+    # El backend exige `=== true`: sin esta clave la funcion no responde.
+    "chat_suggestions_enabled": ("booleanValue", False),
     "weeklyFreeAttras": ("integerValue", "0"),
     # --- Pack mensual incluido en cada plan (grants.ts) ------------------
     # Free pasa de 0 a 1 Attra/mes: es el gancho de conversion, sin probar el

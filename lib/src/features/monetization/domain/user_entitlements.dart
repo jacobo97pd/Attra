@@ -176,6 +176,7 @@ class UserEntitlements {
     PremiumFeature.aiVisualRanking,
     PremiumFeature.aiExplanations,
     PremiumFeature.aiDataControls,
+    PremiumFeature.aiReplySuggestions,
   ];
 
   /// Features por defecto de cada tier.

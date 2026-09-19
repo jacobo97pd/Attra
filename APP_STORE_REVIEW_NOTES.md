@@ -19,18 +19,24 @@ caducan a las 72 horas, de modo que la pantalla principal se vaciaba sola si la
 revisión se demoraba, y había que resembrarlas a mano contrarreloj. Un perfil no
 caduca. Todo el recorrido de este documento se apoya ahora en perfiles.
 
-`pubspec.yaml` indica `1.0.83+91`. De ahí sale **solo el nombre de versión**
+`pubspec.yaml` indica `1.0.84+92`. De ahí sale **solo el nombre de versión**
 (`--build-name`, codemagic.yaml:125-126): el número de build lo pone la variable
 **`PROJECT_BUILD_NUMBER`** de Codemagic, no el `+90`. Poner ahí un número mayor
 que el de la última build subida; Codemagic rechaza números iguales o inferiores
 a la build 61 rechazada.
 
-El registro de versión de App Store Connect tiene que llamarse **1.0.83** para
+El registro de versión de App Store Connect tiene que llamarse **1.0.84** para
 que acepte esta build: Apple revisó «1.0 (61)», así que si el registro sigue
-siendo `1.0` hay que crear el de `1.0.83` o cambiar el nombre de versión aquí.
+siendo `1.0` hay que crear el de `1.0.84` o cambiar el nombre de versión aquí.
 
-Validación local: **868 tests Flutter, 65 tests de backend y 23 tests Python de
-preparación de la demo** superados; `flutter analyze` sin incidencias. Los endpoints de denuncia/bloqueo
+Validación local: **78 tests de backend y 23 tests Python** superados y
+`flutter analyze` sin incidencias. **La suite de Flutter NO se ha podido
+ejecutar entera en la última tanda**: el disco de la máquina de desarrollo está
+al 100 % (232 GB) y el compilador de tests no puede escribir, así que cada
+fichero recompila desde cero y la ejecución no termina. Los tests nuevos de
+esta tanda (política de sugerencias, entitlements en vivo) sí pasaron cuando se
+ejecutaron por separado. **Antes de dar por buena una build hay que liberar
+disco y volver a pasar `flutter test` completo.** Los endpoints de denuncia/bloqueo
 y los triggers asociados también se han desplegado. Esto no acredita el funcionamiento de
 StoreKit, las llamadas ni las vistas en un dispositivo físico.
 
@@ -249,6 +255,21 @@ antes no se habían probado. Se anotan aquí porque cambian lo que el revisor ve
    streams ya existían y no los usaba nadie). `verifyPurchase` desplegado el
    18-sep-2026. La decisión de qué conceder vive en `resolveGrant`, con 11
    tests.
+
+5. **Sugerencias de respuesta en el chat (apagadas).** Función nueva de Attra
+   Pro: la IA propone hasta tres formas de seguir una conversación y NUNCA
+   envía nada por su cuenta (el texto cae en la caja y decide la persona). Va
+   en **dark launch**: `config/featureFlags.chat_suggestions_enabled=false`, y
+   el backend exige `=== true`, así que sin sembrar la clave no responde.
+   Requiere además consentimiento propio y separado del de la IA visual
+   (`users/{uid}.chatSuggestionsConsent`), porque el dato tratado son los
+   mensajes de dos personas, no una cara. **Antes de encenderla hay que
+   publicar el apartado «3 bis» que ya está escrito en `hosting/privacy.html`
+   y que todavía NO se ha desplegado.**
+
+   De paso se retiró un falso positivo: lo que había era una frase fija escrita
+   a mano, en inglés, idéntica para cada persona y cada conversación, y se
+   presentaba en la interfaz como «AI-suggested».
 
 **Pendiente, no bloqueante:** el módulo `lib/src/features/connection_lab/`
 (1.761 líneas: Demo Challenge, Anti-Ghosting Coach, AI Compatibility, AI Date

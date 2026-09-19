@@ -17,6 +17,7 @@ import 'src/features/auth/presentation/session_gate.dart';
 import 'src/features/ai_visual/data/ai_visual_service.dart';
 import 'src/features/chat/data/chat_repository.dart';
 import 'src/features/chat/data/chat_service.dart';
+import 'src/features/chat/data/reply_suggestion_service.dart';
 import 'src/features/date_plans/data/date_plan_repository.dart';
 import 'src/features/date_plans/data/date_plan_service.dart';
 import 'src/features/safedate/data/safedate_service.dart';
@@ -190,6 +191,7 @@ class _AttraAppState extends State<AttraApp> with WidgetsBindingObserver {
         functions: functions,
         storage: FirebaseStorage.instance,
       ),
+      replySuggestionService: ReplySuggestionService(functions: functions),
       sparkService: SparkService(
         repository: SparkRepository(firestore: firestore),
         analytics: SparkAnalytics(firestore: firestore),

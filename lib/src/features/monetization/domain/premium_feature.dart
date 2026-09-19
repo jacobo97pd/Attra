@@ -28,7 +28,14 @@ enum PremiumFeature {
   visualReferenceSearch('visual_reference_search'),
   aiVisualRanking('ai_visual_ranking'),
   aiExplanations('ai_explanations'),
-  aiDataControls('ai_data_controls');
+  aiDataControls('ai_data_controls'),
+
+  /// Sugerencias de respuesta en el chat. Deliberadamente FUERA de
+  /// [isAiVisual]: esa bandera exige `aiVisualConsent`, que es el permiso para
+  /// tratar una CARA. Aquí el dato son los mensajes de dos personas y el
+  /// permiso es `chatSuggestionsConsent`. Meterla ahí dentro convertiría un
+  /// consentimiento en el pase para el otro.
+  aiReplySuggestions('ai_reply_suggestions');
 
   const PremiumFeature(this.wireName);
 
@@ -56,6 +63,7 @@ enum PremiumFeature {
       case PremiumFeature.readReceipts:
       case PremiumFeature.attrasMonthlyGrant:
       case PremiumFeature.travelMode:
+      case PremiumFeature.aiReplySuggestions:
         return false;
     }
   }
