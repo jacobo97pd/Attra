@@ -242,6 +242,16 @@ export const sendLike = onCall(
     if (matchSnap.exists && (matchSnap.data()?.status ?? "active") === "active") {
       return { outcome: "matched", matchId: matchSnap.id, chatId: matchSnap.id };
     }
+    // Un match que YA NO esta activo (deshecho, cerrado con elegancia, cuenta
+    // borrada) es terminal. QUE FALLABA: solo se cortaba en 'active', asi que
+    // tras un unmatch el otro podia llamar a sendLike a mano, el like inverso
+    // seguia 'matched' (cuenta como intencion viva) y `writeMatchAndChat`
+    // reabria match y chat que la otra persona habia cerrado. Se sale ANTES de
+    // escribir nada: ni like, ni consumo del cupo diario. 'blocked' es el
+    // resultado que el cliente ya sabe mostrar.
+    if (matchSnap.exists) {
+      return { outcome: "blocked" };
+    }
 
     const alreadyLiked =
       likeFwd.exists && (likeFwd.data()?.status ?? "active") === "active";

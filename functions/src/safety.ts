@@ -3,37 +3,72 @@ import { FieldValue } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { directedId, pairId } from "./ids";
 import { col, requireAuthUid, requireStringArg } from "./common";
+import { deletePairNotifications } from "./notifications";
 
 /// unmatch: cierra match y chat sin borrar mensajes (moderacion). Solo un
 /// participante puede deshacer el match.
+///
+/// Tambien cancela los dos likes del par. QUE FALLABA: se quedaban 'matched' y
+/// `sendLike`/`sendAttra` cuentan un like inverso 'matched' como intencion
+/// viva, asi que el otro podia reabrir match y chat con un like hecho a mano.
+/// Ahora esas rutas ya tratan un match no activo como terminal; cancelar los
+/// likes deja ademas las bandejas coherentes. Va en transaccion (como
+/// applyBlock) porque hay que leer los likes antes de escribirlos.
 export const unmatch = onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request.auth);
   const matchId = requireStringArg(request.data?.matchId, "matchId");
 
   const matchRef = col.matches.doc(matchId);
-  const matchSnap = await matchRef.get();
-  if (!matchSnap.exists) {
-    throw new HttpsError("not-found", "El match no existe.");
-  }
-  const users: string[] = (matchSnap.data()?.users ?? []) as string[];
-  if (!users.includes(uid)) {
-    throw new HttpsError("permission-denied", "No perteneces a este match.");
-  }
+  await db.runTransaction(async (tx) => {
+    const matchSnap = await tx.get(matchRef);
+    if (!matchSnap.exists) {
+      throw new HttpsError("not-found", "El match no existe.");
+    }
+    const users: string[] = (matchSnap.data()?.users ?? []) as string[];
+    if (!users.includes(uid)) {
+      throw new HttpsError("permission-denied", "No perteneces a este match.");
+    }
+    // Un bloqueo manda sobre un unmatch: rebajar 'blocked' a 'unmatched'
+    // borraria la unica señal de bloqueo que ve el bloqueado (no puede leer
+    // blocks/*) y reabriria el chat bloqueado como 'closed'. Y un match
+    // retirado por cuenta borrada ('deleted') no se resucita en la lista.
+    const status = (matchSnap.data()?.status ?? "active").toString();
+    if (status === "blocked" || status === "deleted") return;
 
-  const now = FieldValue.serverTimestamp();
-  const batch = db.batch();
-  batch.update(matchRef, { status: "unmatched", updatedAt: now });
-  batch.set(
-    col.chats.doc(matchId),
-    { status: "closed", updatedAt: now },
-    { merge: true }
-  );
-  await batch.commit();
+    const other = users.find((u) => u !== uid) ?? "";
+    const likes = other
+      ? await tx.getAll(
+          col.likes.doc(directedId(uid, other)),
+          col.likes.doc(directedId(other, uid))
+        )
+      : [];
+
+    const now = FieldValue.serverTimestamp();
+    tx.update(matchRef, { status: "unmatched", updatedAt: now });
+    tx.set(
+      col.chats.doc(matchId),
+      { status: "closed", updatedAt: now },
+      { merge: true }
+    );
+    for (const like of likes) {
+      if (!like.exists) continue;
+      // Uno ya cancelado conserva su motivo original (p.ej. el pase).
+      if ((like.data()?.status ?? "active") === "cancelled") continue;
+      tx.update(like.ref, {
+        status: "cancelled",
+        cancelReason: "unmatched",
+        cancelledBy: uid,
+        cancelledAt: now,
+        updatedAt: now,
+      });
+    }
+  });
   return { ok: true };
 });
 
 /// Lógica de bloqueo reutilizable (usada por blockUser y por SafeDate). Crea el
-/// bloqueo y cierra match/chat existentes. Idempotente (merge).
+/// bloqueo, cierra match/chat existentes, borra los descartes del par y limpia
+/// sus avisos de las dos bandejas. Idempotente (merge).
 export async function applyBlock(
   blockerUid: string,
   blockedUid: string
@@ -75,7 +110,24 @@ export async function applyBlock(
         updatedAt: now,
       });
     }
+    // Los descartes previos se BORRAN en ambos sentidos. QUE FALLABA: la
+    // «segunda vuelta» del feed resta los descartados del conjunto excluido, y
+    // un uid descartado Y bloqueado perdia tambien la exclusion del bloqueo:
+    // volvia a salir el bloqueado (o quien te bloqueo). El bloqueo ya excluye
+    // al par para siempre; el descarte no aporta nada y solo abria esa puerta.
+    // (El cliente separa ademas las exclusiones duras; esto es la otra mitad.)
+    tx.delete(col.dislikes.doc(directedId(blockerUid, blockedUid)));
+    tx.delete(col.dislikes.doc(directedId(blockedUid, blockerUid)));
   });
+
+  // Fuera de la transaccion y best-effort: la bandeja no es evidencia (los
+  // mensajes siguen en chats/{id}/messages) y un fallo aqui no puede deshacer
+  // ni tumbar el bloqueo, que ya esta escrito.
+  try {
+    await deletePairNotifications(blockerUid, blockedUid);
+  } catch (e) {
+    console.error(`[safety] limpieza de notificaciones tras bloqueo: ${e}`);
+  }
 }
 
 /// Registro de reporte reutilizable. Nunca revela al reportado quién reporta.

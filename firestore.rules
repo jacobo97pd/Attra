@@ -316,23 +316,39 @@ service cloud.firestore {
       // El doc es la sala en vivo (presencia/rondas/respuestas/reacciones). El
       // mensaje de sistema final en el chat lo inserta el backend (Cloud Func).
       match /sparkSessions/{sessionId} {
+        function matchDoc() {
+          return get(/databases/$(database)/documents/matches/$(matchId)).data;
+        }
         function matchUsers() {
-          return get(/databases/$(database)/documents/matches/$(matchId))
-              .data.get('users', []);
+          return matchDoc().get('users', []);
+        }
+        // Escribir exige ademas match ACTIVO. applyBlock deja matches/{par} con
+        // `users` y status 'blocked' (aunque nunca hubiera match) para que ambos
+        // feeds excluyan al par: sin esto el BLOQUEADO podia crear un reto
+        // (push "te ha retado" a quien le bloqueo) o cerrar una sesion con texto
+        // propio. Lo mismo tras un unmatch o un cierre. Es el mismo get() que
+        // matchUsers(): no suma lecturas.
+        function matchIsActive() {
+          return matchDoc().get('status', 'active') == 'active';
         }
         allow read: if isParticipant(matchUsers());
         // Crear: solo un participante, declarándose como userA (anfitrión) y con
-        // el otro participante como userB.
+        // el otro participante como userB. Nace 'waiting' y sin resumen: una
+        // sesion no puede crearse ya 'completed' con un chatLine inventado.
         allow create: if isParticipant(matchUsers())
+          && matchIsActive()
           && sessionId == 'icebreaker_v1'
           && request.resource.data.get('userAId', '') == request.auth.uid
           && matchUsers().hasAll([
                request.resource.data.get('userAId', ''),
                request.resource.data.get('userBId', '')
-             ]);
-        // Actualizar: cualquier participante del match (responder/reaccionar/
-        // presencia/avanzar). No se permite borrar.
-        allow update: if isParticipant(matchUsers());
+             ])
+          && request.resource.data.get('status', '') == 'waiting'
+          && !('summary' in request.resource.data);
+        // Actualizar: cualquier participante de un match activo (responder/
+        // reaccionar/presencia/avanzar). No se permite borrar. Tras un bloqueo
+        // la sesion queda congelada; el barrido del backend la expira.
+        allow update: if isParticipant(matchUsers()) && matchIsActive();
         allow delete: if false;
       }
 

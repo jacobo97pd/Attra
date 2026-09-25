@@ -4,7 +4,8 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { REGION, db } from "./firebase";
-import { col, resolvePublicDisplayName } from "./common";
+import { pairId } from "./ids";
+import { col, existsBlockBetween, resolvePublicDisplayName } from "./common";
 
 const DATABASE = "attra-database";
 
@@ -151,6 +152,66 @@ export async function createNotification(
   }
 }
 
+/// Claves con las que cada tipo de aviso de la bandeja de `ownerUid` apunta a
+/// `otherUid`. Cada plantilla guarda el vinculo en un sitio distinto, asi que
+/// mirar solo `fromUid` se dejaba la mayoria:
+///  - like / Attra → `data.fromUid` = la otra persona;
+///  - match / reto Spark → `data.matchId` = id del par;
+///  - mensaje → `data.chatId` = id del par (chatId == matchId).
+export function pairNotificationFilters(
+  ownerUid: string,
+  otherUid: string
+): Array<{ field: string; value: string }> {
+  const id = pairId(ownerUid, otherUid);
+  return [
+    { field: "data.fromUid", value: otherUid },
+    { field: "data.matchId", value: id },
+    { field: "data.chatId", value: id },
+  ];
+}
+
+const PAIR_NOTIF_PAGE = 200;
+
+/// Borra de las DOS bandejas los avisos que apuntan a la otra persona del par.
+///
+/// QUE FALLABA: bloquear no tocaba `notifications/{uid}/items`, y el cliente
+/// no filtra la bandeja por bloqueos: la campana de quien bloqueaba seguia
+/// enseñando "B te ha escrito" con el texto del mensaje (a veces justo el
+/// motivo del bloqueo) y llevando a su chat. Se borran (no se ocultan) porque
+/// son copias renderizadas, no evidencia: los mensajes siguen en
+/// chats/{id}/messages. Los push ya entregados al movil no se pueden retirar.
+/// Devuelve cuantos borro.
+export async function deletePairNotifications(
+  uidA: string,
+  uidB: string
+): Promise<number> {
+  let deleted = 0;
+  for (const [owner, other] of [
+    [uidA, uidB],
+    [uidB, uidA],
+  ]) {
+    const items = db.collection("notifications").doc(owner).collection("items");
+    for (const f of pairNotificationFilters(owner, other)) {
+      // Sin cursor a proposito: lo ya borrado no vuelve a salir en la
+      // siguiente pagina, asi que basta con repetir la consulta.
+      let more = true;
+      while (more) {
+        const snap = await items
+          .where(f.field, "==", f.value)
+          .limit(PAIR_NOTIF_PAGE)
+          .get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        for (const doc of snap.docs) batch.delete(doc.ref);
+        await batch.commit();
+        deleted += snap.size;
+        more = snap.size >= PAIR_NOTIF_PAGE;
+      }
+    }
+  }
+  return deleted;
+}
+
 // --- Triggers (aislados; NO tocan los callables de like/match/chat) ---
 
 /// Nuevo like → avisa al receptor (anónimo, dirige a la bandeja de likes).
@@ -159,10 +220,19 @@ export const onLikeCreated = onDocumentCreated(
   async (event) => {
     const data = event.data?.data() as DocumentData | undefined;
     if (!data) return;
+    // Solo likes PENDIENTES. Cuando el like cierra un match en la misma
+    // transaccion (sendLike/sendAttra/vivo), el doc NACE ya 'matched': avisar
+    // "Le gustas a alguien" mandaba a una bandeja donde ese like no sale (filtra
+    // 'active') y duplicaba el push de "Nuevo match", que ya cubre el caso. Sin
+    // `status` (docs antiguos) se trata como pendiente.
+    if ((data.status ?? "active").toString() !== "active") return;
     const toUid = (data.toUid ?? "").toString();
     const fromUid = (data.fromUid ?? "").toString();
     const type = (data.type ?? "like").toString();
     if (!toUid || toUid === fromUid) return;
+    // Un like escrito justo antes de un bloqueo puede disparar esto DESPUES de
+    // que applyBlock limpiara la bandeja: el aviso volveria a aparecer.
+    if (await existsBlockBetween(fromUid, toUid)) return;
     if (type === "attra") {
       const fromSnap = await col.users.doc(fromUid).get();
       const name = resolvePublicDisplayName(fromSnap.data()) || "Alguien";
@@ -215,6 +285,9 @@ export const onMessageCreated = onDocumentCreated(
     const senderId = (data.senderId ?? "").toString();
     const receiverId = (data.receiverId ?? "").toString();
     if (!receiverId || receiverId === senderId || senderId === "system") return;
+    // Misma carrera que en onLikeCreated: un mensaje en vuelo al bloquear no
+    // debe volver a dejar su preview en la bandeja de quien bloqueo.
+    if (await existsBlockBetween(senderId, receiverId)) return;
     const senderSnap = await col.users.doc(senderId).get();
     const name = resolvePublicDisplayName(senderSnap.data()) || "Alguien";
     const preview =
@@ -224,6 +297,28 @@ export const onMessageCreated = onDocumentCreated(
     });
   }
 );
+
+/// ¿Puede `inviterUid` retar a `invitedUid` en este match? Match ACTIVO con
+/// ambos dentro y sin bloqueo en ningun sentido.
+///
+/// QUE FALLABA: applyBlock deja matches/{par} con `users` y status 'blocked'
+/// aunque nunca hubiera match, y el trigger no miraba ni el estado ni los
+/// bloqueos: el bloqueado creaba la sesion con el SDK y el que le bloqueo
+/// recibia "X te ha retado" (push incluido). Las reglas ya lo cortan; esto es
+/// la defensa del lado servidor (y cubre sesiones creadas antes de las reglas).
+export async function sparkChallengeAllowed(
+  matchId: string,
+  inviterUid: string,
+  invitedUid: string
+): Promise<boolean> {
+  const matchSnap = await col.matches.doc(matchId).get();
+  if (!matchSnap.exists) return false;
+  const match = matchSnap.data() ?? {};
+  if ((match.status ?? "active").toString() !== "active") return false;
+  const users: unknown[] = Array.isArray(match.users) ? match.users : [];
+  if (!users.includes(inviterUid) || !users.includes(invitedUid)) return false;
+  return !(await existsBlockBetween(inviterUid, invitedUid));
+}
 
 /// Reto de Attra Spark → avisa al INVITADO (userBId). La sesión la crea el
 /// cliente en `matches/{id}/sparkSessions/{sessionId}` con el invitador ya
@@ -239,8 +334,14 @@ export const onSparkSessionCreated = onDocumentCreated(
     if (!data) return;
     if ((data.status ?? "").toString() !== "waiting") return;
     const invitedUid = (data.userBId ?? "").toString();
-    const inviterUid = (data.invitedBy ?? data.userAId ?? "").toString();
-    if (!invitedUid || invitedUid === inviterUid) return;
+    // El invitador es SIEMPRE userAId, que las reglas atan a quien crea la
+    // sesion. `invitedBy` no lo valida nadie: leerlo dejaba poner el nombre de
+    // otra persona en el reto. El cliente legitimo escribe ambos iguales.
+    const inviterUid = (data.userAId ?? "").toString();
+    if (!invitedUid || !inviterUid || invitedUid === inviterUid) return;
+    if (!(await sparkChallengeAllowed(event.params.matchId, inviterUid, invitedUid))) {
+      return;
+    }
     const inviterSnap = await col.users.doc(inviterUid).get();
     const name = resolvePublicDisplayName(inviterSnap.data()) || "Alguien";
     await createNotification(invitedUid, tplSparkChallenge(name), {

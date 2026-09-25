@@ -90,15 +90,61 @@ export const rankingOnMessage = onDocumentCreated(
   }
 );
 
-/// Reporte → +reportsCount al reportado (baja trustSafety en el job nocturno).
+/// Suma el reporte a `reportsCount` SOLO si es el primero de ese denunciante
+/// contra ese reportado. Devuelve si conto.
+///
+/// QUE FALLABA: se contaban DOCUMENTOS de reporte, no personas. Tras reportar,
+/// la tarjeta sigue en el feed (solo el bloqueo la quita), asi que una sola
+/// persona con manía pulsaba "Reportar" cinco veces y le bajaba a otro el
+/// trustSafety de 0.65 a 0.25 en el feed de TODOS. La deduplicacion va aqui y
+/// no en `reports`: moderacion necesita cada reporte con su propia evidencia
+/// (story, chat, mensaje) y el vivo reenvia a proposito cuando duda.
+///
+/// La marca `rankingSignals/{reportado}/reporters/{denunciante}` y el
+/// incremento van en la MISMA transaccion: los triggers se entregan "al menos
+/// una vez", y un reintento tampoco puede contar doble. Un reporte sin
+/// denunciante no se puede deduplicar y no cuenta.
+export async function countDistinctReport(
+  reportedUid: string,
+  reporterUid: string
+): Promise<boolean> {
+  if (!reportedUid || !reporterUid || reportedUid === reporterUid) return false;
+  const reporterRef = signals
+    .doc(reportedUid)
+    .collection("reporters")
+    .doc(reporterUid);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const seen = await tx.get(reporterRef);
+      if (seen.exists) return false;
+      const now = FieldValue.serverTimestamp();
+      tx.create(reporterRef, { firstReportedAt: now });
+      tx.set(
+        signals.doc(reportedUid),
+        { reportsCount: FieldValue.increment(1), recentActivityAt: now },
+        { merge: true }
+      );
+      return true;
+    });
+  } catch (e) {
+    console.error(
+      `[ranking] report ${reportedUid}<-${reporterUid} falló: ${(e as Error).message}`
+    );
+    return false;
+  }
+}
+
+/// Reporte → +reportsCount al reportado (baja trustSafety en el job nocturno),
+/// una vez por denunciante (ver `countDistinctReport`).
 export const rankingOnReport = onDocumentCreated(
   { document: "reports/{reportId}", database: DATABASE, region: REGION },
   async (event) => {
     const d = event.data?.data() as DocumentData | undefined;
     if (!d) return;
-    await bump((d.reportedUid ?? "").toString(), {
-      reportsCount: FieldValue.increment(1),
-    });
+    await countDistinctReport(
+      (d.reportedUid ?? "").toString(),
+      (d.reporterUid ?? "").toString()
+    );
   }
 );
 

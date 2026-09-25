@@ -2,7 +2,13 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
-import { col, nextJourneyStatus, requireAuthUid, requireStringArg } from "./common";
+import {
+  col,
+  existsBlockBetween,
+  nextJourneyStatus,
+  requireAuthUid,
+  requireStringArg,
+} from "./common";
 
 /// completeSparkSession: al terminar una partida de Attra Spark, inserta el
 /// mensaje de SISTEMA del resumen en el chat (los mensajes de chat son
@@ -30,6 +36,25 @@ export const completeSparkSession = onCall({ region: REGION }, async (request) =
     throw new HttpsError("permission-denied", "No perteneces a este match.");
   }
 
+  // 1b) Y el match tiene que seguir VIVO. QUE FALLABA: solo se miraba la
+  // pertenencia, y applyBlock deja matches/{par} con `users` aunque el estado
+  // sea 'blocked' (tambien tras un unmatch o un cierre): el bloqueado podia
+  // cerrar una sesion a mano y colar su `summary.chatLine` como mensaje de
+  // SISTEMA en el chat de quien le bloqueo. Se mira el chat (los cierres
+  // antiguos solo lo marcaban a el) y el bloqueo directo por si el merge de
+  // applyBlock llegara tarde.
+  if ((matchSnap.data()?.status ?? "active") !== "active") {
+    throw new HttpsError("failed-precondition", "Este match ya no esta disponible.");
+  }
+  const chatSnap = await col.chats.doc(matchId).get();
+  if (!chatSnap.exists || (chatSnap.data()?.status ?? "active") !== "active") {
+    throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
+  }
+  const otherUid = users.find((u) => u !== uid) ?? "";
+  if (await existsBlockBetween(uid, otherUid)) {
+    throw new HttpsError("permission-denied", "No puedes interactuar con este perfil.");
+  }
+
   // 2) La sesión debe pertenecer al match y estar completada.
   const sessionRef = col.matches
     .doc(matchId)
@@ -40,6 +65,10 @@ export const completeSparkSession = onCall({ region: REGION }, async (request) =
     throw new HttpsError("not-found", "La sesión de Spark no existe.");
   }
   const session = sessionSnap.data() as DocumentData;
+  // Quien la publica tiene que ser uno de los dos jugadores de ESA sesion.
+  if (session.userAId !== uid && session.userBId !== uid) {
+    throw new HttpsError("permission-denied", "No juegas esta partida.");
+  }
   if (session.status !== "completed") {
     throw new HttpsError("failed-precondition", "La partida no está completada.");
   }
