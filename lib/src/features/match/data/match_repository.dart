@@ -80,7 +80,9 @@ class MatchRepository {
     return excluded;
   }
 
-  /// Matches activos del usuario, mas recientes primero.
+  /// Matches activos del usuario, mas recientes primero. La consulta ya pide
+  /// `active`; [UserMatch.isOpen] quita además los cerrados con elegancia que
+  /// quedaron en `active` con el recorrido archivado.
   Stream<List<UserMatch>> observeMatches(String uid) {
     return _matches
         .where('users', arrayContains: uid)
@@ -90,6 +92,7 @@ class MatchRepository {
       final List<UserMatch> items = snap.docs
           .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
               UserMatch.fromMap(d.id, d.data()))
+          .where((UserMatch m) => m.isOpen)
           .toList(growable: true)
         ..sort((UserMatch a, UserMatch b) =>
             _millis(b.createdAt).compareTo(_millis(a.createdAt)));

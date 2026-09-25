@@ -271,8 +271,11 @@ class ChatsScreen extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        // Bloqueados y matches deshechos fuera, para los dos (ver
+        // Chat.isListed). El repositorio ya los quita; se repite aquí porque
+        // la pantalla no debe depender de qué stream le pasen.
         final List<Chat> all = (snapshot.data ?? <Chat>[])
-            .where((Chat c) => c.status != ChatStatus.deleted)
+            .where((Chat c) => c.isListed)
             .toList(growable: false);
         if (all.isEmpty) {
           return _ChatsEmpty(
@@ -280,9 +283,15 @@ class ChatsScreen extends StatelessWidget {
             onOpenPlay: () => _openPlay(context),
           );
         }
-        final List<Chat> nuevos =
-            all.where((Chat c) => !_isConversation(c)).toList();
-        final List<Chat> convos = all.where(_isConversation).toList();
+        // "Matches nuevos" es solo para matches VIVOS. Un chat cerrado que se
+        // lista (cierre con elegancia) es historia: va a "Conversaciones",
+        // archivado y de solo lectura, nunca como "match nuevo".
+        final List<Chat> nuevos = all
+            .where((Chat c) => c.status.isActive && !_isConversation(c))
+            .toList();
+        final List<Chat> convos = all
+            .where((Chat c) => !c.status.isActive || _isConversation(c))
+            .toList();
 
         // Attra Clear §1: separa las conversaciones donde TE TOCA responder.
         // Orden: "Tu turno" por más antiguo esperando primero; el resto por

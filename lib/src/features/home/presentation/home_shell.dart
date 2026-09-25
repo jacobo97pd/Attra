@@ -58,6 +58,8 @@ import '../../profile/domain/profile_prompt.dart';
 import '../../spark/data/spark_service.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_trait.dart';
+import '../../onboarding/domain/interested_in.dart';
+import '../../profile/presentation/interested_in_sheet.dart';
 import '../../settings/data/settings_repository.dart';
 import '../../settings/presentation/settings_controller.dart';
 import '../../settings/presentation/settings_screen.dart';
@@ -850,20 +852,42 @@ class _HomeShellState extends State<HomeShell> {
   /// Modo Amigos: abre el selector de intención y persiste el cambio a través
   /// de SessionController (escribe con los campos requeridos por las reglas Y
   /// recarga el usuario, para que el perfil y el feed reflejen el cambio ya).
+  ///
+  /// Entrar en citas/ambas exige "Me interesan": quien se registró en amistad
+  /// o grupos lo tiene vacío y, vacío, emparejaba con todos los géneros en los
+  /// dos sentidos. Sin elegirlo no se cambia de modo.
   Future<void> _openFriendMode() async {
     final Future<void> Function(IntentMode)? setMode = widget.onSetIntentMode;
     if (setMode == null) return;
     final IntentMode current = widget.user?.intentMode ?? IntentMode.dating;
     final IntentMode? chosen = await IntentModeSelector.show(context, current);
-    if (chosen == null || chosen == current) return;
+    if (chosen == null || !mounted) return;
     try {
-      await setMode(chosen);
-      if (mounted) {
-        setState(
-            () => _feedReloadToken++); // refresca el feed con el nuevo modo
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Modo actualizado')));
+      final IntentSwitchOutcome outcome = await switchIntentModeWithInterest(
+        current: current,
+        chosen: chosen,
+        interestedIn: widget.user?.interestedIn ?? const <String>[],
+        askInterestedIn: () => InterestedInSheet.show(
+          context,
+          message: 'Para ver perfiles de citas necesitamos saber a quién '
+              'quieres conocer. Podrás cambiarlo en tu perfil.',
+        ),
+        saveInterestedIn: (List<String> values) =>
+            widget.onSetTrait(InterestedIn.trait, values),
+        saveMode: setMode,
+      );
+      if (!mounted || outcome == IntentSwitchOutcome.unchanged) return;
+      if (outcome == IntentSwitchOutcome.cancelled) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Elige a quién quieres conocer para pasar a citas.')));
+        return;
       }
+      setState(() => _feedReloadToken++); // refresca el feed con el nuevo modo
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(chosen == current
+              ? 'Preferencias actualizadas'
+              : 'Modo actualizado')));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

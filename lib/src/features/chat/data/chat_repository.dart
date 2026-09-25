@@ -16,6 +16,11 @@ class ChatRepository {
       _firestore.collection('chats');
 
   /// Chats del usuario, ordenados por ultimo mensaje (cliente, sin indice).
+  ///
+  /// Filtra aquí (y no solo en ChatsScreen) lo que no debe listarse
+  /// ([Chat.isListed]: bloqueados, matches deshechos): este stream también
+  /// alimenta el contador de "Tu turno", y un bloqueado no puede contar como
+  /// conversación pendiente.
   Stream<List<Chat>> observeChats(String uid) {
     return _chats
         .where('users', arrayContains: uid)
@@ -24,7 +29,7 @@ class ChatRepository {
       final List<Chat> items = snap.docs
           .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
               Chat.fromMap(d.id, d.data()))
-          .where((Chat c) => c.status != ChatStatus.deleted)
+          .where((Chat c) => c.isListed)
           .toList(growable: true)
         ..sort((Chat a, Chat b) => _millis(b.lastMessageAt ?? b.createdAt)
             .compareTo(_millis(a.lastMessageAt ?? a.createdAt)));

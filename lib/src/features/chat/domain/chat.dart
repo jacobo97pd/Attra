@@ -7,6 +7,12 @@ enum ChatStatus {
   active('active'),
   blocked('blocked'),
   closed('closed'),
+
+  /// Match deshecho. Hoy `unmatch` escribe `closed` sin firmar el cierre (ver
+  /// [Chat.isUnmatched]), pero se reconoce también el valor explícito: sin él,
+  /// [fromValue] lo leería como `active` y volvería a abrir el composer de un
+  /// chat muerto.
+  unmatched('unmatched'),
   deleted('deleted');
 
   const ChatStatus(this.wireName);
@@ -106,6 +112,41 @@ class Chat {
 
   /// True si el cierre lo hizo [uid] (para mensajes "tú cerraste" vs "X cerró").
   bool closedByMe(String uid) => closedByUserId == uid;
+
+  /// Match deshecho: `unmatch` cierra el chat SIN firmarlo (no deja
+  /// `closedByUserId`), que es justo lo que lo distingue del cierre con
+  /// elegancia.
+  bool get isUnmatched =>
+      status == ChatStatus.unmatched ||
+      (status == ChatStatus.closed && closedByUserId == null);
+
+  /// ¿Sale en la lista de Chats (y cuenta para "Tu turno")?
+  ///
+  /// La lista solo quitaba `deleted`, que el backend no escribe nunca, así que
+  /// tras bloquear o deshacer el match la otra persona seguía ahí con su nombre
+  /// y su foto, a menudo en "Matches nuevos", para LOS DOS. El bloqueo promete
+  /// "no volveréis a veros en la app". Por eso:
+  /// * `blocked`, `unmatched` y `deleted` no se listan nunca, para ninguno.
+  /// * `closed` solo si es un cierre con elegancia: esa conversación está hecha
+  ///   para quedarse, de solo lectura y con el mensaje de despedida, en
+  ///   "Conversaciones" (es el archivo que ya pintaba la UI con su banner).
+  bool get isListed {
+    switch (status) {
+      case ChatStatus.active:
+        return true;
+      case ChatStatus.closed:
+        return isGracefullyClosed;
+      case ChatStatus.blocked:
+      case ChatStatus.unmatched:
+      case ChatStatus.deleted:
+        return false;
+    }
+  }
+
+  /// ¿Se puede abrir el perfil del otro desde este chat? Lo mismo que listarlo:
+  /// si el chat ya no se enseña (bloqueo, match deshecho) tampoco su cabecera
+  /// debe llevar al perfil completo, aunque se llegue por un push o un enlace.
+  bool get allowsProfileAccess => isListed;
 
   String otherUid(String uid) =>
       users.firstWhere((String u) => u != uid, orElse: () => '');
