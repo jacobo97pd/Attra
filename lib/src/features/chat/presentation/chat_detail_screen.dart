@@ -1556,9 +1556,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 const PopupMenuItem<String>(
                     value: 'coach', child: Text('Coach anti-ghosting')),
                 const PopupMenuItem<String>(
-                    value: 'compatibility', child: Text('Compatibilidad con IA')),
+                    value: 'compatibility',
+                    child: Text('Compatibilidad con IA')),
                 const PopupMenuItem<String>(
-                    value: 'planner', child: Text('Planificador de citas con IA')),
+                    value: 'planner',
+                    child: Text('Planificador de citas con IA')),
                 const PopupMenuDivider(),
               ],
               if (widget.safeDatePlanEnabled && widget.safeDateService != null)
@@ -3338,13 +3340,12 @@ class _SuggestionBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                        color: theme.colorScheme.outlineVariant),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
                   child: Text(s, style: theme.textTheme.bodyMedium),
                 ),

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../domain/feed_filters.dart';
 
-typedef _Opt = ({String value, String label});
+/// Opción de un filtro de selección única: valor que se guarda y etiqueta.
+typedef FilterOption = ({String value, String label});
 
 /// Filtros del feed (estilo Hinge). Básicos (gratis): edad, géneros, foto,
 /// distancia. Avanzados (Plus): qué busca, hábitos, estudios, altura,
@@ -21,6 +22,15 @@ class FiltersScreen extends StatefulWidget {
 
   /// Pro con referencia + consentimiento: muestra "ordenar por parecido".
   final bool canVisualMatch;
+
+  /// Público porque el chip rápido "Qué busca" del feed ofrece las mismas
+  /// opciones: dos listas escritas a mano acabarían diciendo cosas distintas.
+  static const List<FilterOption> goalOptions = <FilterOption>[
+    (value: 'serious_relationship', label: 'Relación seria'),
+    (value: 'meet_people', label: 'Conocer gente'),
+    (value: 'casual', label: 'Algo casual'),
+    (value: 'open_to_see', label: 'Abierto'),
+  ];
 
   static Future<FeedFilters?> show(
     BuildContext context, {
@@ -57,33 +67,27 @@ class _FiltersScreenState extends State<FiltersScreen> {
   late RangeValues _height;
   late Set<String> _db; // deal-breakers
 
-  static const List<_Opt> _genderOptions = <_Opt>[
+  static const List<FilterOption> _genderOptions = <FilterOption>[
     (value: 'female', label: 'Mujeres'),
     (value: 'male', label: 'Hombres'),
     (value: 'non_binary', label: 'No binario'),
   ];
-  static const List<_Opt> _goalOptions = <_Opt>[
-    (value: 'serious_relationship', label: 'Relación seria'),
-    (value: 'meet_people', label: 'Conocer gente'),
-    (value: 'casual', label: 'Algo casual'),
-    (value: 'open_to_see', label: 'Abierto'),
-  ];
-  static const List<_Opt> _smokingOptions = <_Opt>[
+  static const List<FilterOption> _smokingOptions = <FilterOption>[
     (value: 'never', label: 'No fuma'),
     (value: 'occasionally', label: 'Ocasional'),
   ];
-  static const List<_Opt> _drinkingOptions = <_Opt>[
+  static const List<FilterOption> _drinkingOptions = <FilterOption>[
     (value: 'never', label: 'No bebe'),
     (value: 'socially', label: 'Socialmente'),
   ];
-  static const List<_Opt> _educationOptions = <_Opt>[
+  static const List<FilterOption> _educationOptions = <FilterOption>[
     (value: 'high_school', label: 'Bachillerato'),
     (value: 'vocational', label: 'FP'),
     (value: 'bachelor', label: 'Grado'),
     (value: 'master', label: 'Máster'),
     (value: 'phd', label: 'Doctorado'),
   ];
-  static const List<_Opt> _ethnicityOptions = <_Opt>[
+  static const List<FilterOption> _ethnicityOptions = <FilterOption>[
     (value: 'white_caucasian', label: 'Blanca/caucásica'),
     (value: 'hispanic_latino', label: 'Hispana/latina'),
     (value: 'black_afro', label: 'Negra/afro'),
@@ -92,7 +96,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
     (value: 'middle_eastern_north_african', label: 'MENA'),
     (value: 'multiracial', label: 'Multirracial'),
   ];
-  static const List<_Opt> _religionOptions = <_Opt>[
+  static const List<FilterOption> _religionOptions = <FilterOption>[
     (value: 'christian', label: 'Cristiana'),
     (value: 'catholic', label: 'Católica'),
     (value: 'muslim', label: 'Musulmana'),
@@ -208,7 +212,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
           Wrap(
             spacing: 8,
             children: <Widget>[
-              for (final _Opt o in _genderOptions)
+              for (final FilterOption o in _genderOptions)
                 FilterChip(
                   label: Text(o.label),
                   selected: _genders.contains(o.value),
@@ -261,8 +265,8 @@ class _FiltersScreenState extends State<FiltersScreen> {
               ),
             )
           else ...<Widget>[
-            _single('Qué busca', _goalOptions, _goal, FeedFilters.kGoal,
-                (String? v) => setState(() => _goal = v)),
+            _single('Qué busca', FiltersScreen.goalOptions, _goal,
+                FeedFilters.kGoal, (String? v) => setState(() => _goal = v)),
             _single('Tabaco', _smokingOptions, _smoking, FeedFilters.kSmoking,
                 (String? v) => setState(() => _smoking = v)),
             _single(
@@ -378,8 +382,8 @@ class _FiltersScreenState extends State<FiltersScreen> {
   }
 
   /// Selección única con opción "Cualquiera" (null) + deal-breaker si hay valor.
-  Widget _single(String title, List<_Opt> options, String? current, String key,
-      ValueChanged<String?> onChanged,
+  Widget _single(String title, List<FilterOption> options, String? current,
+      String key, ValueChanged<String?> onChanged,
       {String? note}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -401,7 +405,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
               selected: current == null,
               onSelected: (_) => onChanged(null),
             ),
-            for (final _Opt o in options)
+            for (final FilterOption o in options)
               ChoiceChip(
                 label: Text(o.label),
                 selected: current == o.value,

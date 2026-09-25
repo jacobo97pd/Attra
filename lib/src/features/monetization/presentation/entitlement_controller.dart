@@ -238,7 +238,8 @@ class EntitlementController extends ChangeNotifier {
       );
     } catch (error) {
       if (kDebugMode) {
-        debugPrint('[Attra][Entitlements] no se pudo escuchar $etiqueta: $error');
+        debugPrint(
+            '[Attra][Entitlements] no se pudo escuchar $etiqueta: $error');
       }
       return null;
     }

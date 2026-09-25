@@ -45,20 +45,17 @@ class ReplySuggestionPolicy {
     // solo empuja a insistir.
     if (last.senderId == myUid) return false;
 
-    final int mios =
-        convo.where((ChatMessage m) => m.senderId == myUid).length;
+    final int mios = convo.where((ChatMessage m) => m.senderId == myUid).length;
     if (mios == 0 || mios == convo.length) return false;
 
-    if (lastSuggestedAt != null &&
-        now.difference(lastSuggestedAt) < cooldown) {
+    if (lastSuggestedAt != null && now.difference(lastSuggestedAt) < cooldown) {
       return false;
     }
 
     // ¿Hace falta ayuda? Dos señales: llevas rato sin contestar, o te han
     // escrito varias seguidas.
     final DateTime? cuando = last.createdAt;
-    final bool atascado =
-        cuando != null && now.difference(cuando) >= stalled;
+    final bool atascado = cuando != null && now.difference(cuando) >= stalled;
 
     int seguidos = 0;
     for (final ChatMessage m in convo.reversed) {

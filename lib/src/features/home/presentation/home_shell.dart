@@ -254,6 +254,10 @@ enum _HomeDestination {
 
 class _HomeShellState extends State<HomeShell> {
   _HomeDestination _destination = _HomeDestination.discover;
+
+  /// El feed ha plegado su cabecera porque se está bajando por una ficha: la
+  /// barra de navegación se esconde con ella para dejar sitio a las fotos.
+  bool _feedChromeHidden = false;
   int _feedReloadToken = 0;
   int _visualSearchToken = 0;
 
@@ -514,89 +518,83 @@ class _HomeShellState extends State<HomeShell> {
     final int attrasBalance = _entitlementController?.attrasBalance ?? 0;
 
     final bool isPro = _entitlementController?.isProActive ?? false;
-    final bool slowDating = widget.user?.slowDatingEnabled ?? false;
-    final Widget feedTab = Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        titleTextStyle: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
-              color: Colors.white,
-            ),
-        title: slowDating
-            ? const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  _AttraTitleLogo(),
-                  SizedBox(width: 10),
-                  _SlowDatingBadge(),
-                ],
-              )
-            : const _AttraTitleLogo(),
-        actions: <Widget>[
-          // FEED EN VIVO: único punto de entrada de la app. Detrás de
-          // `feature_live_enabled` (OFF por defecto, como se hizo con
-          // SafeDate): con la flag apagada este widget no se construye y el
-          // directo es literalmente inalcanzable.
-          if (_liveFlags.active && uid.isNotEmpty)
-            LiveEntryButton(onTap: _openLive),
-          if (widget.notificationService != null && uid.isNotEmpty)
-            NotificationBell(
-              service: widget.notificationService!,
-              uid: uid,
-              onTap: _openNotifications,
-            ),
-        ],
-      ),
-      body: FeedScreen(
-        user: widget.user,
-        onLoadSeedProfiles: widget.onLoadSeedProfiles,
-        matchService: widget.matchService,
-        chatService: widget.chatService,
-        sparkService: widget.sparkService,
-        sparkEnabled: _entitlementController?.sparkEnabled ?? false,
-        attrasBalance: attrasBalance,
-        canComment: _entitlementController?.isPlusActive ?? false,
-        reloadToken: _feedReloadToken,
-        visualSearchToken: _visualSearchToken,
-        storyService: widget.storyService,
-        isPlus: _entitlementController?.isPlusActive ?? false,
-        canRewind:
-            _entitlementController?.hasFeature(PremiumFeature.rewind) ?? false,
-        rewindUnlimited: _entitlementController?.isProActive ?? false,
-        onOpenUpgrade: _openPaywall,
-        aiVisualService: widget.aiVisualService,
-        canUseVisualMatch:
-            (_entitlementController?.canUseAiVisualMatching ?? false) &&
-                (widget.user?.aiVisualConsent ?? false),
-        canSeeLikedMe: _entitlementController?.canSeeAllLikes ?? false,
-        metrics: widget.feedMetricsService,
-        boostService: widget.boostService,
-        // Anuncios: flag activo Y el usuario NO es Plus/Pro (premium sin ads).
-        adsEnabled: (_entitlementController?.flags.adsEnabled ?? false) &&
-            !(_entitlementController?.isPlusActive ?? false),
-        canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
-        onOpenTravel: _openTravelSheet,
-        // Ranking inteligente: señales server-side + config remota. Detrás del
-        // flag `ranking_enabled` (default off hasta desplegar el backend).
-        rankingSignals: widget.rankingSignalsRepository,
-        rankingConfig: RankingConfig.fromMap(
-            _entitlementController?.flags.rawConfig ??
-                const <String, dynamic>{}),
-        // Attra Clear §2: límite suave de conversaciones pendientes.
-        antiGhostingConfig: _antiGhosting,
-        pendingController: _pendingController,
-        isBusy: widget.user?.busyModeActive ?? false,
-        isPro: _entitlementController?.isProActive ?? false,
-        onOpenChats: () => goTo(_HomeDestination.chats),
-        // Modo Amigos: acceso a grupos desde el feed cuando estás en modo social.
-        onOpenGroups: (widget.friendGroupService == null ||
-                widget.socialDiscoveryService == null)
-            ? null
-            : _openGroups,
-        // Persiste la ubicación del dispositivo (completitud del perfil + feed).
-        onDeviceLocation: widget.onSaveDeviceLocation,
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    // Discover va SIN cabecera de logo, como Hinge: la primera fila es la de
+    // filtros y el resto es la ficha. Se pinta con el color de contenido para
+    // tapar la tinta de marca del fondo, que solo tiene sentido bajo el logo.
+    final Widget feedTab = AnnotatedRegion<SystemUiOverlayStyle>(
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: AttraAppShellBackground.contentColorOf(context),
+        body: FeedScreen(
+          headerActions: <Widget>[
+            // FEED EN VIVO: único punto de entrada de la app. Detrás de
+            // `feature_live_enabled` (OFF por defecto, como se hizo con
+            // SafeDate): con la flag apagada este widget no se construye y el
+            // directo es literalmente inalcanzable.
+            if (_liveFlags.active && uid.isNotEmpty)
+              LiveEntryButton(onTap: _openLive),
+            if (widget.notificationService != null && uid.isNotEmpty)
+              NotificationBell(
+                service: widget.notificationService!,
+                uid: uid,
+                onTap: _openNotifications,
+              ),
+          ],
+          onChromeHiddenChanged: (bool hidden) {
+            if (hidden != _feedChromeHidden) {
+              setState(() => _feedChromeHidden = hidden);
+            }
+          },
+          user: widget.user,
+          onLoadSeedProfiles: widget.onLoadSeedProfiles,
+          matchService: widget.matchService,
+          chatService: widget.chatService,
+          sparkService: widget.sparkService,
+          sparkEnabled: _entitlementController?.sparkEnabled ?? false,
+          attrasBalance: attrasBalance,
+          canComment: _entitlementController?.isPlusActive ?? false,
+          reloadToken: _feedReloadToken,
+          visualSearchToken: _visualSearchToken,
+          storyService: widget.storyService,
+          isPlus: _entitlementController?.isPlusActive ?? false,
+          canRewind:
+              _entitlementController?.hasFeature(PremiumFeature.rewind) ??
+                  false,
+          rewindUnlimited: _entitlementController?.isProActive ?? false,
+          onOpenUpgrade: _openPaywall,
+          aiVisualService: widget.aiVisualService,
+          canUseVisualMatch:
+              (_entitlementController?.canUseAiVisualMatching ?? false) &&
+                  (widget.user?.aiVisualConsent ?? false),
+          canSeeLikedMe: _entitlementController?.canSeeAllLikes ?? false,
+          metrics: widget.feedMetricsService,
+          boostService: widget.boostService,
+          // Anuncios: flag activo Y el usuario NO es Plus/Pro (premium sin ads).
+          adsEnabled: (_entitlementController?.flags.adsEnabled ?? false) &&
+              !(_entitlementController?.isPlusActive ?? false),
+          canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
+          onOpenTravel: _openTravelSheet,
+          // Ranking inteligente: señales server-side + config remota. Detrás del
+          // flag `ranking_enabled` (default off hasta desplegar el backend).
+          rankingSignals: widget.rankingSignalsRepository,
+          rankingConfig: RankingConfig.fromMap(
+              _entitlementController?.flags.rawConfig ??
+                  const <String, dynamic>{}),
+          // Attra Clear §2: límite suave de conversaciones pendientes.
+          antiGhostingConfig: _antiGhosting,
+          pendingController: _pendingController,
+          isBusy: widget.user?.busyModeActive ?? false,
+          isPro: _entitlementController?.isProActive ?? false,
+          onOpenChats: () => goTo(_HomeDestination.chats),
+          // Modo Amigos: acceso a grupos desde el feed cuando estás en modo social.
+          onOpenGroups: (widget.friendGroupService == null ||
+                  widget.socialDiscoveryService == null)
+              ? null
+              : _openGroups,
+          // Persiste la ubicación del dispositivo (completitud del perfil + feed).
+          onDeviceLocation: widget.onSaveDeviceLocation,
+        ),
       ),
     );
 
@@ -701,13 +699,12 @@ class _HomeShellState extends State<HomeShell> {
               // Las TRES puertas juntas: plan, consentimiento y flag remoto.
               // La pantalla solo decide CUÁNDO enseñarlas; el backend vuelve a
               // comprobarlo todo porque el cliente no manda en esto.
-              replySuggestionsEnabled:
-                  (_entitlementController?.hasFeature(
-                              PremiumFeature.aiReplySuggestions) ??
-                          false) &&
-                      (widget.user?.chatSuggestionsConsent ?? false) &&
-                      (_entitlementController?.flags.chatSuggestionsEnabled ??
-                          false),
+              replySuggestionsEnabled: (_entitlementController
+                          ?.hasFeature(PremiumFeature.aiReplySuggestions) ??
+                      false) &&
+                  (widget.user?.chatSuggestionsConsent ?? false) &&
+                  (_entitlementController?.flags.chatSuggestionsEnabled ??
+                      false),
               onRequestSuggestionConsent: _pedirConsentimientoSugerencias,
               dateFollowupEnabled:
                   _antiGhosting.enabled && _antiGhosting.dateFollowupEnabled,
@@ -805,17 +802,26 @@ class _HomeShellState extends State<HomeShell> {
           ],
         ),
       ),
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: context.colors.surfaceLine),
+      bottomNavigationBar: _AutoHideBar(
+        // Solo en Discover y mientras se baja por una ficha. Nunca durante el
+        // tour (señala pestañas de esta barra) ni con lector de pantalla, que
+        // navega por la barra y no tendría gesto de "subir" para recuperarla.
+        hidden: _destination == _HomeDestination.discover &&
+            _feedChromeHidden &&
+            _tourStep < 0 &&
+            !MediaQuery.accessibleNavigationOf(context),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: context.colors.surfaceLine),
+            ),
           ),
-        ),
-        child: NavigationBar(
-          selectedIndex: _destination.index,
-          onDestinationSelected: (int index) =>
-              goTo(_HomeDestination.values[index]),
-          destinations: destinations,
+          child: NavigationBar(
+            selectedIndex: _destination.index,
+            onDestinationSelected: (int index) =>
+                goTo(_HomeDestination.values[index]),
+            destinations: destinations,
+          ),
         ),
       ),
     );
@@ -1053,56 +1059,46 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
-class _AttraTitleLogo extends StatelessWidget {
-  const _AttraTitleLogo();
+/// Barra de navegación que se esconde deslizándose hacia abajo.
+///
+/// Al esconderse NO baja a cero: deja el hueco del indicador de inicio, para
+/// que la ficha no acabe debajo de él ni recortada por las esquinas redondas
+/// de la pantalla.
+class _AutoHideBar extends StatelessWidget {
+  const _AutoHideBar({required this.hidden, required this.child});
+
+  final bool hidden;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      label: 'Attra',
-      image: true,
-      child: Image.asset(
-        'assets/images/ATTRA.png',
-        height: 28,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        // El wordmark conserva el blanco original sobre la cabecera oscura.
-        color: Colors.white,
-      ),
-    );
-  }
-}
-
-/// Distintivo visible cuando Slow Dating está activo (junto al título del feed).
-class _SlowDatingBadge extends StatelessWidget {
-  const _SlowDatingBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.colors.accentSoft,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        border: Border.all(
-          color: context.colors.accent.withValues(alpha: 0.42),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.spa_rounded, size: 13, color: context.colors.accent),
-          const SizedBox(width: 5),
-          Text(
-            'Slow Dating',
-            style: TextStyle(
-              color: context.colors.accent,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
+    final double bottomInset = MediaQuery.paddingOf(context).bottom;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: hidden ? 0 : 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      child: child,
+      builder: (BuildContext context, double shown, Widget? child) {
+        // La barra se recorta desde abajo (se ve su parte de arriba, que es lo
+        // que parece deslizarse fuera) y el hueco del indicador crece a la vez,
+        // así que el alto total pasa de uno a otro sin saltos.
+        return ColoredBox(
+          color: AttraAppShellBackground.contentColorOf(context),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  heightFactor: shown,
+                  child: child,
+                ),
+              ),
+              SizedBox(height: bottomInset * (1 - shown)),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

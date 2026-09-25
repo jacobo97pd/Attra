@@ -58,10 +58,17 @@ class AttraAppShellBackground extends StatelessWidget {
 
   static const Color _headerInk = AppColors.black;
 
+  /// Color del tramo de contenido (debajo de la tinta de la cabecera). Lo usan
+  /// las pestañas sin cabecera, como el feed, para pintarse encima de la tinta
+  /// sin que se note el corte.
+  static Color contentColorOf(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? context.colors.bg : Colors.white;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color contentColor = isDark ? context.colors.bg : Colors.white;
+    final Color contentColor = contentColorOf(context);
     final double topInset = MediaQuery.paddingOf(context).top;
 
     return LayoutBuilder(

@@ -116,8 +116,7 @@ class SessionGate extends StatelessWidget {
               aiVisualService: controller.aiVisualService,
               onSetAiConsent: controller.setAiVisualConsent,
               replySuggestionService: controller.replySuggestionService,
-              onSetChatSuggestionsConsent:
-                  controller.setChatSuggestionsConsent,
+              onSetChatSuggestionsConsent: controller.setChatSuggestionsConsent,
               onSetSlowDating: controller.setSlowDatingEnabled,
               onSetBusyMode: controller.setBusyMode,
               onSetThemeMode: controller.setThemeMode,

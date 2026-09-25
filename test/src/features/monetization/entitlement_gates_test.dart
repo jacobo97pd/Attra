@@ -325,10 +325,15 @@ void main() {
     test('premium (tier retirado) = Pro SIN IA: nadie pierde nada', () {
       final List<PremiumFeature> premium = forTier(SubscriptionTier.premium);
       final List<PremiumFeature> pro = forTier(SubscriptionTier.pro);
-      expect(premium.where((PremiumFeature f) => f.isAiVisual), isEmpty);
+      // "IA" es TODA la IA de Pro: la visual y las sugerencias de respuesta.
+      // Estas no cuelgan de `isAiVisual` a propósito (su consentimiento es otro),
+      // pero siguen siendo solo de Pro.
+      bool esIa(PremiumFeature f) =>
+          f.isAiVisual || f == PremiumFeature.aiReplySuggestions;
+      expect(premium.where(esIa), isEmpty);
       expect(
         premium.toSet(),
-        pro.where((PremiumFeature f) => !f.isAiVisual).toSet(),
+        pro.where((PremiumFeature f) => !esIa(f)).toSet(),
       );
     });
   });

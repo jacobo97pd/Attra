@@ -49,6 +49,7 @@ import '../../../widgets/attra_states.dart';
 import '../data/feed_metrics_service.dart';
 import '../data/ranking_signals_repository.dart';
 import '../domain/boost_ranker.dart';
+import '../domain/feed_chrome.dart';
 import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
 import '../domain/liked_me_ranker.dart';
@@ -56,7 +57,9 @@ import '../domain/ranking.dart';
 import '../domain/ranking_config.dart';
 import '../domain/rewind_policy.dart';
 import '../domain/slow_dating.dart';
+import 'feed_top_bar.dart';
 import 'filters_screen.dart';
+import 'quick_filter_sheet.dart';
 
 /// Feed de descubrimiento. Cada tarjeta es un perfil con scroll vertical
 /// (todas las fotos + datos, estilo Hinge) y swipe horizontal para
@@ -98,7 +101,18 @@ class FeedScreen extends StatefulWidget {
     this.onDeviceLocation,
     this.locationSource,
     this.placeResolver,
+    this.onChromeHiddenChanged,
+    this.headerActions = const <Widget>[],
   });
+
+  /// Avisa cuando el usuario baja por una ficha (true) o vuelve a subir
+  /// (false). El feed esconde su propia fila de filtros; el shell usa esto para
+  /// esconder también la barra de navegación, como en Hinge.
+  final ValueChanged<bool>? onChromeHiddenChanged;
+
+  /// Acciones fijas a la derecha de la fila de filtros (campana, directo). Las
+  /// pone el shell porque dependen de servicios que el feed no conoce.
+  final List<Widget> headerActions;
 
   /// Attra Clear §2: límite suave de conversaciones pendientes. Si null o
   /// deshabilitado, el feed no aplica ningún bloqueo (comportamiento previo).
@@ -358,6 +372,16 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// `initState` seguiría mandando al paywall a quien acaba de pagar.
   RewindState _rewind = const RewindState();
   FeedFilters _filters = const FeedFilters();
+
+  /// Plegado de la cabecera al bajar por una ficha (ver [FeedChromeTracker]).
+  ///
+  /// Se guarda el id de la ficha sobre la que se bajó, no un booleano: al pasar
+  /// a la siguiente (like, pase, marcha atrás, recarga…) la cabecera vuelve sola
+  /// sin tener que acordarse de resetearla en cada uno de esos caminos.
+  final FeedChromeTracker _chromeTracker = FeedChromeTracker();
+  String? _chromeHiddenFor;
+  String? _chromeTrackedFor;
+  bool _chromeHiddenReported = false;
 
   /// Estado de la búsqueda IA de la última carga. null = no hay ninguna pedida.
   /// Es lo que permite explicar un feed vacío causado por el filtro IA en vez
@@ -2149,84 +2173,149 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       isPlus: widget.isPlus,
       canVisualMatch: widget.canUseVisualMatch,
     );
+    _applyFilters(result);
+  }
+
+  void _applyFilters(FeedFilters? result) {
     if (result == null || !mounted) return;
     setState(() => _filters = result);
     _load();
   }
 
-  Widget _feedHeader() {
-    final Widget filterButton = Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          IconButton(
-            tooltip: 'Filtros',
-            icon: const Icon(Icons.tune),
-            onPressed: _openFilters,
-          ),
-          if (_filters.activeCount > 0)
-            Positioned(
-              right: 4,
-              top: 4,
-              child: CircleAvatar(
-                radius: 8,
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                child: Text(
-                  '${_filters.activeCount}',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+  /// Chip de un filtro de Plus. Sin el plan lleva candado y lleva al paywall:
+  /// abrir un editor para luego no aplicar nada sería engañoso.
+  Widget _plusFilterChip({
+    required String label,
+    required bool active,
+    required Future<FeedFilters?> Function(BuildContext, FeedFilters) edit,
+  }) {
+    final bool locked = !widget.isPlus;
+    return FeedFilterChip(
+      label: label,
+      active: !locked && active,
+      locked: locked,
+      onTap: () async {
+        if (locked) {
+          final VoidCallback? upgrade = widget.onOpenUpgrade;
+          upgrade != null ? upgrade() : await _openFilters();
+          return;
+        }
+        _applyFilters(await edit(context, _filters));
+      },
     );
-    // Botón de Modo viajes (globo). Se resalta si estás de viaje.
+  }
+
+  /// Fila de filtros rápidos al estilo Hinge: ajustes completos + un chip por
+  /// filtro, relleno cuando está puesto. Sustituye a la cabecera con título, que
+  /// ocupaba una fila entera para decir "Descubrir".
+  Widget _filterBar() {
+    final FeedFilters f = _filters;
+    // Modo viajes: antes un globo suelto; ahora un chip más, relleno si estás
+    // de viaje, que es cuando está cambiando de dónde salen los perfiles.
     final bool traveling = widget.user?.isTraveling ?? false;
-    final Widget travelButton = IconButton(
-      tooltip: 'Modo viajes',
-      icon: Icon(
-        traveling ? Icons.travel_explore_rounded : Icons.public_rounded,
-        color: traveling ? AppColors.attraRed : null,
-      ),
-      onPressed: widget.onOpenTravel,
-    );
-    // La tira de aros ya no vive aquí: el MURO es Discover, así que una fila de
-    // aros encima del muro era el mismo contenido dos veces. Lo que SÍ tiene que
-    // seguir estando es la forma de publicar: la tira era el único sitio desde
-    // el que se abría el editor de historias y, sin él, un muro que solo enseña
-    // a quien tiene historia viva se vacía solo en 72 h.
+    final VoidCallback? onOpenTravel = widget.onOpenTravel;
+    // La forma de publicar historia tiene que seguir a mano mientras el muro
+    // exista: sin ella, un muro que solo enseña a quien tiene historia viva se
+    // vacía solo en 72 h.
     final String uid = widget.user?.uid ?? '';
     final StoryService? storyService = widget.storyService;
     final Widget? myStoryButton =
         (_storiesEnabled && storyService != null && uid.isNotEmpty)
             ? MyStoryButton(currentUid: uid, storyService: storyService)
             : null;
-    return SafeArea(
-      bottom: false,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: <Widget>[
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16),
-              child: Text(
-                _storyWallActive ? 'A ciegas' : 'Descubrir',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-            ),
+    return FeedFilterBar(
+      activeCount: f.activeCount,
+      onOpenAll: _openFilters,
+      chips: <Widget>[
+        if (widget.user?.slowDatingEnabled ?? false) const SlowDatingBadge(),
+        FeedFilterChip(
+          key: const ValueKey<String>('feed-chip-age'),
+          label: 'Edad',
+          active: f.minAge != FeedFilters.ageFloor ||
+              f.maxAge != FeedFilters.ageCeil,
+          onTap: () async =>
+              _applyFilters(await QuickFilterSheet.age(context, _filters)),
+        ),
+        FeedFilterChip(
+          key: const ValueKey<String>('feed-chip-distance'),
+          label: 'Distancia',
+          active: f.maxDistanceKm != null,
+          onTap: () async =>
+              _applyFilters(await QuickFilterSheet.distance(context, _filters)),
+        ),
+        _plusFilterChip(
+          label: 'Altura',
+          active: f.heightActive,
+          edit: QuickFilterSheet.height,
+        ),
+        _plusFilterChip(
+          label: 'Qué busca',
+          active: f.relationshipGoal != null,
+          edit: QuickFilterSheet.goal,
+        ),
+        if (onOpenTravel != null)
+          FeedFilterChip(
+            label: 'Viajes',
+            icon:
+                traveling ? Icons.travel_explore_rounded : Icons.public_rounded,
+            active: traveling,
+            onTap: onOpenTravel,
           ),
-          if (myStoryButton != null) myStoryButton,
-          travelButton,
-          filterButton,
-        ],
-      ),
+      ],
+      trailing: <Widget>[
+        if (myStoryButton != null) myStoryButton,
+        ...widget.headerActions,
+      ],
     );
+  }
+
+  /// Ficha de perfil que se está leyendo ahora mismo, si la hay.
+  SeedProfile? get _cardProfile {
+    if (_loading || _error != null || _pendingAd || _storyWallActive) {
+      return null;
+    }
+    if (_index < 0 || _index >= _profiles.length) return null;
+    return _profiles[_index];
+  }
+
+  bool get _chromeHidden {
+    final SeedProfile? card = _cardProfile;
+    return card != null && card.id == _chromeHiddenFor;
+  }
+
+  /// Scroll vertical de la ficha: decide si se pliega la cabecera.
+  bool _onCardScroll(ScrollNotification n) {
+    // Solo el scroll de la propia ficha (el más cercano) y en vertical: los
+    // carruseles horizontales de dentro no pintan nada aquí.
+    if (n is! ScrollUpdateNotification ||
+        n.depth != 0 ||
+        n.metrics.axis != Axis.vertical) {
+      return false;
+    }
+    final SeedProfile? card = _cardProfile;
+    if (card == null) return false;
+    if (_chromeTrackedFor != card.id) {
+      _chromeTracker.reset();
+      _chromeTrackedFor = card.id;
+    }
+    final bool? hide = _chromeTracker.update(
+      pixels: n.metrics.pixels,
+      minExtent: n.metrics.minScrollExtent,
+      maxExtent: n.metrics.maxScrollExtent,
+      delta: n.scrollDelta ?? 0,
+    );
+    if (hide == null) return false;
+    final String? next = hide ? card.id : null;
+    if (next != _chromeHiddenFor) setState(() => _chromeHiddenFor = next);
+    return false;
+  }
+
+  /// Cuenta al shell si la cabecera está plegada, solo cuando cambia.
+  void _reportChrome() {
+    final bool hidden = _chromeHidden;
+    if (hidden == _chromeHiddenReported) return;
+    _chromeHiddenReported = hidden;
+    widget.onChromeHiddenChanged?.call(hidden);
   }
 
   /// Aviso de ubicación. Explica QUÉ pasa y ofrece la acción que lo arregla:
@@ -2604,21 +2693,57 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     // se resincroniza en cada frame para que like, pase, rewind, bloqueo,
     // historia caducada y anuncio le lleguen sin rutas paralelas.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncBlindWall();
+      if (!mounted) return;
+      _syncBlindWall();
+      _reportChrome();
     });
+    final bool chromeHidden = _chromeHidden;
+    final List<Widget> banners = <Widget>[
+      if (widget.user?.isTraveling ?? false) _travelBanner(),
+      // Va después del de viaje porque viajando no se enseña (la política
+      // devuelve `none`): el feed del destino es intencionado, no un fallo.
+      if (_locationNotice != LocationNotice.none) _locationBanner(),
+      if (_countryFallback) _countryFallbackBanner(),
+      // Aviso siempre visible del filtro IA: sin él, el usuario no tenía
+      // ninguna pista de que una búsqueda IA le estaba recortando el feed.
+      if (ai != null) _aiSearchBanner(ai),
+      if (_showGroupsBanner) _groupsBanner(),
+    ];
     return Column(
       children: <Widget>[
-        _feedHeader(),
-        if (widget.user?.isTraveling ?? false) _travelBanner(),
-        // Va después del de viaje porque viajando no se enseña (la política
-        // devuelve `none`): el feed del destino es intencionado, no un fallo.
-        if (_locationNotice != LocationNotice.none) _locationBanner(),
-        if (_countryFallback) _countryFallbackBanner(),
-        // Aviso siempre visible del filtro IA: sin él, el usuario no tenía
-        // ninguna pista de que una búsqueda IA le estaba recortando el feed.
-        if (ai != null) _aiSearchBanner(ai),
-        if (_showGroupsBanner) _groupsBanner(),
-        Expanded(child: _buildContent(context)),
+        FeedTopBar(
+          collapsed: chromeHidden,
+          title: _cardProfile?.displayName ?? '',
+          filters: _filterBar(),
+        ),
+        // La barra de arriba ya ha consumido la zona de estado: sin quitarla
+        // aquí, el SafeArea de la ficha la volvía a sumar y dejaba un hueco.
+        Expanded(
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: Column(
+              children: <Widget>[
+                // Los avisos se pliegan con los filtros: al leer una ficha
+                // también son ruido, y vuelven en cuanto se sube.
+                if (banners.isNotEmpty)
+                  FeedCollapsible(
+                    collapsed: chromeHidden,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: banners,
+                    ),
+                  ),
+                Expanded(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _onCardScroll,
+                    child: _buildContent(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -3342,6 +3467,10 @@ class _ProfileDetail extends StatelessWidget {
         .join(' · ');
 
     return ListView(
+      // Una clave por perfil: la tarjeta del feed se reutiliza entre fichas y,
+      // sin esto, la siguiente persona heredaba el scroll de la anterior y
+      // aparecía a media ficha (y con la cabecera ya plegada).
+      key: ValueKey<String>('feed-profile-scroll-${profile.id}'),
       padding: EdgeInsets.zero,
       children: <Widget>[
         // Foto principal con nombre/edad superpuestos y boton de respuesta.
