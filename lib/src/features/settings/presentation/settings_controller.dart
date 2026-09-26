@@ -20,12 +20,21 @@ class EffectiveSetting {
     required this.value,
     required this.locked,
     this.lockedReason,
+    this.notice,
   });
 
   final SettingDefinition definition;
   final Object? value;
   final bool locked;
   final String? lockedReason;
+
+  /// Aviso que se enseña aunque el ajuste NO esté bloqueado: hoy, un ajuste de
+  /// pago encendido cuyo plan ya caducó ("En pausa: ..."). Sin él, el
+  /// interruptor seguía en ON prometiendo algo que el backend ya no aplica.
+  final String? notice;
+
+  /// El ajuste de pago está encendido pero el plan ya no lo cubre.
+  bool get paused => notice != null;
 
   bool get boolValue => value is bool && value as bool;
   String get stringValue => value is String ? value as String : '';
@@ -171,7 +180,26 @@ class SettingsController extends ChangeNotifier {
       value: value,
       locked: locked,
       lockedReason: reason,
+      notice: _pausedNotice(def, value),
     );
+  }
+
+  /// Aviso de un ajuste de pago que sigue ENCENDIDO sin plan que lo cubra.
+  ///
+  /// Qué fallaba: al caducar Plus, el backend deja de aplicar el incógnito
+  /// (`listingBlocker` exige plan de pago) y vuelve a publicar al usuario en el
+  /// feed con su ciudad y su actividad, pero aquí el interruptor seguía en ON,
+  /// activo y sin ninguna pista: "Solo te ven las personas a las que tú has
+  /// dado like" dejaba de cumplirse en silencio. No se apaga solo a propósito:
+  /// el valor se conserva para que, al renovar, el backend lo vuelva a aplicar
+  /// sin que el usuario tenga que acordarse.
+  String? _pausedNotice(SettingDefinition def, Object? value) {
+    if (!def.requiresSubscription || !def.editable) return null;
+    if (!_isOnWithoutPlan(def, value) || isUnlocked(def)) return null;
+    final String effect =
+        def.pausedEffect == null ? '' : ' ${def.pausedEffect}';
+    return 'En pausa: tu plan ya no lo incluye.$effect '
+        'Renueva ${requiredPlanLabel(def)} o apágalo.';
   }
 
   /// Interruptor de pago ENCENDIDO sin plan que lo cubra (quien dejo el

@@ -78,6 +78,9 @@ test("iOS verificado: se concede lo que dice Apple, no lo que pide el cliente", 
     purchaseId: "fake1",
     verificationData: signJws(
       appleTransaction({
+        // Produccion: la fecha exacta de Apple (sandbox recibe un suelo de
+        // calendario, ver el test de App Review).
+        environment: "Production",
         productId: "attra_plus_monthly", // ...pero pago un mes de Plus
         transactionId: "tx-1",
         originalTransactionId: "orig-1",
@@ -188,6 +191,7 @@ test("cuenta borrada: su suscripcion (y la compra ya canjeada) pasa a la cuenta 
       productId: "attra_pro_monthly",
       verificationData: signJws(
         appleTransaction({
+          environment: "Production",
           transactionId: "tx-1",
           originalTransactionId: "orig-1",
           expiresDate: expires,
@@ -450,6 +454,65 @@ test("App Review (sandbox de Apple) recibe su plan y queda marcado como sandbox"
   assert.equal(r.ok, true);
   assert.equal(mem.get("userEntitlements/reviewer").tier, "pro");
   assert.equal(mem.get(`subscriptionLedger/${sha256("app_store|tx-review")}`).sandbox, true);
+});
+
+// Sandbox acelera el reloj: el mensual caduca a los ~5 minutos. El revisor que
+// paga no puede ver Pro bloqueado al volver de otra pantalla.
+test("App Review: un mensual de sandbox que Apple da por 5 minutos dura un mes", async () => {
+  const mem = installMemoryDb();
+  const cincoMin = Date.now() + 5 * 60 * 1000;
+  const r = await call(verifyPurchase, "reviewer", {
+    platform: "app_store",
+    productId: "attra_pro_monthly",
+    verificationData: signJws(
+      appleTransaction({
+        environment: "Sandbox",
+        transactionId: "tx-review-5m",
+        originalTransactionId: "orig-review-5m",
+        expiresDate: cincoMin,
+      })
+    ),
+  });
+  assert.equal(r.ok, true);
+  const ent = mem.get("userEntitlements/reviewer");
+  assert.equal(ent.tier, "pro");
+  assert.ok(ent.expiresAt.toMillis() > Date.now() + 27 * DIA, "un mes, no 5 minutos");
+  // La siguiente renovacion acelerada (otra transaccion, +5 min) no mueve el mes.
+  const mes = ent.expiresAt.toMillis();
+  const renov = await call(verifyPurchase, "reviewer", {
+    platform: "app_store",
+    productId: "attra_pro_monthly",
+    verificationData: signJws(
+      appleTransaction({
+        environment: "Sandbox",
+        transactionId: "tx-review-5m-2",
+        originalTransactionId: "orig-review-5m",
+        expiresDate: cincoMin + 5 * 60 * 1000,
+      })
+    ),
+  });
+  assert.equal(renov.ok, true);
+  assert.equal(renov.reason, "same_subscription_redelivered");
+  assert.equal(mem.get("userEntitlements/reviewer").expiresAt.toMillis(), mes);
+});
+
+test("produccion: la caducidad sigue siendo exactamente la de Apple", async () => {
+  const mem = installMemoryDb();
+  const cincoMin = Date.now() + 5 * 60 * 1000;
+  const r = await call(verifyPurchase, "u1", {
+    platform: "app_store",
+    productId: "attra_pro_monthly",
+    verificationData: signJws(
+      appleTransaction({
+        environment: "Production",
+        transactionId: "tx-prod-5m",
+        originalTransactionId: "orig-prod-5m",
+        expiresDate: cincoMin,
+      })
+    ),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(mem.get("userEntitlements/u1").expiresAt.toMillis(), cincoMin);
 });
 
 test("resolveConsumableGrant: un recibo de suscripcion no abona un pack", () => {

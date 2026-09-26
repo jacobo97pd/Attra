@@ -4,7 +4,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { FieldValue, DocumentData, Timestamp } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, requireAuthUid } from "./common";
-import { iso2ForCountryName, normalizeIso2 } from "./travel";
+import { iso2ForCountryName, normalizeIso2, normalizePlace } from "./travel";
 import {
   CardBlocker,
   PROFILE_CARDS_COLLECTION,
@@ -353,26 +353,63 @@ function publicIntroMedia(value: unknown): DocumentData | null {
   return asString(media.url).length > 0 ? media : null;
 }
 
-/// Fin del viaje: `untilAt` (Timestamp, el nuevo) o el `until` ISO que siguen
-/// escribiendo las versiones anteriores de la app. null = sin fecha.
-export function travelUntilMs(travel: DocumentData): number | null {
-  for (const value of [travel.untilAt, travel.until]) {
-    if (!value) continue;
-    if (typeof value?.toMillis === "function") return value.toMillis();
-    const parsed = Date.parse(String(value));
-    if (Number.isFinite(parsed)) return parsed;
+/// Rango que admite un Timestamp de Firestore (años 1 a 9999), en ms.
+/// `Timestamp.fromMillis` LANZA fuera de el.
+const MIN_TIMESTAMP_MS = -62135596800000;
+const MAX_TIMESTAMP_MS = 253402300799999;
+
+/// Duracion maxima creible de un viaje. La app escribe 30 dias
+/// (`UserRepository.travelDuration`); el resto es margen para relojes
+/// desajustados. Un fin mas lejano solo puede venir de un documento escrito a
+/// mano (`settings` no valida tipos en las reglas) y se trata como caducado.
+export const MAX_TRAVEL_MS = 90 * 24 * 60 * 60 * 1000;
+
+function untilValueMs(value: unknown): number | null {
+  if (!value) return null;
+  const maybe = value as { toMillis?: unknown };
+  if (typeof maybe.toMillis === "function") {
+    const ms = (value as { toMillis: () => number }).toMillis();
+    return Number.isFinite(ms) ? ms : null;
   }
-  return null;
+  // Millis sueltos: el cliente (`AppUser._asEpochDate`) tambien los acepta.
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/// Fin del viaje: el MAS TARDIO entre `untilAt` (Timestamp, el nuevo) y el
+/// `until` ISO que siguen escribiendo las versiones anteriores de la app.
+/// null = sin fecha.
+///
+/// Antes mandaba `untilAt` si existia: una version antigua que reactivaba el
+/// viaje solo renovaba `until`, el `untilAt` viejo ganaba y el barrido apagaba
+/// un viaje recien puesto. La app nueva escribe los dos con el mismo valor,
+/// asi que para ella no cambia nada.
+///
+/// El valor se RECORTA al rango de Timestamp: un `until` como
+/// "+010000-01-01T00:00:00Z" hacia lanzar a `Timestamp.fromMillis` y, con el,
+/// al barrido horario y al backfill enteros. Recortado sigue siendo "lejisimo"
+/// y [travelExpired] lo da por caducado.
+export function travelUntilMs(travel: DocumentData): number | null {
+  let latest: number | null = null;
+  for (const value of [travel.untilAt, travel.until]) {
+    const ms = untilValueMs(value);
+    if (ms !== null && (latest === null || ms > latest)) latest = ms;
+  }
+  if (latest === null) return null;
+  return Math.min(Math.max(latest, MIN_TIMESTAMP_MS), MAX_TIMESTAMP_MS);
 }
 
 /// El viaje caduca (ver [travelUntilMs]). Sin fecha se considera vigente, para
-/// no romper los viajes creados antes de que existiera la caducidad.
+/// no romper los viajes creados antes de que existiera la caducidad. Un fin a
+/// mas de [MAX_TRAVEL_MS] tambien cuenta como caducado: NO puede devolver
+/// "sin fecha", que seria un viaje eterno.
 export function travelExpired(
   travel: DocumentData,
   nowMs: number = Date.now()
 ): boolean {
   const until = travelUntilMs(travel);
-  return until !== null && until < nowMs;
+  return until !== null && (until < nowMs || until > nowMs + MAX_TRAVEL_MS);
 }
 
 /// `settings.travel` (o el `travel` de primer nivel de docs antiguos).
@@ -383,6 +420,18 @@ function travelOf(data: DocumentData | undefined): DocumentData {
 
 /// Centro del destino del viaje, si es creible. Lo escribe el cliente en
 /// `settings`, que las reglas no validan: fuera de rango = sin centro.
+///
+/// Ademas tiene que ser el centro del destino ACTUAL. Las versiones
+/// anteriores de la app cambian ciudad o pais con un merge que no toca
+/// `lat/lng`, y un viaje a un pais entero (la demo de App Review: "España" sin
+/// ciudad) podia heredar el centro de un viaje anterior: se publicaba en Cadiz
+/// y el feed se medía desde alli. Por eso:
+///   - sin ciudad no hay centro (un pais entero no tiene centro por diseño);
+///   - `geoCity`/`geoIso2` (la ciudad y el ISO2 para los que se resolvio el
+///     centro) tienen que casar con `city`/`iso2`. Si faltan (centros escritos
+///     antes de existir estos campos) basta con que haya ciudad.
+/// Misma regla en el cliente (`TravelRules.centerMatchesDestination`) y en
+/// tool/backfill_travel_geo.py.
 export function travelCenter(
   travel: DocumentData
 ): { lat: number; lng: number } | null {
@@ -390,7 +439,25 @@ export function travelCenter(
   const lng = asDouble(travel.lng);
   if (lat === null || lng === null) return null;
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (!centerMatchesDestination(travel)) return null;
   return { lat, lng };
+}
+
+/// ¿El centro guardado se resolvio para el destino que hay ahora? (ver
+/// [travelCenter]).
+export function centerMatchesDestination(travel: DocumentData): boolean {
+  const city = normalizePlace(travel.city);
+  if (!city) return false;
+  if (typeof travel.geoCity === "string" && normalizePlace(travel.geoCity) !== city) {
+    return false;
+  }
+  if (
+    typeof travel.geoIso2 === "string" &&
+    normalizeIso2(travel.geoIso2) !== normalizeIso2(travel.iso2)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /// ¿Esta viajando A EFECTOS PUBLICOS? Modo viaje es funcion de PAGO y con
@@ -503,8 +570,16 @@ export function buildDiscoveryDoc(
   }
   // Viajando se publica el FIN del viaje: el feed de los demas deja de
   // ensenarlo "de viaje" en cuanto pasa, sin esperar al barrido horario.
+  // [travelUntilMs] ya lo deja dentro del rango de Timestamp; se vuelve a
+  // comprobar porque un throw aqui tumba el trigger, el barrido y el backfill.
   const untilMs = traveling ? travelUntilMs(travel) : null;
-  if (untilMs !== null) out.travelUntil = Timestamp.fromMillis(untilMs);
+  if (
+    untilMs !== null &&
+    untilMs >= MIN_TIMESTAMP_MS &&
+    untilMs <= MAX_TIMESTAMP_MS
+  ) {
+    out.travelUntil = Timestamp.fromMillis(untilMs);
+  }
 
   const filterTraits: DocumentData = {};
   for (const trait of PUBLIC_TRAITS) {
@@ -656,16 +731,76 @@ export function decideTravelSweep(
   return publishedTraveling === shouldTravel ? "none" : "resync";
 }
 
+/// Lo que hay publicado de un usuario: su listado del feed y su ficha por uid
+/// (undefined = no existe).
+export interface PublishedDocs {
+  listing: DocumentData | undefined;
+  card: DocumentData | undefined;
+}
+
+/// Decision del barrido mirando el documento que DE VERDAD le corresponde (puro,
+/// testeable).
+///
+/// QUE FALLABA: se comparaba solo con `discovery`. Un viajero de pago que no
+/// sale en el feed (perfil oculto, cuenta pausada, sin recomendaciones o en
+/// incognito) no tiene listado, solo ficha, asi que [decideTravelSweep] veia
+/// "no hay ficha publicada" y devolvia "resync" en CADA pasada, para siempre:
+/// una lectura de entitlements y dos escrituras por usuario y hora, y un
+/// `updatedAt` nuevo en su ficha cada vez (con incognito, justo lo que no debe
+/// cambiar). Ahora:
+///   - listado esperado -> se compara el `traveling` del listado, como antes;
+///   - sin listado -> no puede quedar listado publicado, y la ficha tiene que
+///     existir (o no) como se espera y con su `traveling` (la de incognito lo
+///     lleva siempre a false: se compara con ESO, no con el plan);
+///   - sin ficha posible (sin fecha de nacimiento, menor...) -> nada que
+///     borrar si ya no hay nada.
+export function decideTravelSweepFor(
+  uid: string,
+  data: DocumentData,
+  isPaid: boolean,
+  published: PublishedDocs,
+  nowMs: number = Date.now()
+): TravelSweepAction {
+  const travel = travelOf(data);
+  if (travel.active !== true) return "none";
+  if (travelExpired(travel, nowMs)) return "deactivate";
+  const expected = publicDocsFor(uid, data, isPaid, nowMs);
+  if (expected.listing) {
+    const listed = published.listing;
+    return decideTravelSweep(
+      travel,
+      isPaid,
+      listed === undefined ? undefined : listed.traveling === true,
+      nowMs
+    );
+  }
+  if (published.listing !== undefined) return "resync";
+  if (!expected.card) return published.card === undefined ? "none" : "resync";
+  if (published.card === undefined) return "resync";
+  return (published.card.traveling === true) ===
+    (expected.card.traveling === true)
+    ? "none"
+    : "resync";
+}
+
 /// Lo que escribe el barrido al apagar un viaje caducado. Mismo contrato que
 /// al apagarlo desde la app (`UserRepository.buildTravelPatch`): pais, ciudad
-/// e ISO2 se CONSERVAN para poder reactivarlo de un toque; el centro y la fecha
-/// se borran (se vuelven a calcular al reactivar).
+/// e ISO2 se CONSERVAN para poder reactivarlo de un toque; el centro y las
+/// DOS fechas se borran (se vuelven a calcular al reactivar).
+///
+/// Antes se quedaba el `until` ISO: una version antigua de la app o
+/// `seed_review_demo.py --travel-spain` volvian a poner `active=true` sobre esa
+/// fecha ya pasada y el siguiente barrido lo apagaba otra vez (la cuenta
+/// COMPANION de App Review no podia recuperar su viaje a España).
 export function travelDeactivationPatch(): DocumentData {
   return {
     "settings.travel.active": false,
+    "settings.travel.until": null,
     "settings.travel.untilAt": null,
     "settings.travel.lat": null,
     "settings.travel.lng": null,
+    "settings.travel.geoCity": null,
+    "settings.travel.geoIso2": null,
     "settings.travel.geoSource": "none",
     "settings.travel.updatedAt": FieldValue.serverTimestamp(),
   };
@@ -679,7 +814,7 @@ const SWEEP_PAGE = 300;
 
 /// Barrido HORARIO de viajes y planes. Cubre lo que ningun trigger ve porque
 /// no hay escritura que lo dispare:
-///  1. Viajes caducados -> se apagan (`active=false`, `untilAt=null`).
+///  1. Viajes caducados -> se apagan (`active=false`, sin fechas ni centro).
 ///  2. Viajes con la ficha desalineada respecto al plan -> se republican.
 ///  3. Planes que acaban de caducar -> se republica al usuario (incognito
 ///     deja de valer y el viaje vuelve a casa; su ficha de discovery puede no
@@ -687,42 +822,80 @@ const SWEEP_PAGE = 300;
 export const sweepTravelModes = onSchedule(
   { schedule: "every 60 minutes", region: REGION },
   async () => {
-    const nowMs = Date.now();
-    let deactivated = 0;
-    let resynced = 0;
-    let lastId: string | null = null;
+    const result = await runTravelSweep();
+    console.log(
+      `[sweepTravelModes] deactivated=${result.deactivated} ` +
+        `resynced=${result.resynced} failed=${result.failed}`
+    );
+  }
+);
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      let q = col.users
-        .where("settings.travel.active", "==", true)
-        .orderBy("__name__")
-        .limit(SWEEP_PAGE);
-      if (lastId) q = q.startAfter(lastId);
-      const snap = await q.get();
-      if (snap.empty) break;
-      lastId = snap.docs[snap.docs.length - 1].id;
+export interface TravelSweepResult {
+  deactivated: number;
+  resynced: number;
+  /// Usuarios que no se pudieron procesar (se registran y se sigue).
+  failed: number;
+}
 
-      const ids = snap.docs.map((d) => d.id);
-      const [entSnaps, discSnaps] = await Promise.all([
-        db.getAll(...ids.map((id) => col.entitlements.doc(id))),
-        db.getAll(...ids.map((id) => discovery.doc(id))),
-      ]);
-      const paidById = new Map<string, boolean>();
-      for (const es of entSnaps) paidById.set(es.id, isPaidActive(es.data(), nowMs));
-      const publishedById = new Map<string, boolean | undefined>();
-      for (const ds of discSnaps) {
-        publishedById.set(ds.id, ds.exists ? ds.data()?.traveling === true : undefined);
-      }
+/// Cuerpo de [sweepTravelModes], separado para poder probarlo.
+///
+/// Cada usuario va en su propio try/catch: antes UN documento que hacia
+/// lanzar a `syncOne` (p. ej. un `settings.travel.until` escrito a mano fuera
+/// del rango de Timestamp) tumbaba la pasada entera cada hora: no se
+/// confirmaba el lote de apagados de esa pagina, se saltaban las siguientes y
+/// no llegaba a correr la pasada de planes caducados, asi que nadie volvia a
+/// casa ni perdia el incognito de pago.
+export async function runTravelSweep(
+  nowMs: number = Date.now()
+): Promise<TravelSweepResult> {
+  const result: TravelSweepResult = { deactivated: 0, resynced: 0, failed: 0 };
+  let lastId: string | null = null;
 
-      const batch = db.batch();
-      let writes = 0;
-      for (const doc of snap.docs) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    let q = col.users
+      .where("settings.travel.active", "==", true)
+      .orderBy("__name__")
+      .limit(SWEEP_PAGE);
+    if (lastId) q = q.startAfter(lastId);
+    const snap = await q.get();
+    if (snap.empty) break;
+    lastId = snap.docs[snap.docs.length - 1].id;
+
+    const ids = snap.docs.map((d) => d.id);
+    const [entSnaps, discSnaps] = await Promise.all([
+      db.getAll(...ids.map((id) => col.entitlements.doc(id))),
+      db.getAll(...ids.map((id) => discovery.doc(id))),
+    ]);
+    const paidById = new Map<string, boolean>();
+    for (const es of entSnaps) paidById.set(es.id, isPaidActive(es.data(), nowMs));
+    const listingById = new Map<string, DocumentData | undefined>();
+    for (const ds of discSnaps) {
+      listingById.set(ds.id, ds.exists ? ds.data() : undefined);
+    }
+    // La ficha (profileCards) solo de quien NO tiene listado: es lo unico
+    // publicado de quien no sale en el feed (ver decideTravelSweepFor), y a
+    // quien si lo tiene se le compara con el listado.
+    const sinListado = ids.filter((id) => listingById.get(id) === undefined);
+    const cardSnaps =
+      sinListado.length > 0
+        ? await db.getAll(...sinListado.map((id) => profileCards.doc(id)))
+        : [];
+    const cardById = new Map<string, DocumentData | undefined>();
+    for (const cs of cardSnaps) {
+      cardById.set(cs.id, cs.exists ? cs.data() : undefined);
+    }
+
+    const batch = db.batch();
+    let writes = 0;
+    for (const doc of snap.docs) {
+      try {
         const data = doc.data();
-        const action = decideTravelSweep(
-          travelOf(data),
+        const action = decideTravelSweepFor(
+          doc.id,
+          data,
           paidById.get(doc.id) ?? false,
-          publishedById.get(doc.id),
+          { listing: listingById.get(doc.id), card: cardById.get(doc.id) },
           nowMs
         );
         if (action === "deactivate") {
@@ -730,35 +903,44 @@ export const sweepTravelModes = onSchedule(
           // en casa.
           batch.update(doc.ref, travelDeactivationPatch());
           writes++;
-          deactivated++;
+          result.deactivated++;
         } else if (action === "resync") {
           await syncOne(doc.id, data);
-          resynced++;
+          result.resynced++;
         }
+      } catch (e) {
+        result.failed++;
+        console.error(
+          `[sweepTravelModes] uid=${doc.id} viaje: ${(e as Error).message}`
+        );
       }
-      if (writes > 0) await batch.commit();
-      if (snap.size < SWEEP_PAGE) break;
     }
+    if (writes > 0) await batch.commit();
+    if (snap.size < SWEEP_PAGE) break;
+  }
 
-    // Planes que acaban de caducar: su caducidad no escribe nada, asi que ni
-    // el trigger de users ni el de entitlements se entera.
-    const lapsed = await col.entitlements
-      .where("expiresAt", ">=", Timestamp.fromMillis(nowMs - PLAN_LAPSE_WINDOW_MS))
-      .where("expiresAt", "<", Timestamp.fromMillis(nowMs))
-      .limit(500)
-      .get();
-    for (const ent of lapsed.docs) {
+  // Planes que acaban de caducar: su caducidad no escribe nada, asi que ni
+  // el trigger de users ni el de entitlements se entera.
+  const lapsed = await col.entitlements
+    .where("expiresAt", ">=", Timestamp.fromMillis(nowMs - PLAN_LAPSE_WINDOW_MS))
+    .where("expiresAt", "<", Timestamp.fromMillis(nowMs))
+    .limit(500)
+    .get();
+  for (const ent of lapsed.docs) {
+    try {
       const userSnap = await col.users.doc(ent.id).get();
       if (!userSnap.exists || !needsTier(userSnap.data())) continue;
       await syncOne(ent.id, userSnap.data());
-      resynced++;
+      result.resynced++;
+    } catch (e) {
+      result.failed++;
+      console.error(
+        `[sweepTravelModes] uid=${ent.id} plan caducado: ${(e as Error).message}`
+      );
     }
-
-    console.log(
-      `[sweepTravelModes] deactivated=${deactivated} resynced=${resynced}`
-    );
   }
-);
+  return result;
+}
 
 /// Campos del plan que cambian lo que se publica (incognito / modo viaje).
 export function entitlementChanged(
@@ -807,6 +989,14 @@ export interface PublicationBackfillResult {
   reasons: Record<string, number>;
 }
 
+/// Tope de escrituras por commit del backfill. Firestore admite 500 por
+/// batch; cada usuario son DOS (discovery + profileCards), asi que una pagina
+/// de 300 usuarios eran 600 escrituras en un solo commit: el primer lote real
+/// habria fallado entero y la migracion de profileCards/18+ no se hacia (el
+/// ensayo no lo detecta porque nunca confirma). Margen como el resto del repo
+/// (accountCleanup, firestore_rest.py).
+export const BACKFILL_MAX_BATCH_WRITES = 400;
+
 /// Recorre TODOS los users y deja discovery y profileCards como los dejaria el
 /// trigger. Hace falta una vez al desplegar profileCards: la ficha de los ya
 /// ocultos no existe hasta que su usuario vuelva a escribir su documento.
@@ -822,7 +1012,10 @@ export async function runPublicationBackfill(opts: {
   pageSize?: number;
   nowMs?: number;
 }): Promise<PublicationBackfillResult> {
-  const pageSize = opts.pageSize ?? 300;
+  // 200 usuarios = 400 escrituras: una pagina cabe en un commit. Aun asi el
+  // lote se parte por [BACKFILL_MAX_BATCH_WRITES] (un `pageSize` mayor no
+  // puede volver a pasarse del limite).
+  const pageSize = opts.pageSize ?? 200;
   const nowMs = opts.nowMs ?? Date.now();
   const result: PublicationBackfillResult = {
     dryRun: opts.dryRun,
@@ -857,19 +1050,44 @@ export async function runPublicationBackfill(opts: {
       }
     }
 
-    const batch = db.batch();
+    let batch = db.batch();
+    let pending = 0;
+    // En ensayo el batch se descarta sin enviarse: nada se escribe.
+    const flush = async (): Promise<void> => {
+      if (pending > 0 && !opts.dryRun) await batch.commit();
+      batch = db.batch();
+      pending = 0;
+    };
     for (const doc of snap.docs) {
       result.processed += 1;
       lastId = doc.id;
-      const { plan, listing, card } = publicDocsFor(
-        doc.id,
-        doc.data(),
-        paidById.get(doc.id) ?? false,
-        nowMs
-      );
+      // Un documento que no se puede construir se CUENTA y se salta (sin
+      // escribir ni borrar sus fichas): antes lanzaba, se perdia el lote de la
+      // pagina y la migracion se quedaba a medias para todos los usuarios que
+      // van detras en orden de __name__. En ensayo sale en `reasons.error`.
+      let built: ReturnType<typeof publicDocsFor>;
+      try {
+        built = publicDocsFor(
+          doc.id,
+          doc.data(),
+          paidById.get(doc.id) ?? false,
+          nowMs
+        );
+      } catch (e) {
+        result.reasons.error = (result.reasons.error ?? 0) + 1;
+        console.error(
+          `[backfillDiscovery] uid=${doc.id} se salta: ${(e as Error).message}`
+        );
+        continue;
+      }
+      const { plan, listing, card } = built;
       if (plan.reason) {
         result.reasons[plan.reason] = (result.reasons[plan.reason] ?? 0) + 1;
       }
+      // Listado y ficha de un mismo usuario van SIEMPRE en el mismo commit,
+      // como en syncOne: no pueden quedar contradiciendose si otro falla.
+      if (pending + 2 > BACKFILL_MAX_BATCH_WRITES) await flush();
+      pending += 2;
       if (listing) {
         batch.set(discovery.doc(doc.id), listing);
         result.published += 1;
@@ -885,8 +1103,7 @@ export async function runPublicationBackfill(opts: {
         result.cardsRemoved += 1;
       }
     }
-    // En ensayo el batch se descarta sin enviarse: nada se escribe.
-    if (!opts.dryRun) await batch.commit();
+    await flush();
     if (snap.size < pageSize) break;
   }
   return result;

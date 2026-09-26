@@ -2,7 +2,7 @@
   "name": "attra-functions",
   "description": "Cloud Functions de Attra: matching, chats y seguridad.",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "lib/index.js",
   "scripts": {

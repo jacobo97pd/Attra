@@ -280,6 +280,78 @@ test("con caducidad de la tienda: manda la tienda y nunca acorta", () => {
   assert.strictEqual(subida.expiresAtMs, AHORA + 30 * DIA);
 });
 
+// App Review compra en SANDBOX, donde Apple acelera el reloj: un mensual
+// caduca a los ~5 minutos. Con la fecha tal cual, el revisor que acaba de
+// pagar veia Pro bloqueado minutos despues.
+test("sandbox: la compra concede un periodo de calendario aunque Apple diga 5 minutos", () => {
+  const cincoMin = AHORA + 5 * 60 * 1000;
+  const mensual = resolveGrant(caso({ storeExpiresAtMs: cincoMin, sandbox: true }));
+  assert.strictEqual(mensual.reason, "upgrade");
+  assert.ok(mensual.expiresAtMs > AHORA + 27 * DIA, "un mes, no 5 minutos");
+  assert.ok(mensual.expiresAtMs < AHORA + 32 * DIA);
+  // Anual en sandbox (~1 h): doce meses.
+  const anual = resolveGrant(
+    caso({
+      productId: "attra_pro_yearly",
+      period: "yearly",
+      storeExpiresAtMs: AHORA + 60 * 60 * 1000,
+      sandbox: true,
+    })
+  );
+  assert.ok(anual.expiresAtMs > AHORA + 360 * DIA);
+  // Si la tienda da una fecha MAS larga, manda la tienda.
+  const larga = resolveGrant(
+    caso({ storeExpiresAtMs: AHORA + 40 * DIA, sandbox: true })
+  );
+  assert.strictEqual(larga.expiresAtMs, AHORA + 40 * DIA);
+});
+
+test("produccion: la misma compra de 5 minutos NO recibe el suelo de calendario", () => {
+  const cincoMin = AHORA + 5 * 60 * 1000;
+  const r = resolveGrant(caso({ storeExpiresAtMs: cincoMin }));
+  assert.strictEqual(r.expiresAtMs, cincoMin);
+  const explicito = resolveGrant(caso({ storeExpiresAtMs: cincoMin, sandbox: false }));
+  assert.strictEqual(explicito.expiresAtMs, cincoMin);
+});
+
+// Las renovaciones aceleradas de sandbox (una cada ~5 min) y cada "restaurar
+// compras" son la MISMA suscripcion: no pueden deslizar el mes desde hoy.
+test("sandbox: renovar o restaurar la misma suscripcion vigente no alarga el mes", () => {
+  const mes = AHORA + 20 * DIA; // concedido hace ~10 dias
+  const r = resolveGrant(
+    caso({
+      currentTier: "pro",
+      currentProductId: "attra_pro_monthly",
+      currentExpiresAtMs: mes,
+      storeExpiresAtMs: AHORA + 5 * 60 * 1000,
+      sandbox: true,
+    })
+  );
+  assert.strictEqual(r.expiresAtMs, mes);
+  assert.strictEqual(r.extended, false);
+  assert.strictEqual(r.reason, "same_subscription_redelivered");
+});
+
+test("notificacion de sandbox: la compra nueva tambien recibe el mes", () => {
+  const r = sync({
+    currentTier: "free",
+    currentProductId: "",
+    currentExpiresAtMs: null,
+    storeExpiresAtMs: AHORA + 5 * 60 * 1000,
+    sandbox: true,
+  });
+  assert.strictEqual(r.action, "grant");
+  assert.ok(r.expiresAtMs > AHORA + 27 * DIA);
+  // En produccion, la fecha de la tienda tal cual.
+  const prod = sync({
+    currentTier: "free",
+    currentProductId: "",
+    currentExpiresAtMs: null,
+    storeExpiresAtMs: AHORA + 5 * 60 * 1000,
+  });
+  assert.strictEqual(prod.expiresAtMs, AHORA + 5 * 60 * 1000);
+});
+
 test("periodo: el guardado al comprar sirve al restaurar un plan basico de Play", () => {
   assert.strictEqual(periodFor("attra_plus", undefined, "yearly"), "yearly");
   assert.strictEqual(periodFor("attra_plus", undefined, null), "monthly");

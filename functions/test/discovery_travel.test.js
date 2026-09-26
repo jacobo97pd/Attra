@@ -18,13 +18,17 @@ const assert = require("node:assert/strict");
 const { Timestamp } = require("firebase-admin/firestore");
 
 const {
+  MAX_TRAVEL_MS,
   buildDiscoveryDoc,
   decideTravelSweep,
   entitlementChanged,
   isDiscoverable,
   isPaidActive,
+  publicDocsFor,
   resolveCountryIso2,
+  travelCenter,
   travelExpired,
+  travelUntilMs,
 } = require("../lib/discovery.js");
 const {
   iso2ForCountryName,
@@ -126,14 +130,78 @@ test("viaje antiguo sin coordenadas: sin geo y país de destino por nombre", () 
   assert.equal(doc.countryIso2, "ES", "deducido de 'Spain'");
 });
 
-test("untilAt (Timestamp) manda sobre el ISO antiguo", () => {
-  const travel = {
+test("manda la fecha MÁS TARDÍA entre untilAt y el ISO antiguo", () => {
+  // Una versión antigua reactiva el viaje: solo renueva `until` y el
+  // `untilAt` viejo se queda. Antes mandaba untilAt y el barrido apagaba un
+  // viaje recién puesto.
+  const reactivado = {
     until: new Date(AHORA + DIA).toISOString(),
     untilAt: Timestamp.fromMillis(AHORA - DIA),
   };
-  assert.equal(travelExpired(travel, AHORA), true);
+  assert.equal(travelExpired(reactivado, AHORA), false);
+  assert.equal(travelUntilMs(reactivado), AHORA + DIA);
+  assert.equal(
+    travelExpired(
+      { until: new Date(AHORA - 2 * DIA).toISOString(), untilAt: Timestamp.fromMillis(AHORA - DIA) },
+      AHORA
+    ),
+    true,
+    "las dos pasadas: caducado"
+  );
   assert.equal(travelExpired({ until: new Date(AHORA + DIA).toISOString() }, AHORA), false);
   assert.equal(travelExpired({}, AHORA), false, "sin fecha: vigente");
+  assert.equal(travelExpired({ until: null, untilAt: null }, AHORA), false);
+});
+
+test("un `until` escrito a mano fuera de rango no tumba nada: cuenta como caducado", () => {
+  // settings no valida tipos: "+010000-..." es 1 ms más que el mayor
+  // Timestamp y Timestamp.fromMillis LANZABA dentro del trigger, del barrido
+  // horario y del backfill.
+  for (const until of ["+010000-01-01T00:00:00Z", "+100000-01-01T00:00:00Z", 8.64e15]) {
+    const travel = viajeACadiz({ until, untilAt: null });
+    const ms = travelUntilMs(travel);
+    assert.ok(ms <= 253402300799999, `recortado al rango de Timestamp: ${until}`);
+    assert.equal(travelExpired(travel, AHORA), true, String(until));
+    assert.equal(decideTravelSweep(travel, true, undefined, AHORA), "deactivate");
+    assert.doesNotThrow(() => publicDocsFor("ana", madrileno(travel), true, AHORA));
+    const doc = buildDiscoveryDoc("ana", madrileno(travel), true, AHORA);
+    assert.equal(doc.traveling, false, "vuelve a casa");
+    assert.equal(doc.travelUntil, undefined);
+  }
+  // Un fin creíble pero lejano (más de MAX_TRAVEL_MS) tampoco vale.
+  const lejano = viajeACadiz({ untilAt: Timestamp.fromMillis(AHORA + MAX_TRAVEL_MS + DIA) });
+  assert.equal(travelExpired(lejano, AHORA), true);
+  // Los 30 días que escribe la app, sí.
+  const normal = viajeACadiz({ untilAt: Timestamp.fromMillis(AHORA + 30 * DIA) });
+  assert.equal(travelExpired(normal, AHORA), false);
+});
+
+test("un viaje a un PAÍS entero no hereda el centro de un viaje anterior", () => {
+  // La demo de App Review: "España" sin ciudad sobre un documento que aún
+  // tenía el centro de Cádiz. Se publicaba en Cádiz y el feed se medía desde allí.
+  const travel = viajeACadiz({ city: "" });
+  const doc = buildDiscoveryDoc("ana", madrileno(travel), true, AHORA);
+  assert.equal(doc.traveling, true);
+  assert.equal(doc.geo, undefined, "sin ciudad no hay centro");
+  assert.equal(travelCenter(travel), null);
+});
+
+test("el centro solo vale para la ciudad (e ISO2) para la que se resolvió", () => {
+  // Una versión antigua cambia el destino a Barcelona con un merge que no
+  // toca lat/lng: el centro de Cádiz no puede publicarse como Barcelona.
+  const cambiado = viajeACadiz({ city: "Barcelona", geoCity: "Cadiz", geoIso2: "ES" });
+  assert.equal(travelCenter(cambiado), null);
+  assert.equal(buildDiscoveryDoc("ana", madrileno(cambiado), true, AHORA).geo, undefined);
+  // Misma ciudad con otra grafía (acentos, mayúsculas): vale.
+  const mismo = viajeACadiz({ city: "Cádiz", geoCity: " cadiz ", geoIso2: "es" });
+  assert.deepEqual(travelCenter(mismo), { lat: 36.5267, lng: -6.2891 });
+  // Homónimo en otro país.
+  assert.equal(
+    travelCenter(viajeACadiz({ city: "Valencia", iso2: "VE", geoCity: "Valencia", geoIso2: "ES" })),
+    null
+  );
+  // Centros de antes de geoCity/geoIso2: basta con que haya ciudad.
+  assert.deepEqual(travelCenter(viajeACadiz()), { lat: 36.5267, lng: -6.2891 });
 });
 
 test("país comparable: geocodificador > onboarding > nombre en cualquier idioma", () => {
@@ -175,7 +243,12 @@ test("tipos raros de users/{uid} no llegan a la ficha pública", () => {
 });
 
 test("barrido: caducado se apaga; plan y ficha desalineados se republican", () => {
-  const caducado = viajeACadiz({ untilAt: Timestamp.fromMillis(AHORA - DIA) });
+  // Las dos fechas pasadas (con la más tardía mandando, un `until` futuro
+  // mantendría el viaje: es el caso de una versión antigua que lo reactivó).
+  const caducado = viajeACadiz({
+    until: new Date(AHORA - DIA).toISOString(),
+    untilAt: Timestamp.fromMillis(AHORA - DIA),
+  });
   assert.equal(decideTravelSweep(caducado, true, true, AHORA), "deactivate");
   // El plan caducó pero la ficha sigue "de viaje".
   assert.equal(decideTravelSweep(viajeACadiz(), false, true, AHORA), "resync");
@@ -234,17 +307,23 @@ test("vivo: la clave de país es el ISO2 (catalán y alemán casan con España)"
   assert.equal(liveCountryKey({}), "");
 });
 
-test("barrido: al apagar un viaje caducado se borra el centro, no el destino", () => {
+test("barrido: al apagar un viaje caducado se borran centro y fechas, no el destino", () => {
   // Contrato con el cliente (UserRepository.buildTravelPatch): apagado =
-  // lat/lng null y geoSource 'none'; país, ciudad e ISO2 se conservan.
+  // lat/lng/fechas null y geoSource 'none'; país, ciudad e ISO2 se conservan.
+  // El `until` ISO también se borra: si se quedaba, reactivar el viaje desde
+  // una versión antigua o con seed_review_demo.py --travel-spain lo dejaba
+  // caducado de nuevo y el barrido lo volvía a apagar.
   const { travelDeactivationPatch } = require("../lib/discovery.js");
   const patch = travelDeactivationPatch();
   assert.equal(patch["settings.travel.active"], false);
-  assert.equal(patch["settings.travel.untilAt"], null);
-  assert.equal(patch["settings.travel.lat"], null);
-  assert.equal(patch["settings.travel.lng"], null);
+  for (const cleared of ["until", "untilAt", "lat", "lng", "geoCity", "geoIso2"]) {
+    assert.equal(patch[`settings.travel.${cleared}`], null, cleared);
+  }
   assert.equal(patch["settings.travel.geoSource"], "none");
-  for (const kept of ["country", "city", "iso2", "until"]) {
+  for (const kept of ["country", "city", "iso2"]) {
     assert.equal(`settings.travel.${kept}` in patch, false, kept);
   }
+  // Reactivado sobre ese parche (sin fecha): vigente, nunca caducado.
+  const reactivado = { active: true, iso2: "ES", country: "España", city: "", until: null, untilAt: null };
+  assert.equal(decideTravelSweep(reactivado, true, true, AHORA), "none");
 });

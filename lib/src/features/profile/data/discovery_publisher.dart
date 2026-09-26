@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../feed/domain/feed_filter.dart';
+import '../../geo/domain/travel_rules.dart';
 import '../domain/profile_trait.dart';
 import '../domain/profile_traits_catalog.dart';
 import '../domain/profile_visibility.dart';
@@ -50,11 +51,12 @@ class DiscoveryPublisher {
         ? _map(settings['travel'])
         : _map(userData['travel']);
     // Mismas condiciones que el backend: activo, con país, con plan de pago y
-    // sin caducar (`untilAt` o el ISO `until` de versiones anteriores).
-    final DateTime? travelUntil =
-        _asDate(travel['untilAt']) ?? _asDate(travel['until']);
-    final bool travelOver = travelUntil != null &&
-        !travelUntil.isAfter((now ?? DateTime.now()).toUtc());
+    // sin caducar (el más tardío entre `untilAt` y el ISO `until` de
+    // versiones anteriores; una fecha imposible cuenta como caducada).
+    final DateTime? travelUntil = TravelRules.effectiveUntil(
+        _asDate(travel['untilAt']), _asDate(travel['until']));
+    final bool travelOver =
+        TravelRules.isOver(travelUntil, (now ?? DateTime.now()).toUtc());
     final bool traveling = travel['active'] == true &&
         (travel['country'] ?? '').toString().trim().isNotEmpty &&
         isPaid &&
@@ -193,13 +195,21 @@ class DiscoveryPublisher {
     final Map<String, dynamic> location = _map(userData['location']);
     final double? travelLat = _asDouble(travel['lat']);
     final double? travelLng = _asDouble(travel['lng']);
+    // Y tiene que ser el centro del destino ACTUAL (con ciudad y resuelto
+    // para esa ciudad/ISO2), como `travelCenter` del backend.
     final bool travelCentered = traveling &&
         travelLat != null &&
         travelLng != null &&
         travelLat.isFinite &&
         travelLng.isFinite &&
         travelLat.abs() <= 90 &&
-        travelLng.abs() <= 180;
+        travelLng.abs() <= 180 &&
+        TravelRules.centerMatchesDestination(
+          city: travel['city'],
+          iso2: travel['iso2'],
+          geoCity: travel['geoCity'],
+          geoIso2: travel['geoIso2'],
+        );
     final double? lat = traveling
         ? (travelCentered ? travelLat : null)
         : _asDouble(location['latitude']);

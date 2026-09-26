@@ -157,8 +157,27 @@ el feed no dependa de quién mire: cubren las **8 identidades de género**, las
 **10 orientaciones** y los **4 modos de intención** que ofrece el onboarding, con
 edades de 19 a 58. Antes solo había perfiles `male` y `female`, de modo que una
 cuenta que se declarase no binaria, trans o agénero podía terminar el onboarding
-y encontrarse el feed vacío. Si el revisor crea una cuenta propia con cualquier
-identidad, ahora ve perfiles.
+y encontrarse el feed vacío.
+
+**Si el revisor crea una cuenta propia.** Todos los perfiles semilla son de
+España, y el feed de casa nunca enseña a gente de otro país. Lo que ve una
+cuenta nueva depende de dónde esté:
+
+- **En España:** los perfiles semilla de su zona, como cualquier usuario.
+- **Fuera de España** (sin viaje, sin búsqueda IA): no hay nadie de su país ni
+  dentro de su radio, así que Descubrir se rellena con **perfiles semilla de
+  cualquier país**, con el aviso «Aún no hay nadie en tu zona: te enseñamos
+  perfiles de ejemplo de otros lugares». Solo con semillas (`isBot: true`):
+  nunca con personas reales de otro país. De esas semillas solo se ignoran el
+  país y el radio; se siguen aplicando la compatibilidad de género en los dos
+  sentidos, el modo de intención, el rango de edad en los dos sentidos y sus
+  filtros. Por eso **no ve las 96**: con el rango del onboarding (24-35 por
+  defecto) y la identidad que declare, ve solo las que encajan.
+
+Este comportamiento está cubierto por tests
+(`test/src/features/feed/presentation/feed_location_refresh_test.dart`), pero
+**falta comprobarlo con una cuenta nueva en un dispositivo fuera de España**
+antes de enviar. Las dos cuentas demo no dependen de esto: viajan a España.
 
 No se han falsificado aceptaciones legales ni consentimientos de IA. Al entrar
 en la nueva build, completar los consentimientos que se soliciten. Ambas
@@ -186,8 +205,16 @@ Comprobación de requisitos en Firebase, sin escribir:
 ```powershell
 $env:GTOKEN = gcloud auth print-access-token
 $env:DEMO_UID = "[UID PRIMARY del archivo privado]"
-python tool/seed_review_demo.py --check-only --keep-profile
+python tool/seed_review_demo.py --check-only --keep-profile --travel-spain --peer-uid "[UID COMPANION]"
 ```
+
+Con `--travel-spain`, la comprobación falla si alguna de las dos cuentas no
+tiene el viaje a España activo, lo tiene con una fecha de fin ya pasada o con
+el centro de una ciudad anterior, o no tiene un plan de pago vigente (el modo
+viajes es Plus/Pro). La copia previa de COMPANION tenía un viaje de agosto ya
+caducado: tras desplegar las functions, el barrido horario lo habría apagado.
+Ejecutarla después del despliegue y otra vez tras la primera pasada de
+`sweepTravelModes`, antes de enviar la build.
 
 Resembrar los perfiles de la matriz de identidades (idempotente, no toca las
 cuentas de revisión ni sus chats):
@@ -209,6 +236,12 @@ de nuevo el contenido; no ejecutarla como mecanismo periódico de renovación:
 ```powershell
 python tool/seed_review_demo.py --keep-profile --travel-spain --peer-uid "[UID COMPANION]"
 ```
+
+`--travel-spain` deja el viaje de **las dos** cuentas (PRIMARY y la de
+`--peer-uid`) en España sin ciudad, sin fecha de fin y sin centro: borra
+`until`/`untilAt`/`lat`/`lng` de viajes anteriores, que antes sobrevivían a la
+resiembra. La concesión Pro del script solo es para `--uid`; COMPANION conserva
+la suya (compruébalo con `--check-only --travel-spain`).
 
 La siembra no elimina bloqueos, denuncias ni dislikes previos. Después de grabar,
 comprobar que siguen quedando perfiles visibles; usar un perfil distinto para el

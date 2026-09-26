@@ -13,7 +13,13 @@ class IapDeliveryResult {
     required this.delivered,
     this.message,
     this.permanent = false,
+    this.reason,
   });
+
+  /// Motivo que da el backend (`claimed_by_other_account`, ...). Solo hace
+  /// falta para decidir si un rechazo se le enseña al usuario o se cierra en
+  /// silencio (ver [IapService.claimedByOtherAccount]).
+  final String? reason;
 
   /// true = el backend validó y concedió → se puede completar la compra.
   /// false = no se pudo conceder (no se completa: se reintentará).
@@ -27,6 +33,9 @@ class IapDeliveryResult {
   /// concedido nada: si el backend dice que ese recibo no va a valer nunca,
   /// dejarla abierta solo bloquea el producto para siempre sin ganar nada.
   final bool permanent;
+
+  bool get claimedByOtherAccount =>
+      permanent && reason == IapService.claimedByOtherAccount;
 }
 
 /// Qué pasó al reintentar las compras que la tienda tenía sin terminar.
@@ -118,6 +127,13 @@ class IapService extends ChangeNotifier {
             (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
 
   final InAppPurchase _iap;
+
+  /// Motivo del backend cuando la suscripción ya es de OTRA cuenta de Attra.
+  static const String claimedByOtherAccount = 'claimed_by_other_account';
+
+  /// Productos cuya compra ha lanzado el usuario en esta sesión y aún no ha
+  /// acabado (ver [_userAskedFor]).
+  final Set<String> _userPurchases = <String>{};
 
   /// Solo Android (ver [refreshSubscriptionsSilently]).
   final bool _silentRestoreSupported;
@@ -439,6 +455,9 @@ class IapService extends ChangeNotifier {
     // Empezar limpio: si no, un error de un intento anterior se reemite como si
     // fuera de esta compra.
     _error = null;
+    // Lo que llegue de ESTE producto a partir de ahora lo ha pedido el usuario:
+    // si otra cuenta ya tiene la suscripción, tiene que enterarse.
+    _userPurchases.add(product.id);
     _setBusy(true);
     try {
       final bool started = _consumableIds.contains(product.id)
@@ -447,7 +466,10 @@ class IapService extends ChangeNotifier {
           : await _iap.buyNonConsumable(purchaseParam: param);
       // Si la tienda NO abrió el flujo no llegará nada por purchaseStream, así
       // que hay que soltar el busy aquí o la pantalla se queda congelada.
-      if (!started) _setBusy(false);
+      if (!started) {
+        _userPurchases.remove(product.id);
+        _setBusy(false);
+      }
       return started;
     } on PlatformException catch (e) {
       // El plugin se niega a comprar porque ya hay una transacción ABIERTA de
@@ -461,9 +483,11 @@ class IapService extends ChangeNotifier {
       // para poder contarle la verdad en vez de un "espera unos segundos".
       if (e.code == 'storekit_duplicate_product_object') {
         await _recoverPending(product.id);
+        _userPurchases.remove(product.id);
         _setBusy(false);
         return false;
       }
+      _userPurchases.remove(product.id);
       _error = _readableStoreError(e);
       _setBusy(false);
       return false;
@@ -568,11 +592,13 @@ class IapService extends ChangeNotifier {
           _armPendingApprovalTimeout();
           break;
         case PurchaseStatus.error:
+          _userPurchases.remove(purchase.productID);
           _error = purchase.error?.message ?? 'La compra falló.';
           _setBusy(false);
           await _safeComplete(purchase);
           break;
         case PurchaseStatus.canceled:
+          _userPurchases.remove(purchase.productID);
           _setBusy(false);
           await _safeComplete(purchase);
           break;
@@ -612,6 +638,23 @@ class IapService extends ChangeNotifier {
       _notify();
     });
   }
+
+  /// ¿Esta entrega la ha pedido el usuario en esta sesión? Sí si está
+  /// restaurando (o llega como `restored`, que solo sale de un "Restaurar"), o
+  /// si lanzó la compra de ese producto y aún no ha terminado.
+  ///
+  /// Hace falta para [claimedByOtherAccount]: StoreKit reparte las renovaciones
+  /// automáticas (en sandbox, una cada ~5 minutos) por `Transaction.updates` a
+  /// TODOS los dispositivos del Apple ID. En el segundo dispositivo, con otra
+  /// cuenta de Attra (las dos cuentas demo de App Review), cada renovación
+  /// llegaba como `purchased`, el backend contestaba "asociada a otra cuenta" y
+  /// el paywall y la hoja de Boosts pintaban ese error, y el aviso persistente
+  /// tapaba después el resultado de "Restaurar compras", sin que nadie hubiera
+  /// comprado nada.
+  bool _userAskedFor(PurchaseDetails purchase) =>
+      _restoring ||
+      purchase.status == PurchaseStatus.restored ||
+      _userPurchases.contains(purchase.productID);
 
   /// Entrega la compra y, SOLO si el backend responde, la cierra.
   ///
@@ -659,6 +702,7 @@ class IapService extends ChangeNotifier {
       if (result.delivered) {
         if (!silent) _error = null;
         _undelivered.remove(purchase.productID);
+        _userPurchases.remove(purchase.productID);
         // Dentro del try: este handler pinta snackbars y cierra pantallas, y si
         // reventaba (contexto desmontado, sin Scaffold) la excepción salía de
         // aquí y la transacción se quedaba SIN cerrar pese a estar concedida,
@@ -680,13 +724,20 @@ class IapService extends ChangeNotifier {
       }
 
       if (result.permanent) {
-        if (!silent) {
+        // Suscripción de OTRA cuenta que nadie ha pedido aquí (una renovación
+        // de la tienda): se cierra igual, pero en silencio, como la reentrega
+        // de Android. Si el usuario compra o restaura, sí se le cuenta.
+        final bool quiet = silent ||
+            (result.claimedByOtherAccount && !_userAskedFor(purchase));
+        if (!quiet) {
           _error = result.message ?? 'Esta compra no se puede entregar.';
           _notice = _error;
         } else {
-          debugPrint('[IAP] reentrega silenciosa rechazada: ${result.message}');
+          debugPrint('[IAP] ${purchase.productID} rechazada sin avisar '
+              '(${result.reason ?? 'reentrega silenciosa'}): ${result.message}');
         }
         _undelivered.remove(purchase.productID);
+        _userPurchases.remove(purchase.productID);
         await close();
         return _DeliveryOutcome.rejected;
       }

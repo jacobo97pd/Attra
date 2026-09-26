@@ -148,6 +148,10 @@ class SettingsCatalog {
         requiresSubscription: true,
         legalBasis: LegalBasis.contract,
         auditLevel: AuditLevel.high,
+        // Sin plan, el backend (listingBlocker) vuelve a listar al usuario y
+        // publica su ciudad y su actividad.
+        pausedEffect: 'Vuelves a salir en el feed con tu ciudad y tu '
+            'actividad.',
       ),
       SettingDefinition(
         key: 'privacy.slowDating',

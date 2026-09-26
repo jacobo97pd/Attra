@@ -121,6 +121,37 @@ void main() {
     expect(mazo, contains('Nuevo'));
   });
 
+  // Fuera de España el feed se rellena con perfiles de MUESTRA (semillas). En
+  // la segunda vuelta no entra ninguno nuevo, pero los que pasaste tienen que
+  // poder volver: si no, se ofrecía "las N personas que pasaste" y el mazo
+  // salía vacío.
+  testWidgets(
+      'fuera de España, la segunda vuelta repone las muestras que pasaste '
+      '(y ninguna más)', (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    final _MatchServiceStub service = _MatchServiceStub(
+      exclusions: const FeedExclusions(
+        passed: <String>{'mock_pasada'},
+        liked: <String>{'mock_like'},
+      ),
+    );
+    await tester.pumpWidget(_host(
+      service: service,
+      user: _yo(country: 'Estados Unidos'),
+      profiles: <SeedProfile>[
+        _muestra('mock_pasada', 'Pasada'),
+        _muestra('mock_like', 'Conlike'),
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('las 1 personas que pasaste'), findsOneWidget);
+    await tester.tap(segundaVuelta);
+    await tester.pumpAndSettle();
+
+    expect(await _recorrerMazo(tester), <String>['Pasada']);
+  });
+
   testWidgets('con Slow Dating, la segunda vuelta no se recorta a 12',
       (WidgetTester tester) async {
     _usePhoneViewport(tester);
@@ -151,8 +182,9 @@ void main() {
   });
 }
 
-AppUser _yo({bool slowDating = false}) {
+AppUser _yo({bool slowDating = false, String country = ''}) {
   return AppUser(
+    countryName: country,
     uid: 'yo',
     email: 'yo@example.test',
     displayName: 'Yo',
@@ -163,6 +195,19 @@ AppUser _yo({bool slowDating = false}) {
     isBot: false,
     slowDatingEnabled: slowDating,
   );
+}
+
+/// Perfil semilla (mock) de España.
+SeedProfile _muestra(String id, String nombre) {
+  return SeedProfile.fromMap(id, <String, dynamic>{
+    'displayName': nombre,
+    'age': 30,
+    'isBot': true,
+    'bio': 'Hola',
+    'currentCity': 'Madrid',
+    'currentCountryName': 'España',
+    'countryIso2': 'ES',
+  });
 }
 
 SeedProfile _perfil(String id, String nombre) {

@@ -58,6 +58,7 @@ class SettingDefinition {
     this.destructive = false,
     this.auditLevel = AuditLevel.standard,
     this.legalUrl,
+    this.pausedEffect,
   });
 
   /// Identificador unico estable (setting_key). Es la clave de persistencia.
@@ -108,6 +109,11 @@ class SettingDefinition {
 
   /// Enlace a documentacion legal contextual.
   final String? legalUrl;
+
+  /// Solo para ajustes de pago: que deja de cumplirse cuando el ajuste sigue
+  /// encendido pero el plan ya no lo cubre. Ajustes lo enseña en el aviso "En
+  /// pausa" para que el interruptor en ON no prometa algo que ya no pasa.
+  final String? pausedEffect;
 
   bool get consentRequired => consentPurpose != null;
 

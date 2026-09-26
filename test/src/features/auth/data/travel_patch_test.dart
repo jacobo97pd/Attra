@@ -28,6 +28,10 @@ void main() {
     expect(t['lat'], 36.5267);
     expect(t['lng'], -6.2891);
     expect(t['geoSource'], 'asset');
+    // El centro va atado al destino para el que se resolvió: si una versión
+    // antigua cambia la ciudad sin tocar lat/lng, deja de valer.
+    expect(t['geoCity'], 'Cadiz');
+    expect(t['geoIso2'], 'ES');
     // `until` (ISO) lo siguen leyendo las versiones anteriores de la app.
     expect(
         t['until'], now.add(UserRepository.travelDuration).toIso8601String());
@@ -47,6 +51,8 @@ void main() {
 
     expect(t['lat'], isNull);
     expect(t['lng'], isNull);
+    expect(t['geoCity'], isNull);
+    expect(t['geoIso2'], isNull);
     expect(t['geoSource'], 'none', reason: 'sin centro no hay origen');
   });
 
@@ -68,6 +74,7 @@ void main() {
             'toque');
     expect(t['city'], 'Cadiz');
     expect(t['lat'], isNull);
+    expect(t['geoCity'], isNull);
     expect(t['until'], isNull);
     expect(t['untilAt'], isNull);
   });

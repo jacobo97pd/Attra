@@ -594,10 +594,12 @@ class _HomeShellState extends State<HomeShell> {
           // destino.
           travelPlanActive:
               TravelScope.planKeepsTravel(_entitlementController?.entitlements),
-          // Mientras cargan los entitlements el viaje cuenta: el controlador
-          // arranca como Free y, si no, todo viajero de pago veía un instante
-          // el feed de casa.
-          entitlementsLoading: _entitlementController?.isLoading ?? false,
+          // Mientras cargan los entitlements POR PRIMERA VEZ el viaje cuenta:
+          // el controlador arranca como Free y, si no, todo viajero de pago
+          // veía un instante el feed de casa. Las recargas posteriores no
+          // (ver EntitlementController.isFirstLoadPending).
+          entitlementsLoading:
+              _entitlementController?.isFirstLoadPending ?? false,
           onOpenTravel: _openTravelSheet,
           onTravelExpired: _endExpiredTravel,
           // Ranking inteligente: señales server-side + config remota. Detrás del

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../geo/domain/travel_rules.dart';
 import '../../monetization/domain/subscription_tier.dart';
 import '../../social/domain/intent_mode.dart';
 import 'location_refresh_policy.dart';
@@ -222,28 +223,33 @@ class AppUser {
   final String travelCity;
   final String travelCountry;
 
-  /// Fin del viaje (`settings.travel.untilAt`, o el ISO `until` de versiones
-  /// anteriores; 30 días al activarlo).
+  /// Fin del viaje: el más tardío entre `settings.travel.untilAt` y el ISO
+  /// `until` de versiones anteriores ([TravelRules.effectiveUntil]); 30 días
+  /// al activarlo.
   final DateTime? travelUntil;
 
   /// Centro de la ciudad de destino (`settings.travel.lat/lng`). NUNCA es la
   /// ubicación real: el feed del viaje se mide desde aquí y la ficha pública se
-  /// publica aquí. null = viaje sin coordenadas (a un país entero, o antiguo).
+  /// publica aquí. null = viaje sin coordenadas (a un país entero, antiguo, o
+  /// con un centro que era de OTRO destino: ver
+  /// [TravelRules.centerMatchesDestination]).
   final double? travelLat;
   final double? travelLng;
 
   /// De dónde salió ese centro: 'asset' | 'device' | 'server' | 'none'.
   final String travelGeoSource;
 
-  bool get hasTravelOrigin => travelLat != null && travelLng != null;
+  /// Sin ciudad no hay centro que valga, igual que en el backend: un viaje a
+  /// un país entero con un `lat/lng` sobrante se medía desde la ciudad vieja.
+  bool get hasTravelOrigin =>
+      travelLat != null && travelLng != null && travelCity.trim().isNotEmpty;
 
-  /// El viaje sigue marcado como activo pero su fecha ya pasó: hay que
-  /// apagarlo (el backend lo hace en su barrido; el cliente lo hace al verlo
-  /// para no esperar y para devolver al usuario a su ubicación real).
+  /// El viaje sigue marcado como activo pero su fecha ya pasó (o es
+  /// imposible, ver [TravelRules.isOver]): hay que apagarlo (el backend lo
+  /// hace en su barrido; el cliente lo hace al verlo para no esperar y para
+  /// devolver al usuario a su ubicación real).
   bool get travelExpired =>
-      travelActive &&
-      travelUntil != null &&
-      !travelUntil!.isAfter(DateTime.now());
+      travelActive && TravelRules.isOver(travelUntil, DateTime.now());
 
   /// True si el modo viaje está vigente. Expiración **defensiva en cliente**
   /// (igual que [busyModeActive]): el backend ya caduca el viaje al publicar la
@@ -257,7 +263,7 @@ class AppUser {
   bool get isTraveling =>
       travelActive &&
       travelCountry.trim().isNotEmpty &&
-      (travelUntil == null || travelUntil!.isAfter(DateTime.now()));
+      !TravelRules.isOver(travelUntil, DateTime.now());
 
   /// Modo ocupado (Attra Clear §4): pausa suave. De `settings.privacy.busyMode*`.
   final bool busyModeEnabled;
@@ -303,6 +309,16 @@ class AppUser {
     final Map<String, dynamic> travel = _asMap(settings['travel']).isNotEmpty
         ? _asMap(settings['travel'])
         : _asMap(data['travel']);
+    // Un centro que se resolvió para otro destino no se usa (ver
+    // TravelRules.centerMatchesDestination): así hasTravelOrigin es false, el
+    // feed se queda en el país o en el centro resuelto al vuelo y la sesión lo
+    // vuelve a situar.
+    final bool centerOk = TravelRules.centerMatchesDestination(
+      city: travel['city'],
+      iso2: travel['iso2'],
+      geoCity: travel['geoCity'],
+      geoIso2: travel['geoIso2'],
+    );
     return AppUser(
       uid: (data['uid'] as String?) ?? document.id,
       email: data['email'] as String?,
@@ -381,11 +397,13 @@ class AppUser {
       travelCity: (travel['city'] as String?) ?? '',
       travelCountry: (travel['country'] as String?) ?? '',
       // `untilAt` (Timestamp) es el nuevo; `until` (ISO) lo siguen escribiendo
-      // y leyendo las versiones anteriores de la app.
-      travelUntil:
-          _asEpochDate(travel['untilAt']) ?? _asEpochDate(travel['until']),
-      travelLat: _asLatitude(travel['lat']),
-      travelLng: _asLongitude(travel['lng']),
+      // y leyendo las versiones anteriores de la app. Manda el más tardío.
+      travelUntil: TravelRules.effectiveUntil(
+        _asEpochDate(travel['untilAt']),
+        _asEpochDate(travel['until']),
+      ),
+      travelLat: centerOk ? _asLatitude(travel['lat']) : null,
+      travelLng: centerOk ? _asLongitude(travel['lng']) : null,
       travelGeoSource: (travel['geoSource'] as String?)?.trim() ?? '',
       busyModeEnabled: _asBool(settings['privacy.busyModeEnabled']),
       busyModeUntil: _asEpochDate(settings['privacy.busyModeUntil']),

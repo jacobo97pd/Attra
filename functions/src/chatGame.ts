@@ -4,6 +4,7 @@ import { DocumentData, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, existsBlockBetween, requireAuthUid, requireStringArg } from "./common";
 import { moderateComment } from "./moderation";
+import { PROFILE_CARDS_COLLECTION } from "./profileCards";
 
 /// "Duelo de Química" (5-Minute Spark): reto de conversación de 5 minutos en el
 /// chat. Backend-autoritativo. Vive en `chats/{chatId}/gameSessions/{sessionId}`.
@@ -620,17 +621,34 @@ export const abandonChatGame = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
-async function resolveNames(chatData: DocumentData, uidA: string, uidB: string) {
-  // Nombres públicos para el texto del resultado. Best-effort (discovery/seed).
+/// Nombres públicos para el texto del resultado. Best-effort, en el MISMO
+/// orden que el cliente (`kPublicProfileCollections`): discovery →
+/// seed_profiles → profileCards.
+///
+/// Antes solo miraba discovery y seed_profiles: quien está oculto del feed
+/// (perfil oculto, pausado, incógnito) no tiene listado, así que el veredicto
+/// del duelo le llamaba "Alguien" aunque su match le veía el nombre en el
+/// chat. `profileCards` guarda la ficha de todo usuario publicable; aquí se lee
+/// con Admin SDK, sin pasar por las reglas.
+export async function resolveNames(
+  _chatData: DocumentData,
+  uidA: string,
+  uidB: string
+): Promise<{ a: string; b: string }> {
+  const sources = ["discovery", "seed_profiles", PROFILE_CARDS_COLLECTION];
   async function nameOf(uid: string): Promise<string> {
+    if (!uid) return "Alguien";
     try {
-      let d = await db.collection("discovery").doc(uid).get();
-      if (!d.exists) d = await db.collection("seed_profiles").doc(uid).get();
-      const dn = d.data()?.displayName;
-      return typeof dn === "string" && dn.trim() ? dn.trim() : "Alguien";
+      for (const source of sources) {
+        const d = await db.collection(source).doc(uid).get();
+        if (!d.exists) continue;
+        const dn = d.data()?.displayName;
+        return typeof dn === "string" && dn.trim() ? dn.trim() : "Alguien";
+      }
     } catch {
-      return "Alguien";
+      // Best-effort: un fallo de lectura no puede impedir cerrar el duelo.
     }
+    return "Alguien";
   }
   const [a, b] = await Promise.all([nameOf(uidA), nameOf(uidB)]);
   return { a, b };

@@ -38,6 +38,9 @@ class EntitlementController extends ChangeNotifier {
   MonetizationFeatureFlags _flags = const MonetizationFeatureFlags();
   bool _loading = true;
 
+  /// Todavía no ha llegado NINGÚN plan (ni la primera carga ni el stream).
+  bool _firstLoadPending = true;
+
   /// Suscripciones EN VIVO al entitlement y a los flags.
   ///
   /// Antes esto era solo `getEntitlements()`, una lectura única, y el plan se
@@ -52,6 +55,18 @@ class EntitlementController extends ChangeNotifier {
   bool _disposed = false;
 
   bool get isLoading => _loading;
+
+  /// Solo hasta que se conoce el plan por PRIMERA vez. Es lo que necesita el
+  /// feed para no enseñar un instante el feed de casa a un viajero de pago
+  /// (el controlador arranca como Free).
+  ///
+  /// No vale [isLoading]: [load] se vuelve a llamar tras una compra, al
+  /// entregar un Boost o desde Ajustes, y cada recarga ponía `_loading` a true.
+  /// A quien tiene el viaje en pausa (plan caducado, viaje guardado) eso le
+  /// hacía contar el viaje durante la recarga: el feed se recargaba en el
+  /// destino y, al terminar, otra vez en casa. Dos recargas completas que
+  /// vaciaban el mazo y el historial de deshacer.
+  bool get isFirstLoadPending => _firstLoadPending;
   MonetizationFeatureFlags get flags => _flags;
   UserEntitlements get entitlements => _entitlements;
 
@@ -204,6 +219,7 @@ class EntitlementController extends ChangeNotifier {
       // Ante fallo, nos quedamos en free + defaults: nunca conceder de mas.
     } finally {
       _loading = false;
+      _firstLoadPending = false;
       notifyListeners();
     }
     _escuchar();
@@ -215,7 +231,10 @@ class EntitlementController extends ChangeNotifier {
     if (_disposed) return;
     _entitlementsSub ??= _suscribir<UserEntitlements>(
       () => _entitlementService.watchEntitlements(_uid),
-      (UserEntitlements value) => _entitlements = value,
+      (UserEntitlements value) {
+        _entitlements = value;
+        _firstLoadPending = false;
+      },
       'entitlements',
     );
     _flagsSub ??= _suscribir<MonetizationFeatureFlags>(

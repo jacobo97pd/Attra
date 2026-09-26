@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../security/app_lock_controller.dart';
+import '../../../theme/app_colors.dart';
 import '../../security/presentation/lock_screen.dart';
 import '../domain/consent_record.dart';
 import '../domain/setting_definition.dart';
@@ -256,7 +257,7 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
               : null,
           title: _titleWithBadges(context, def.label, badges),
           subtitle: _subtitle(context, def, eff),
-          isThreeLine: eff.locked || def.description.length > 60,
+          isThreeLine: eff.locked || eff.paused || def.description.length > 60,
         );
       case SettingType.enumeration:
         return ListTile(
@@ -316,6 +317,37 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
                   eff.lockedReason!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    // Ajuste de pago encendido sin plan: sigue editable (se puede apagar), pero
+    // tiene que decir que ya no se aplica. Antes solo se dibujaba el motivo de
+    // un BLOQUEO y el incógnito caducado se veía en ON como si funcionara.
+    if (eff.notice != null) {
+      lines.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.only(top: 1),
+                child: Icon(Icons.pause_circle_outline,
+                    size: 14, color: AppColors.gold),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  eff.notice!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.gold,
+                        fontWeight: FontWeight.w600,
                       ),
                 ),
               ),

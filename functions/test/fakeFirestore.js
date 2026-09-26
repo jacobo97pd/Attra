@@ -7,7 +7,8 @@
  * Sustituye (con `mock.method`, que `mock.restoreAll()` deshace) las piezas del
  * Admin SDK que usan los callables y triggers: lecturas/escrituras de
  * documentos, transacciones, batches, `add` y las consultas `where` (==,
- * array-contains, limit, startAfter). Los centinelas (serverTimestamp,
+ * array-contains, rangos, limit, orderBy por nombre, startAfter). Los
+ * centinelas (serverTimestamp,
  * increment...) se guardan tal cual: los tests miran estados, no contadores
  * materializados; para contar escrituras esta el registro `writes`.
  */
@@ -108,11 +109,25 @@ function installFakeFirestore(mock, initial = {}) {
   const fieldOf = (data, field) =>
     field.split(".").reduce((v, k) => (v == null ? undefined : v[k]), data);
 
+  // Rangos (>=, <...) sobre Timestamps o numeros: como Firestore, un campo
+  // ausente o de otro tipo no casa.
+  const comparable = (v) =>
+    v && typeof v.toMillis === "function" ? v.toMillis() : typeof v === "number" ? v : null;
+
   const fakeQuery = (collPath, filters, lim = null, after = null) => ({
     where: (field, op, value) =>
       fakeQuery(collPath, [...filters, [field, op, value]], lim, after),
     limit: (n) => fakeQuery(collPath, filters, n, after),
-    startAfter: (snap) => fakeQuery(collPath, filters, lim, snap.ref.path),
+    // Los resultados ya salen ordenados por ruta (= por __name__).
+    orderBy: () => fakeQuery(collPath, filters, lim, after),
+    // Acepta un snapshot o, como `orderBy("__name__")`, el id del documento.
+    startAfter: (snap) =>
+      fakeQuery(
+        collPath,
+        filters,
+        lim,
+        typeof snap === "string" ? `${collPath}/${snap}` : snap.ref.path
+      ),
     get: async () => {
       const depth = collPath.split("/").length + 1;
       let paths = [...docs.keys()]
@@ -122,6 +137,15 @@ function installFakeFirestore(mock, initial = {}) {
             const v = fieldOf(docs.get(p), field);
             if (op === "==") return v === value;
             if (op === "array-contains") return Array.isArray(v) && v.includes(value);
+            if ([">=", ">", "<=", "<"].includes(op)) {
+              const a = comparable(v);
+              const b = comparable(value);
+              if (a === null || b === null) return false;
+              if (op === ">=") return a >= b;
+              if (op === ">") return a > b;
+              if (op === "<=") return a <= b;
+              return a < b;
+            }
             throw new Error(`operador no soportado en el fake: ${op}`);
           })
         )
