@@ -178,3 +178,9 @@ export {
 // Borrar la cuenta retira sus likes/matches/chats. Sin exportarlo aqui no se
 // despliega y los demas siguen viendo (y escribiendo a) una cuenta borrada.
 export { onUserDeletedCleanup } from "./accountCleanup";
+
+// --- monetization ---
+// Notificaciones de servidor de las tiendas (renovaciones y reembolsos sin que
+// el usuario abra la app). Sin exportarlas no se despliegan y las renovaciones
+// dependen de que la app reenvie el recibo, que Android no hace solo.
+export { appStoreNotifications, playRtdn } from "./storeNotifications";

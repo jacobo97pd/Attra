@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'storekit_pending_transactions.dart';
 
 /// Resultado de entregar (verificar + conceder) una compra en el backend.
@@ -107,11 +109,25 @@ class IapService extends ChangeNotifier {
     InAppPurchase? iap,
     Set<String> consumableIds = const <String>{},
     StoreKitPendingTransactions? pendingTransactions,
+    bool? silentRestoreSupported,
+    this.silentRestoreWindow = const Duration(seconds: 5),
   })  : _pending = pendingTransactions ?? StoreKitPendingTransactions(),
         _iap = iap ?? InAppPurchase.instance,
-        _consumableIds = consumableIds;
+        _consumableIds = consumableIds,
+        _silentRestoreSupported = silentRestoreSupported ??
+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
 
   final InAppPurchase _iap;
+
+  /// Solo Android (ver [refreshSubscriptionsSilently]).
+  final bool _silentRestoreSupported;
+
+  /// Cuánto se espera a que lleguen por el stream las compras de una
+  /// reentrega silenciosa: `restorePurchases` vuelve antes de emitirlas.
+  final Duration silentRestoreWindow;
+
+  /// True mientras dura la reentrega silenciosa de arranque.
+  bool _silentRestoring = false;
 
   /// Las transacciones que la App Store sigue teniendo sin terminar. Es la
   /// única forma de volver a ver (y entregar) las que la tienda ya no reemite.
@@ -487,6 +503,53 @@ class IapService extends ChangeNotifier {
     }
   }
 
+  /// Reentrega SILENCIOSA de lo que la tienda tiene a tu nombre (solo Android).
+  ///
+  /// Google Play NO manda las renovaciones automáticas al `purchaseStream`:
+  /// solo llegan las compras nuevas y lo que se restaura. Sin notificaciones de
+  /// servidor el backend no se enteraba nunca de la renovación, así que al mes
+  /// el plan caducaba con el usuario pagando, y la única salida era adivinar que
+  /// había que pulsar "Restaurar". Pidiéndole las compras a Play al empezar la
+  /// sesión, la renovación (orderId nuevo) llega a `verifyPurchase`, que ahora
+  /// la reconoce como tal. De paso recupera un consumible que se pagó y no se
+  /// llegó a entregar (Play no lo devuelve una vez consumido).
+  ///
+  /// Solo Android: en iOS `restorePurchases` puede pedir la contraseña del
+  /// Apple ID, y allí las renovaciones ya entran como transacciones sin
+  /// terminar ([recoverUnfinishedPurchases]). Silenciosa: sin spinner, sin
+  /// `onRestoreFinished` y sin errores en pantalla, porque nadie ha pulsado nada.
+  Future<void> refreshSubscriptionsSilently() async {
+    if (!_silentRestoreSupported || !_available || _disposed) return;
+    if (_restoring || _silentRestoring) return;
+    _silentRestoring = true;
+    try {
+      await _iap.restorePurchases();
+      await Future<void>.delayed(silentRestoreWindow);
+    } catch (error) {
+      debugPrint('[IAP] reentrega silenciosa falló: $error');
+    } finally {
+      _silentRestoring = false;
+    }
+  }
+
+  /// Compra de Google Play que sigue PENDIENTE de pago (efectivo, métodos de
+  /// pago lentos).
+  ///
+  /// Hace falta mirarlo aquí porque `restorePurchases` de Android marca como
+  /// `restored` TODO lo que Play tiene a tu nombre, también lo pendiente, y
+  /// el estado real solo queda en `billingClientPurchase`. Antes eso se
+  /// entregaba al backend como compra hecha: sin la Play Developer API el
+  /// backend no puede saber que no está pagada y concedía el plan o el pack
+  /// por adelantado. Y otra vez al pagarse, porque la pendiente no tiene
+  /// orderId (llega como `''`) y la pagada sí, así que para el backend eran
+  /// dos compras. Con la reentrega silenciosa de cada arranque, esto dejó de
+  /// depender de que alguien pulsara "Restaurar".
+  @visibleForTesting
+  static bool isUnpaidPlayPurchase(PurchaseDetails purchase) =>
+      purchase is GooglePlayPurchaseDetails &&
+      purchase.billingClientPurchase.purchaseState ==
+          PurchaseStateWrapper.pending;
+
   /// Entrada del flujo de compras para los tests.
   ///
   /// Existe porque montar el stream real exigiria falsear tambien la carga de
@@ -514,8 +577,19 @@ class IapService extends ChangeNotifier {
           await _safeComplete(purchase);
           break;
         case PurchaseStatus.restored:
+          if (isUnpaidPlayPurchase(purchase)) {
+            // Todavía sin pagar: no se entrega ni se cuenta como restaurada.
+            // Cuando se pague, Play la manda como `purchased` (o sale ya
+            // pagada en la siguiente reentrega) y entonces se entrega.
+            debugPrint('[IAP] ${purchase.productID} pendiente de pago: se '
+                'espera a que se complete');
+            break;
+          }
           if (_restoring) _restoredDuringRestore += 1;
-          await _handleVerified(purchase);
+          await _handleVerified(
+            purchase,
+            silent: _silentRestoring && !_restoring,
+          );
           break;
         case PurchaseStatus.purchased:
           await _handleVerified(purchase);
@@ -543,13 +617,18 @@ class IapService extends ChangeNotifier {
   ///
   /// [finish] permite cerrar por id (recuperación desde
   /// `Transaction.unfinished`) en lugar de por `completePurchase`.
+  ///
+  /// [silent]: reentrega de arranque que nadie ha pedido. Entrega y cierra
+  /// igual, pero no pinta errores ni avisos ni toca el spinner de una compra
+  /// que el usuario pueda tener en marcha.
   Future<_DeliveryOutcome> _handleVerified(
     PurchaseDetails purchase, {
     Future<bool> Function()? finish,
+    bool silent = false,
   }) async {
     final String key = purchase.purchaseID ?? purchase.productID;
     if (!_inFlight.add(key)) return _DeliveryOutcome.skipped;
-    _pendingApproval?.cancel();
+    if (!silent) _pendingApproval?.cancel();
     Future<bool> close() => (finish ?? () => _safeComplete(purchase))();
     // Solo se guardan para reintentar en sesión las compras que llegaron por el
     // stream, porque esas sí se cierran con `completePurchase`. Las rehechas
@@ -578,14 +657,17 @@ class IapService extends ChangeNotifier {
       }
 
       if (result.delivered) {
-        _error = null;
+        if (!silent) _error = null;
         _undelivered.remove(purchase.productID);
         // Dentro del try: este handler pinta snackbars y cierra pantallas, y si
         // reventaba (contexto desmontado, sin Scaffold) la excepción salía de
         // aquí y la transacción se quedaba SIN cerrar pese a estar concedida,
         // dejando el producto bloqueado y el spinner encendido.
         try {
-          onDelivered?.call(purchase);
+          // En silencio no: el handler del paywall pinta "¡Listo!" y se cierra,
+          // y nadie ha comprado nada. Los entitlements ya los refresca la
+          // entrega de la sesión (PurchaseDeliveryRouter).
+          if (!silent) onDelivered?.call(purchase);
         } catch (error) {
           debugPrint('[IAP] onDelivered falló: $error');
         }
@@ -598,8 +680,12 @@ class IapService extends ChangeNotifier {
       }
 
       if (result.permanent) {
-        _error = result.message ?? 'Esta compra no se puede entregar.';
-        _notice = _error;
+        if (!silent) {
+          _error = result.message ?? 'Esta compra no se puede entregar.';
+          _notice = _error;
+        } else {
+          debugPrint('[IAP] reentrega silenciosa rechazada: ${result.message}');
+        }
         _undelivered.remove(purchase.productID);
         await close();
         return _DeliveryOutcome.rejected;
@@ -614,11 +700,11 @@ class IapService extends ChangeNotifier {
       // vuelve a intentarlo en cada arranque con el recibo en la mano, así que
       // el bloqueo del producto dura lo que dure la avería, no para siempre.
       if (remember) _undelivered[purchase.productID] = purchase;
-      _error = result.message ?? 'No se pudo entregar la compra.';
+      if (!silent) _error = result.message ?? 'No se pudo entregar la compra.';
       return _DeliveryOutcome.retryLater;
     } finally {
       _inFlight.remove(key);
-      _setBusy(false);
+      if (!silent) _setBusy(false);
       _notify();
     }
   }

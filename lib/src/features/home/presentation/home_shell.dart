@@ -396,7 +396,9 @@ class _HomeShellState extends State<HomeShell> {
       repository: widget.settingsRepository,
       uid: uid,
       onDeleteAccount: () async => widget.onDeleteAccount(),
-      premiumResolver: () => entitlements.isPremiumActive,
+      // Cada ajuste de pago lo desbloquea SU función (incógnito = Plus), no el
+      // tier Premium retirado de la venta.
+      featureResolver: entitlements.unlocksSetting,
       integrationConnector: widget.integrationConnector,
       onVisibilityChanged: widget.onRepublishDiscovery,
     );

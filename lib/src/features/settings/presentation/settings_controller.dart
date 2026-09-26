@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../../security/screen_guard.dart';
 import '../../integrations/domain/integration_connector.dart';
+import '../../monetization/domain/premium_feature.dart';
+import '../../monetization/domain/subscription_tier.dart';
+import '../../monetization/domain/user_entitlements.dart';
 import '../data/settings_repository.dart';
 import '../domain/consent_record.dart';
 import '../domain/privacy_request.dart';
@@ -34,8 +37,7 @@ class SettingsController extends ChangeNotifier {
     required SettingsRepository repository,
     required String uid,
     required Future<void> Function() onDeleteAccount,
-    bool hasPremium = false,
-    bool Function()? premiumResolver,
+    bool Function(PremiumFeature? feature)? featureResolver,
     bool locationPermissionGranted = false,
     String region = 'EU',
     IntegrationConnector? integrationConnector,
@@ -43,8 +45,7 @@ class SettingsController extends ChangeNotifier {
   })  : _repository = repository,
         _uid = uid,
         _onDeleteAccount = onDeleteAccount,
-        _staticPremium = hasPremium,
-        _premiumResolver = premiumResolver,
+        _featureResolver = featureResolver,
         _locationGranted = locationPermissionGranted,
         _region = region,
         _integrationConnector = integrationConnector,
@@ -68,12 +69,17 @@ class SettingsController extends ChangeNotifier {
   final SettingsRepository _repository;
   final String _uid;
   final Future<void> Function() _onDeleteAccount;
-  final bool _staticPremium;
 
-  /// Resuelve el estado Premium en vivo desde el EntitlementController. Si es
-  /// null, se usa [_staticPremium]. Asi el modulo de ajustes no depende
-  /// directamente del de monetizacion.
-  final bool Function()? _premiumResolver;
+  /// Dice EN VIVO si el plan del usuario desbloquea una funcion de pago (null:
+  /// cualquier plan de pago). Lo cablea HomeShell con
+  /// `EntitlementController.unlocksSetting`, asi este modulo no depende del
+  /// controlador de monetizacion. Se consulta en cada lectura, sin cachear:
+  /// los entitlements llegan en asincrono y un bloqueo guardado se quedaria
+  /// puesto aunque el plan ya estuviese cargado.
+  ///
+  /// Antes era un unico "¿es Premium?" para todos los toggles de pago, y
+  /// Premium ya no se vende: Plus pagaba el incognito y no podia activarlo.
+  final bool Function(PremiumFeature? feature)? _featureResolver;
   final bool _locationGranted;
   final String _region;
 
@@ -84,13 +90,27 @@ class SettingsController extends ChangeNotifier {
   String? _connectingKey;
   bool isConnecting(SettingDefinition def) => _connectingKey == def.key;
 
-  bool get _hasPremium => _premiumResolver?.call() ?? _staticPremium;
+  /// True si el plan actual desbloquea este ajuste de pago.
+  bool isUnlocked(SettingDefinition def) =>
+      !def.requiresSubscription ||
+      (_featureResolver?.call(SettingsCatalog.requiredFeatureFor(def)) ??
+          false);
+
+  /// Plan que desbloquea el ajuste, para la insignia y el motivo del bloqueo.
+  /// Premium ya no se vende: decir "Disponible con Premium" mandaba a buscar
+  /// un plan que no existe en el paywall.
+  String requiredPlanLabel(SettingDefinition def) {
+    final PremiumFeature? feature = SettingsCatalog.requiredFeatureFor(def);
+    final bool inPlus = feature == null ||
+        UserEntitlements.defaultFeaturesForTier(SubscriptionTier.plus)
+            .contains(feature);
+    return inPlus ? SubscriptionTier.plus.label : SubscriptionTier.pro.label;
+  }
 
   Map<String, dynamic> _raw = <String, dynamic>{};
   bool _loading = true;
   bool get isLoading => _loading;
 
-  bool get hasPremium => _hasPremium;
   String get region => _region;
 
   /// @usuario de Instagram guardado (sin la @). Vacío si no hay.
@@ -137,9 +157,9 @@ class SettingsController extends ChangeNotifier {
     if (!def.editable) {
       locked = true;
       reason = 'No editable';
-    } else if (def.requiresSubscription && !_hasPremium) {
+    } else if (!isUnlocked(def) && !_isOnWithoutPlan(def, value)) {
       locked = true;
-      reason = 'Disponible con Premium';
+      reason = 'Disponible con ${requiredPlanLabel(def)}';
     } else if (def.requiresOsPermission != null &&
         !_osPermissionGranted(def.requiresOsPermission!)) {
       locked = true;
@@ -153,6 +173,12 @@ class SettingsController extends ChangeNotifier {
       lockedReason: reason,
     );
   }
+
+  /// Interruptor de pago ENCENDIDO sin plan que lo cubra (quien dejo el
+  /// incognito puesto y dejo de pagar). Apagarlo tiene que poder hacerse
+  /// SIEMPRE: antes se quedaba bloqueado en ON y la persona no podia salir.
+  bool _isOnWithoutPlan(SettingDefinition def, Object? value) =>
+      def.type == SettingType.boolean && value == true;
 
   bool _osPermissionGranted(String permission) {
     // Solo tenemos senal real del permiso de ubicacion. Para el resto no
@@ -181,6 +207,8 @@ class SettingsController extends ChangeNotifier {
   Future<void> setValue(SettingDefinition def, Object? newValue) async {
     final EffectiveSetting current = effectiveFor(def);
     if (current.locked) return;
+    // Sin plan solo se puede APAGAR un ajuste de pago, nunca encenderlo.
+    if (!isUnlocked(def) && newValue != false) return;
     final Object? previous = current.value;
     if (previous == newValue) return;
 

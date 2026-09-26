@@ -3,16 +3,23 @@ import { createHash } from "node:crypto";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, requireAuthUid } from "./common";
+import {
+  StoreCheck,
+  StorePlatform,
+  checkStorePurchase,
+  readReceiptValidationConfig,
+} from "./storeValidation";
 
 /// Consumibles comprables de Attra: ATTRAS, BOOSTS y SWIPES (likes extra).
 /// Boosts/swipes viven en `users/{uid}.wallet.{boosts,swipes}`; los Attras, en
 /// `attraWallets/{uid}.balance` (con espejo en `users/{uid}.attrasBalance`, que
 /// es de donde los lee la app). Esta función los ABONA al saldo.
 ///
-/// ⚠️ PLACEHOLDER DE COMPRA: hoy abona directamente (MVP / pruebas). Antes de
-/// producción debe ENVOLVERSE con validación de recibo IAP (App Store / Google
-/// Play) o pasarela de pago: el cliente compra, valida el recibo en el backend,
-/// y SOLO entonces se llama a esta concesión. No exponer el abono libre en prod.
+/// Antes era un PLACEHOLDER que abonaba sin recibo (`purchase_placeholder`):
+/// cualquier cuenta se regalaba packs llamando a la callable con un
+/// `purchaseId` distinto cada vez. Ahora SIEMPRE exige plataforma y recibo, lo
+/// valida contra la tienda (ver storeValidation.ts) y la idempotencia va por el
+/// id de transaccion de la TIENDA, no por lo que diga el cliente.
 
 type ConsumableKind = "boost" | "swipe" | "attra";
 
@@ -76,14 +83,11 @@ function resolveProduct(data: DocumentData | undefined): ResolvedProduct {
   );
 }
 
-/// Identificador estable del canje. Preferimos el id de transacción de la
-/// tienda; si no llega, lo derivamos del recibo (sha256) para que el mismo
-/// recibo produzca siempre la misma clave.
-function purchaseKeyFor(
-  purchaseId: string,
-  verificationData: string | null
-): string {
-  if (purchaseId.length > 0) return purchaseId;
+/// Identificador estable del canje SIN verificar: el hash del recibo (en Play,
+/// el token de la compra), para que el mismo recibo produzca siempre la misma
+/// clave. Con la compra verificada la clave es el id de la tienda (ver
+/// resolveConsumableGrant).
+function purchaseKeyFor(verificationData: string | null): string {
   if (verificationData) return createHash("sha256").update(verificationData).digest("hex");
   // Sin identificador no hay idempotencia posible: la misma compra podría
   // abonarse infinitas veces. Antes esto se permitía (ledger con id aleatorio).
@@ -106,40 +110,138 @@ function walletField(kind: ConsumableKind): "boosts" | "swipes" {
   return kind === "boost" ? "boosts" : "swipes";
 }
 
+/// Qué abonar según lo que dijo la tienda. Pura para poder probarla.
+///
+///  - rechazada: no se abona nada y se devuelve el motivo (con `permanent`
+///    para que la app sepa si cerrar la transaccion).
+///  - verificada: producto, cantidad e id de canje salen de la TIENDA. Un
+///    recibo real de OTRO producto (una suscripcion, un pack mas barato) no
+///    puede abonar el pack que pida el cliente.
+///  - sin verificar (solo Android cuando Google no puede contestar): con el
+///    producto del cliente y, como clave, el hash del TOKEN de Play, no el
+///    purchaseId. El token es uno por compra y no cambia al pagarse; el
+///    orderId que manda la app como purchaseId, si: mientras la compra esta
+///    PENDIENTE de pago (efectivo, metodos lentos) Play no tiene orderId y la
+///    app manda '', y al pagarse llega con 'GPA...'. Con el purchaseId de clave
+///    eran dos compras distintas y el mismo pack se abonaba dos veces (una de
+///    ellas antes de estar pagado).
+export function resolveConsumableGrant(input: {
+  check: StoreCheck;
+  requested: ResolvedProduct;
+  verificationData: string;
+}):
+  | {
+      ok: true;
+      product: ResolvedProduct;
+      amount: number;
+      purchaseKey: string;
+      verified: boolean;
+      sandbox: boolean | null;
+    }
+  | { ok: false; permanent: boolean; reason: string; message: string } {
+  const { check, requested } = input;
+  if (check.status === "rejected") {
+    return {
+      ok: false,
+      permanent: check.permanent,
+      reason: check.reason,
+      message: check.message,
+    };
+  }
+  if (check.status === "unverified") {
+    return {
+      ok: true,
+      product: requested,
+      amount: requested.amount,
+      purchaseKey: purchaseKeyFor(input.verificationData),
+      verified: false,
+      sandbox: null,
+    };
+  }
+  const purchase = check.purchase;
+  const catalog = CONSUMABLE_PRODUCTS[purchase.productId];
+  if (!catalog) {
+    return {
+      ok: false,
+      permanent: true,
+      reason: "unknown_product",
+      message: "Esta compra no corresponde a un pack de Attra.",
+    };
+  }
+  if (purchase.revoked || !purchase.entitled) {
+    return {
+      ok: false,
+      permanent: true,
+      reason: "revoked",
+      message: "Esta compra fue reembolsada o cancelada.",
+    };
+  }
+  return {
+    ok: true,
+    product: { productId: purchase.productId, ...catalog },
+    amount: catalog.amount * Math.max(1, purchase.quantity),
+    purchaseKey: purchase.transactionId,
+    verified: true,
+    sandbox: purchase.sandbox,
+  };
+}
+
 /// Abona el consumible del producto comprado. Registra el canje en
 /// `consumableLedger` (auditable) e IDEMPOTENTE por compra: el mismo recibo no
 /// abona dos veces ni aunque lo reenvíe otra cuenta.
 export const grantConsumable = onCall({ region: REGION }, async (request) => {
   const uid = requireAuthUid(request.auth);
-  const { productId, kind, amount } = resolveProduct(request.data);
+  const requested = resolveProduct(request.data);
   const rawPurchaseId =
     typeof request.data?.purchaseId === "string" && request.data.purchaseId.trim()
       ? request.data.purchaseId.trim().slice(0, 120)
       : "";
-  // Recibo de la tienda (IAP). En la app real llega siempre; el placeholder de
-  // pruebas puede no traerlo.
-  const platform =
+  // Recibo de la tienda (IAP). Los dos caminos reales de la app
+  // (purchase_delivery_router y la hoja de Boosts) mandan SIEMPRE plataforma y
+  // recibo; sin ellos no hay nada que validar y antes se abonaba igual.
+  const platform: StorePlatform | null =
     request.data?.platform === "app_store" || request.data?.platform === "play_store"
-      ? (request.data.platform as string)
+      ? (request.data.platform as StorePlatform)
       : null;
   const verificationData =
     typeof request.data?.verificationData === "string"
       ? (request.data.verificationData as string)
-      : null;
-  // El recibo se hashea ENTERO. Truncarlo antes del hash reintroducia el bug
+      : "";
+  if (!platform || !verificationData.trim()) {
+    throw new HttpsError("invalid-argument", "Falta el recibo de compra.");
+  }
+
+  const check = await checkStorePurchase({
+    platform,
+    kind: "consumable",
+    productId: requested.productId,
+    verificationData,
+    config: await readReceiptValidationConfig(),
+  });
+  // El recibo se hashea ENTERO cuando hace falta usarlo de clave (sin
+  // verificar y sin purchaseId). Truncarlo antes del hash reintroducia el bug
   // que subscriptions.ts documenta: en iOS la cabecera del recibo es identica
   // entre compras distintas del mismo dispositivo, asi que dos compras reales
   // colapsaban en la misma clave. Y aqui el dano es peor: el falso duplicado
   // responde ok, el cliente da la compra por entregada y la finaliza en la
   // tienda. Dinero cobrado, saldo no abonado, sin vuelta atras.
-  const purchaseKey = purchaseKeyFor(rawPurchaseId, verificationData);
-
-  // TODO(IAP server validation): cuando haya recibo (platform+verificationData),
-  // validarlo contra Google Play Developer API / App Store Server API ANTES de
-  // conceder. Requiere credenciales de tienda (service account / shared secret).
-  // Hoy: si llega recibo confiamos en él (idempotente por compra); si no,
-  // es la concesión placeholder de pruebas.
-  const source = platform ? `iap_${platform}` : "purchase_placeholder";
+  const decision = resolveConsumableGrant({
+    check,
+    requested,
+    verificationData,
+  });
+  if (!decision.ok) {
+    return {
+      ok: false,
+      permanent: decision.permanent,
+      reason: decision.reason,
+      message: decision.message,
+    };
+  }
+  const { productId, kind } = decision.product;
+  const amount = decision.amount;
+  const purchaseKey = decision.purchaseKey;
+  const source = `iap_${platform}`;
 
   const userRef = col.users.doc(uid);
   const ledgerRef = db.collection("consumableLedger").doc(ledgerIdFor(purchaseKey));
@@ -251,7 +353,9 @@ export const grantConsumable = onCall({ region: REGION }, async (request) => {
       purchaseId: rawPurchaseId || null,
       purchaseKey,
       platform,
-      hasReceipt: verificationData != null,
+      hasReceipt: true,
+      verified: decision.verified,
+      sandbox: decision.sandbox,
       type: "grant",
       source,
       createdAt: now,

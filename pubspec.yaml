@@ -71,6 +71,11 @@ dependencies:
   # Compras dentro de la app (IAP): pasarela nativa de Google Play / App Store.
   # OBLIGATORIO para bienes digitales. Ver IapService.
   in_app_purchase: ^3.2.0
+  # Ya venía con `in_app_purchase` (misma versión); se declara directa para
+  # leer el `purchaseState` de Play. Al restaurar, el plugin marca TODO como
+  # `restored`, también lo que sigue PENDIENTE de pago, y eso no se puede
+  # entregar al backend. Ver IapService.isUnpaidPlayPurchase.
+  in_app_purchase_android: ^0.5.0
   # Bloqueo de la app: PIN (hash en almacenamiento seguro) + biometría.
   # Ver AppLockController / LockScreen (Ajustes → Seguridad).
   flutter_secure_storage: ^9.2.2

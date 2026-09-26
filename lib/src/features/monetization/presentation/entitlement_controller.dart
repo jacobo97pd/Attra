@@ -86,7 +86,8 @@ class EntitlementController extends ChangeNotifier {
   }
 
   /// True si el tier efectivo es Premium o superior y los flags lo habilitan.
-  /// Lo consume el modulo de ajustes para los toggles Premium.
+  /// OJO: Premium es un tier RETIRADO de la venta. Ajustes lo usaba para todos
+  /// sus toggles de pago y dejaba fuera a Plus; ahora usa [unlocksSetting].
   bool get isPremiumActive {
     final SubscriptionTier effective = tier;
     return effective.atLeast(SubscriptionTier.premium) &&
@@ -130,6 +131,16 @@ class EntitlementController extends ChangeNotifier {
       hasFeature(PremiumFeature.advancedDeclaredFilters);
   bool get canCommentOnLike => isPlusActive;
   bool get canUseIncognito => hasFeature(PremiumFeature.incognitoMode);
+
+  /// Gate de los ajustes de pago: cada ajuste lo desbloquea SU función (el
+  /// incógnito es de Plus). Los que no nombran ninguna piden cualquier plan de
+  /// pago activo, que hoy empieza en Plus.
+  ///
+  /// Antes Ajustes preguntaba [isPremiumActive], un tier que ya no se vende:
+  /// quien pagaba Plus por el "Modo incógnito: decides quién te ve" que anuncia
+  /// el paywall lo veía bloqueado con "Disponible con Premium".
+  bool unlocksSetting(PremiumFeature? feature) =>
+      feature == null ? isPlusActive : hasFeature(feature);
 
   /// Modo viajes (Plus/Pro): cambiar tu ubicación para ver el feed de otra parte
   /// del mundo y aparecer allí "de viaje".

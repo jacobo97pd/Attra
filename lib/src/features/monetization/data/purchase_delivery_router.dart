@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
@@ -90,6 +92,11 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
     await iap.init(
       productIds: productIds(subscriptionIds: subscriptionIds),
     );
+    // Android no reentrega las renovaciones por su cuenta: sin esto, un
+    // suscriptor pasaba a Free al acabar el primer periodo aunque Google le
+    // siguiera cobrando (ver IapService.refreshSubscriptionsSilently). Una vez
+    // por sesión y sin esperar: no puede retrasar el arranque.
+    unawaited(iap.refreshSubscriptionsSilently());
   }
 
   @override

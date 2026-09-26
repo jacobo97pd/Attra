@@ -65,9 +65,10 @@ class BoostService {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
 
-  /// Abona consumibles al saldo (PLACEHOLDER de compra; en producción se llama
-  /// tras validar el recibo IAP). [kind] = 'boost' | 'swipe'. Devuelve el saldo
-  /// resultante.
+  /// Entrega un consumible comprado por IAP: el backend valida el recibo con la
+  /// tienda y abona el producto que ESTA confirma. Sin [platform] y
+  /// [verificationData] el backend lo rechaza (ya no hay abono sin recibo).
+  /// [kind] = 'boost' | 'swipe' | 'attra'. Devuelve el saldo resultante.
   Future<int> purchaseConsumable({
     required String kind,
     int amount = 1,

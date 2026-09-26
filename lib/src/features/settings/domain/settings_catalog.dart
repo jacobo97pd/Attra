@@ -1,3 +1,4 @@
+import '../../monetization/domain/premium_feature.dart';
 import 'setting_definition.dart';
 
 /// Catalogo declarativo de las 8 secciones de ajustes, derivado del informe
@@ -57,6 +58,20 @@ class SettingsCatalog {
     }
     return null;
   }
+
+  /// Funcion de pago que desbloquea cada ajuste con `requiresSubscription`.
+  ///
+  /// Antes todos colgaban de un unico "¿es Premium?" y Premium ya no se vende:
+  /// el incognito, que es de Plus (lo vende el paywall y lo respeta el
+  /// backend), salia bloqueado a quien lo habia pagado. Un ajuste de pago que
+  /// NO este aqui pide cualquier plan de pago activo (Plus o superior).
+  static const Map<String, PremiumFeature> _requiredFeatures =
+      <String, PremiumFeature>{
+    'privacy.incognito': PremiumFeature.incognitoMode,
+  };
+
+  static PremiumFeature? requiredFeatureFor(SettingDefinition def) =>
+      _requiredFeatures[def.key];
 
   // ---------------------------------------------------------------------------
   // 1. CUENTA
