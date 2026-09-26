@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
 
 /// Opción de un filtro de selección única: valor que se guarda y etiqueta.
@@ -8,17 +9,25 @@ typedef FilterOption = ({String value, String label});
 /// Filtros del feed (estilo Hinge). Básicos (gratis): edad, géneros, foto,
 /// distancia. Avanzados (Plus): qué busca, hábitos, estudios, altura,
 /// etnicidad, religión, verificación. Cada filtro relevante puede marcarse
-/// "No negociable" (excluye duro) o dejarse como preferencia blanda.
+/// "No negociable" (excluye duro) o dejarse como preferencia blanda. Siempre
+/// duros: edad (recíproca), géneros, foto, distancia y verificación.
 class FiltersScreen extends StatefulWidget {
   const FiltersScreen({
     super.key,
     required this.initial,
     required this.isPlus,
     this.canVisualMatch = false,
+    this.radiusKm = FeedFilter.defaultRadiusKm,
   });
 
   final FeedFilters initial;
   final bool isPlus;
+
+  /// Radio que el feed está aplicando ahora (el guardado o el por defecto):
+  /// la distancia arranca ahí. Antes la pantalla enseñaba "Distancia máxima"
+  /// APAGADA —que se lee como "sin límite"— mientras el feed cortaba en el
+  /// radio del onboarding.
+  final int radiusKm;
 
   /// Pro con referencia + consentimiento: muestra "ordenar por parecido".
   final bool canVisualMatch;
@@ -37,11 +46,16 @@ class FiltersScreen extends StatefulWidget {
     required FeedFilters initial,
     required bool isPlus,
     bool canVisualMatch = false,
+    int radiusKm = FeedFilter.defaultRadiusKm,
   }) {
     return Navigator.of(context)
         .push<FeedFilters>(MaterialPageRoute<FeedFilters>(
       builder: (_) => FiltersScreen(
-          initial: initial, isPlus: isPlus, canVisualMatch: canVisualMatch),
+        initial: initial,
+        isPlus: isPlus,
+        canVisualMatch: canVisualMatch,
+        radiusKm: radiusKm,
+      ),
     ));
   }
 
@@ -53,8 +67,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
   late RangeValues _age;
   late Set<String> _genders;
   late bool _onlyWithPhoto;
-  bool _distanceOn = false;
-  double _distance = 100;
+  late double _distance;
   String? _goal;
   String? _smoking;
   String? _drinking;
@@ -114,8 +127,9 @@ class _FiltersScreenState extends State<FiltersScreen> {
     _age = RangeValues(f.minAge.toDouble(), f.maxAge.toDouble());
     _genders = <String>{...f.showGenders};
     _onlyWithPhoto = f.onlyWithPhoto;
-    _distanceOn = f.maxDistanceKm != null;
-    _distance = (f.maxDistanceKm ?? 100).toDouble();
+    _distance = (f.maxDistanceKm ?? widget.radiusKm)
+        .clamp(FeedFilters.distanceFloor, FeedFilters.distanceCeil)
+        .toDouble();
     _height = RangeValues(f.minHeight.toDouble(), f.maxHeight.toDouble());
     _db = <String>{...f.dealbreakers};
     _sortByRef = f.sortByVisualReference;
@@ -138,26 +152,37 @@ class _FiltersScreenState extends State<FiltersScreen> {
   }
 
   void _apply() {
-    final Set<String> db = <String>{..._db};
-    if (_distanceOn) db.add(FeedFilters.kDistance); // distancia siempre dura
+    final FeedFilters initial = widget.initial;
+    final bool plus = widget.isPlus;
+    // Sin Plus los avanzados ni se ven ni se aplican (el feed los quita al
+    // aplicar), pero lo que había guardado SE CONSERVA tal cual: si vuelve a
+    // Plus, vuelven sus filtros. Antes se borraban aquí.
+    final Set<String> db = <String>{
+      ..._db.difference(FeedFilters.plusKeys),
+      ...(plus ? _db : initial.dealbreakers).intersection(FeedFilters.plusKeys),
+      FeedFilters.kDistance, // distancia siempre dura
+    };
+    final int km = _distance.round();
     Navigator.of(context).pop(FeedFilters(
       minAge: _age.start.round(),
       maxAge: _age.end.round(),
       showGenders: _genders,
       onlyWithPhoto: _onlyWithPhoto,
-      maxDistanceKm: _distanceOn ? _distance.round() : null,
-      relationshipGoal: widget.isPlus ? _goal : null,
-      smoking: widget.isPlus ? _smoking : null,
-      drinking: widget.isPlus ? _drinking : null,
-      educationLevel: widget.isPlus ? _education : null,
-      ethnicity: widget.isPlus ? _ethnicity : null,
-      religion: widget.isPlus ? _religion : null,
-      verifiedOnly: widget.isPlus && _verifiedOnly,
-      minHeight:
-          widget.isPlus ? _height.start.round() : FeedFilters.heightFloor,
-      maxHeight: widget.isPlus ? _height.end.round() : FeedFilters.heightCeil,
+      // Sin radio guardado y sin tocar el slider, se sigue sin guardar uno:
+      // el feed usa el de por defecto igual.
+      maxDistanceKm:
+          (initial.maxDistanceKm == null && km == widget.radiusKm) ? null : km,
+      relationshipGoal: plus ? _goal : initial.relationshipGoal,
+      smoking: plus ? _smoking : initial.smoking,
+      drinking: plus ? _drinking : initial.drinking,
+      educationLevel: plus ? _education : initial.educationLevel,
+      ethnicity: plus ? _ethnicity : initial.ethnicity,
+      religion: plus ? _religion : initial.religion,
+      verifiedOnly: plus ? _verifiedOnly : initial.verifiedOnly,
+      minHeight: plus ? _height.start.round() : initial.minHeight,
+      maxHeight: plus ? _height.end.round() : initial.maxHeight,
       dealbreakers: db,
-      sortByVisualReference: widget.isPlus && _sortByRef,
+      sortByVisualReference: plus && _sortByRef,
       promptQuery: widget.canVisualMatch ? _promptController.text.trim() : '',
     ));
   }
@@ -167,8 +192,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
             FeedFilters.ageFloor + 0.0, FeedFilters.ageCeil + 0.0);
         _genders = <String>{};
         _onlyWithPhoto = false;
-        _distanceOn = false;
-        _distance = 100;
+        _distance = FeedFilter.defaultRadiusKm.toDouble();
         _goal =
             _smoking = _drinking = _education = _ethnicity = _religion = null;
         _verifiedOnly = false;
@@ -205,7 +229,14 @@ class _FiltersScreenState extends State<FiltersScreen> {
             labels: RangeLabels('${_age.start.round()}', '${_age.end.round()}'),
             onChanged: (RangeValues v) => setState(() => _age = v),
           ),
-          _dbSwitch(FeedFilters.kAge),
+          // Sin "No negociable": la edad es siempre dura y recíproca (el
+          // mismo rango del onboarding y del directo).
+          Text(
+            'Es recíproco: ves a quien está en tu rango y además te incluye '
+            'en el suyo.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.outline),
+          ),
           const SizedBox(height: 8),
           Text('Mostrarme', style: theme.textTheme.bodyMedium),
           const SizedBox(height: 8),
@@ -228,23 +259,20 @@ class _FiltersScreenState extends State<FiltersScreen> {
             value: _onlyWithPhoto,
             onChanged: (bool v) => setState(() => _onlyWithPhoto = v),
           ),
-          // Distancia.
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Distancia máxima'),
-            subtitle: _distanceOn ? Text('${_distance.round()} km') : null,
-            value: _distanceOn,
-            onChanged: (bool v) => setState(() => _distanceOn = v),
+          // Distancia: siempre hay un radio (el guardado o el por defecto), así
+          // que no hay interruptor. Mismo tope que el onboarding (500 km).
+          Text('Distancia máxima: ${_distance.round()} km',
+              key: const ValueKey<String>('filters-distance-label'),
+              style: theme.textTheme.bodyMedium),
+          Slider(
+            key: const ValueKey<String>('filters-distance-slider'),
+            value: _distance,
+            min: FeedFilters.distanceFloor.toDouble(),
+            max: FeedFilters.distanceCeil.toDouble(),
+            divisions: FeedFilters.distanceCeil - FeedFilters.distanceFloor,
+            label: '${_distance.round()} km',
+            onChanged: (double v) => setState(() => _distance = v),
           ),
-          if (_distanceOn)
-            Slider(
-              value: _distance,
-              min: 1,
-              max: 200,
-              divisions: 199,
-              label: '${_distance.round()} km',
-              onChanged: (double v) => setState(() => _distance = v),
-            ),
           const Divider(height: 32),
 
           // Avanzados (Plus).
@@ -295,13 +323,16 @@ class _FiltersScreenState extends State<FiltersScreen> {
                 FeedFilters.kReligion,
                 (String? v) => setState(() => _religion = v),
                 note: 'Solo cruza con quien consintió usarlo en filtros.'),
+            // Siempre duro, como "Solo perfiles con foto": antes había que
+            // marcar además "No negociable" (apagado por defecto) y, si no,
+            // el filtro activo no dejaba fuera a ningún no verificado.
             SwitchListTile(
+              key: const ValueKey<String>('filters-verified-only'),
               contentPadding: EdgeInsets.zero,
               title: const Text('Solo verificados'),
               value: _verifiedOnly,
               onChanged: (bool v) => setState(() => _verifiedOnly = v),
             ),
-            if (_verifiedOnly) _dbSwitch(FeedFilters.kVerified),
             if (widget.canVisualMatch)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,

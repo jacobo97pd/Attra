@@ -1,5 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
+import '../../feed/domain/feed_exclusions.dart';
 import '../domain/like.dart';
 import '../domain/match_flow_result.dart';
 import '../domain/user_match.dart';
@@ -146,13 +147,13 @@ class MatchService {
   Stream<List<Like>> observeReceivedLikes(String uid) =>
       _repository.observeReceivedLikes(uid);
 
-  /// Uids ya likeados/pasados/matcheados/bloqueados, para excluir del feed.
-  Future<Set<String>> fetchExcludedUids(String uid) =>
+  /// A quién excluir del feed, separado por motivo (likes, pases normales y
+  /// permanentes, matches de cualquier estado, bloqueos). La "segunda vuelta"
+  /// sale de aquí también ([FeedExclusions.secondRoundCandidates]): antes había
+  /// una segunda lectura de dislikes que se RESTABA del conjunto mezclado y se
+  /// llevaba por delante bloqueos y matches.
+  Future<FeedExclusions> fetchExcludedUids(String uid) =>
       _repository.fetchExcludedUids(uid);
-
-  /// Uids que el usuario pasó (para la "segunda vuelta").
-  Future<Set<String>> fetchDislikedUids(String uid) =>
-      _repository.fetchDislikedUids(uid);
 
   Future<Map<String, dynamic>> _call(
       String name, Map<String, dynamic> data) async {

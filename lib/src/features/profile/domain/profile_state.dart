@@ -98,6 +98,8 @@ class SeedProfile {
     this.lat,
     this.lng,
     required this.age,
+    this.preferredAgeMin,
+    this.preferredAgeMax,
     required this.jobTitle,
     required this.company,
     required this.interests,
@@ -178,6 +180,13 @@ class SeedProfile {
   final double? lat;
   final double? lng;
   final int? age;
+
+  /// Rango de edad que busca esta persona (`preferredAgeMin/Max` publicados
+  /// en discovery; en seeds, `preferences.*`). Sirve para la reciprocidad del
+  /// feed: si mi edad no cabe en su rango, no le salgo ni me sale. null = sin
+  /// dato (fichas antiguas, seeds): permisivo.
+  final int? preferredAgeMin;
+  final int? preferredAgeMax;
   final String jobTitle;
   final String company;
   final List<String> interests;
@@ -230,6 +239,12 @@ class SeedProfile {
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
     return null;
+  }
+
+  static int? _ageBound(Object? value) {
+    if (value is! num || !value.isFinite) return null;
+    final int v = value.toInt();
+    return v >= 18 && v <= 120 ? v : null;
   }
 
   static DateTime? _asDate(Object? value) {
@@ -352,6 +367,14 @@ class SeedProfile {
       lat: _coord(geo['lat'], 90),
       lng: _coord(geo['lng'], 180),
       age: age,
+      // Plano (discovery) con fallback a `preferences` (seed_profiles). Un
+      // valor absurdo (fuera de 18-120) cuenta como ausente: la reciprocidad
+      // es permisiva sin dato, y un rango roto no puede vaciar el feed de
+      // nadie.
+      preferredAgeMin: _ageBound(data['preferredAgeMin']) ??
+          _ageBound(_asPrefsMap(data)['preferredAgeMin']),
+      preferredAgeMax: _ageBound(data['preferredAgeMax']) ??
+          _ageBound(_asPrefsMap(data)['preferredAgeMax']),
       jobTitle: pick('jobTitle'),
       company: pick('company'),
       interests: _strList(data['interests']) ??

@@ -2,6 +2,7 @@ import 'package:attra/src/features/auth/data/device_location_source.dart';
 import 'package:attra/src/features/auth/domain/app_user.dart';
 import 'package:attra/src/features/auth/domain/location_refresh_policy.dart';
 import 'package:attra/src/features/chat/data/chat_service.dart';
+import 'package:attra/src/features/feed/domain/feed_exclusions.dart';
 import 'package:attra/src/features/feed/presentation/feed_screen.dart';
 import 'package:attra/src/features/geo/domain/travel_destination_resolver.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
@@ -626,10 +627,8 @@ class _SinCentro implements TravelDestinationResolver {
 
 class _MatchServiceStub implements MatchService {
   @override
-  Future<Set<String>> fetchExcludedUids(String uid) async => const <String>{};
-
-  @override
-  Future<Set<String>> fetchDislikedUids(String uid) async => const <String>{};
+  Future<FeedExclusions> fetchExcludedUids(String uid) async =>
+      const FeedExclusions();
 
   @override
   dynamic noSuchMethod(Invocation invocation) {

@@ -430,6 +430,18 @@ export function buildDiscoveryDoc(
       : [],
   };
   if (countryIso2) out.countryIso2 = countryIso2;
+  // Rango de edad que busca (onboarding / filtro "Edad" del feed). Sin el, el
+  // feed no podia ser reciproco: quien busca 22-30 le salia a quien tiene 58.
+  // Mismo recorte que `loadCriteria` del directo: nunca por debajo de 18 ni
+  // por encima de 80, y min <= max. Sin dato no se publica (el feed es
+  // permisivo cuando falta).
+  const ageMinRaw = asInt(prefs.preferredAgeMin);
+  const ageMaxRaw = asInt(prefs.preferredAgeMax);
+  if (ageMinRaw !== null || ageMaxRaw !== null) {
+    const ageMin = Math.max(18, Math.min(ageMinRaw ?? 18, 80));
+    out.preferredAgeMin = ageMin;
+    out.preferredAgeMax = Math.max(ageMin, Math.min(ageMaxRaw ?? 80, 80));
+  }
   // Viajando se publica el FIN del viaje: el feed de los demas deja de
   // ensenarlo "de viaje" en cuanto pasa, sin esperar al barrido horario.
   const untilMs = traveling ? travelUntilMs(travel) : null;

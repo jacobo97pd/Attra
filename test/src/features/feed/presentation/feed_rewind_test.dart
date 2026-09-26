@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:attra/src/features/anti_ghosting/data/pending_conversations_controller.dart';
+import 'package:attra/src/features/anti_ghosting/domain/anti_ghosting_config.dart';
 import 'package:attra/src/features/chat/data/chat_service.dart';
+import 'package:attra/src/features/chat/domain/chat.dart';
 import 'package:attra/src/features/feed/presentation/feed_screen.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
 import 'package:attra/src/features/match/domain/match_flow_result.dart';
@@ -346,6 +349,182 @@ void main() {
     expect(service.rewinds, isEmpty);
     expect(find.textContaining('Todavía no has dado'), findsOneWidget);
   });
+
+  testWidgets(
+      'tras volver atrás, el siguiente gesto NO cae en alguien ya decidido '
+      '(C44)', (WidgetTester tester) async {
+    // Pro: pasa P, like a M (match: sale del historial), pasa Q, dos marchas
+    // atrás hasta P. Pasar P hacía `_index += 1` y volvía a enseñar a M, con
+    // quien ya hay match (y un like reabría el diálogo).
+    _usePhoneViewport(tester);
+    final _MatchServiceStub service = _MatchServiceStub(matchOnLike: true);
+    await tester.pumpWidget(_FeedHost(
+      matchService: service,
+      profiles: <SeedProfile>[
+        _profile('zoe', 'Zoe'),
+        _profile('ada', 'Ada'),
+        _profile('eva', 'Eva'),
+        _profile('ana', 'Ana'),
+      ],
+      canRewind: true,
+      rewindUnlimited: true,
+    ));
+    await tester.pumpAndSettle();
+
+    final String p = _quien(tester);
+    await _pasar(tester);
+    final String m = _quien(tester);
+    await _dar(tester);
+    await tester.tap(find.text('Seguir viendo'));
+    await tester.pumpAndSettle();
+    final String q = _quien(tester);
+    await _pasar(tester);
+
+    await tester.tap(boton);
+    await tester.pumpAndSettle();
+    expect(_quien(tester), q);
+    await tester.tap(boton);
+    await tester.pumpAndSettle();
+    expect(_quien(tester), p);
+
+    await _pasar(tester);
+    expect(_quien(tester), isNot(m),
+        reason: 'con M ya hay match: no puede volver a salir');
+    expect(_quien(tester), q, reason: 'la siguiente SIN decidir es Q');
+  });
+
+  testWidgets(
+      'al tope diario de likes la carta NO se pierde: vuelve, sin gesto que '
+      'deshacer, y se ofrece el plan una vez (D08)',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    final _MatchServiceStub service =
+        _MatchServiceStub(likeOutcome: MatchOutcome.limitReached);
+    int paywalls = 0;
+    await tester.pumpWidget(_FeedHost(
+      matchService: service,
+      profiles: <SeedProfile>[_profile('zoe', 'Zoe'), _profile('ada', 'Ada')],
+      canRewind: true,
+      onOpenUpgrade: () => paywalls++,
+    ));
+    await tester.pumpAndSettle();
+    final String primera = _quien(tester);
+
+    await _dar(tester);
+    expect(service.liked, <String>[primera.toLowerCase()]);
+    expect(_quien(tester), primera,
+        reason: 'el like no se escribió: la persona sigue sin decidir');
+    expect(find.textContaining('límite de likes'), findsOneWidget);
+    expect(paywalls, 1);
+
+    // Otro intento: sigue ahí y el paywall no salta en cada toque.
+    await _dar(tester);
+    expect(_quien(tester), primera);
+    expect(paywalls, 1);
+
+    // Y no hay un "like" fantasma que deshacer.
+    await tester.tap(boton);
+    await tester.pumpAndSettle();
+    expect(service.rewinds, isEmpty);
+    expect(find.textContaining('Todavía no has dado'), findsOneWidget);
+  });
+
+  testWidgets(
+      'responder a un prompt avanza la carta y se puede deshacer, como la foto '
+      '(C30)', (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    final _MatchServiceStub service = _MatchServiceStub();
+    await tester.pumpWidget(_FeedHost(
+      matchService: service,
+      profiles: <SeedProfile>[
+        _profile('zoe', 'Zoe', withPrompt: true),
+        _profile('ada', 'Ada', withPrompt: true),
+      ],
+      canRewind: true,
+    ));
+    await tester.pumpAndSettle();
+    final String primera = _quien(tester);
+
+    await _responderPrompt(tester, primera);
+    await tester.tap(find.text('Enviar Like'));
+    await tester.pumpAndSettle();
+
+    expect(service.liked, <String>[primera.toLowerCase()]);
+    expect(_quien(tester), isNot(primera),
+        reason: 'antes la carta se quedaba delante y parecía que no había ido');
+
+    await tester.tap(boton);
+    await tester.pumpAndSettle();
+    expect(service.rewinds, <String>['${primera.toLowerCase()}:like']);
+    expect(_quien(tester), primera);
+  });
+
+  testWidgets(
+      'responder a un prompt pasa por el límite de conversaciones pendientes '
+      '(C30)', (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    final _MatchServiceStub service = _MatchServiceStub();
+    final _PendientesFijos pendientes = _PendientesFijos(9);
+    addTearDown(pendientes.dispose);
+    await tester.pumpWidget(_FeedHost(
+      matchService: service,
+      profiles: <SeedProfile>[
+        _profile('zoe', 'Zoe', withPrompt: true),
+        _profile('ada', 'Ada', withPrompt: true),
+      ],
+      antiGhostingConfig: const AntiGhostingConfig(
+        pendingLimitEnabled: true,
+        pendingLimitFree: 3,
+      ),
+      pendingController: pendientes,
+    ));
+    await tester.pumpAndSettle();
+    final String primera = _quien(tester);
+
+    await _responderPrompt(tester, primera);
+    await tester.tap(find.text('Enviar Like'));
+    await tester.pumpAndSettle();
+
+    // Sale el aviso de pendientes y NO se envía nada.
+    expect(find.text('Ahora no'), findsOneWidget);
+    await tester.tap(find.text('Ahora no'));
+    await tester.pumpAndSettle();
+    expect(service.liked, isEmpty,
+        reason: 'por los prompts se saltaba el bloqueo suave anti-ghosting');
+    expect(_quien(tester), primera);
+  });
+}
+
+/// Abre la hoja de respuesta al prompt de [nombre] (baja por la ficha hasta
+/// el botón).
+Future<void> _responderPrompt(WidgetTester tester, String nombre) async {
+  final Finder responder = find
+      .byKey(ValueKey<String>('feed-prompt-respond-p_${nombre.toLowerCase()}'));
+  await tester.ensureVisible(responder);
+  await tester.pumpAndSettle();
+  await tester.tap(responder);
+  await tester.pumpAndSettle();
+}
+
+/// Conversaciones pendientes fijas (sin chats de verdad).
+class _PendientesFijos extends PendingConversationsController {
+  _PendientesFijos(this._n) : super(chatService: _ChatsVacios(), uid: 'yo');
+
+  final int _n;
+
+  @override
+  int pendingCount(int maxAgeHours) => _n;
+}
+
+class _ChatsVacios implements ChatService {
+  @override
+  Stream<List<Chat>> observeChats(String uid) =>
+      Stream<List<Chat>>.value(const <Chat>[]);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    throw UnsupportedError('Llamada inesperada: ${invocation.memberName}');
+  }
 }
 
 /// Nombre de quien está en la tarjeta (la ficha lo pinta como «Zoe, 30»). Vacío
@@ -390,6 +569,8 @@ class _FeedHost extends StatelessWidget {
     this.canRewind = false,
     this.rewindUnlimited = false,
     this.onOpenUpgrade,
+    this.antiGhostingConfig,
+    this.pendingController,
   });
 
   final List<SeedProfile> profiles;
@@ -397,6 +578,8 @@ class _FeedHost extends StatelessWidget {
   final bool canRewind;
   final bool rewindUnlimited;
   final VoidCallback? onOpenUpgrade;
+  final AntiGhostingConfig? antiGhostingConfig;
+  final PendingConversationsController? pendingController;
 
   @override
   Widget build(BuildContext context) {
@@ -411,14 +594,22 @@ class _FeedHost extends StatelessWidget {
           canRewind: canRewind,
           rewindUnlimited: rewindUnlimited,
           onOpenUpgrade: onOpenUpgrade,
+          antiGhostingConfig: antiGhostingConfig,
+          pendingController: pendingController,
         ),
       ),
     );
   }
 }
 
-SeedProfile _profile(String id, String name) {
+SeedProfile _profile(String id, String name, {bool withPrompt = false}) {
   return SeedProfile(
+    profilePrompts: withPrompt
+        ? <PublicPrompt>[
+            PublicPrompt(
+                id: 'p_$id', question: '¿Plan ideal?', answer: 'Playa y libro'),
+          ]
+        : const <PublicPrompt>[],
     id: id,
     displayName: name,
     city: 'Madrid',
@@ -445,9 +636,13 @@ class _MatchServiceStub implements MatchService {
     this.matchOnLike = false,
     this.rewound = true,
     this.likeGate,
+    this.likeOutcome,
   });
 
   final bool matchOnLike;
+
+  /// Respuesta fija del backend a un like (p.ej. `limitReached`).
+  final MatchOutcome? likeOutcome;
 
   /// Lo que contesta el backend: `false` = "no había nada que deshacer".
   final bool rewound;
@@ -480,6 +675,8 @@ class _MatchServiceStub implements MatchService {
     liked.add(toUid);
     final Completer<MatchFlowResult>? gate = likeGate;
     if (gate != null) return gate.future;
+    final MatchOutcome? fixed = likeOutcome;
+    if (fixed != null) return MatchFlowResult(outcome: fixed);
     return matchOnLike
         ? const MatchFlowResult(
             outcome: MatchOutcome.matched,
