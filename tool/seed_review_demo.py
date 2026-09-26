@@ -42,6 +42,9 @@ propias), siembra solo el contenido y no pises el perfil:
 
 Usa ids deterministas y se puede re-ejecutar; al hacerlo restablece los likes
 y los chats demo. No borra bloqueos, reportes ni mensajes de usuarios.
+Si una ronda anterior dejo match (activo o deshecho) con un mock de LIKED_ME,
+se para antes de escribir y da el comando de tool/reset_mock_feed.py que deja
+esos pares limpios: con ese match el like re-sembrado ya no daria match.
 Las escrituras se agrupan en un unico commit atomico y preservan los campos
 no incluidos, especialmente otros ajustes y consentimientos existentes.
 IMPORTANTE: los ids de like/match/chat replican los del backend
@@ -247,6 +250,50 @@ def require_document(path):
         ) from error
 
 
+def find_document(path):
+    """Como require_document, pero un doc ausente es un resultado (None)."""
+    req = urllib.request.Request(
+        f"{BASE}/{urllib.parse.quote(path, safe='/')}", headers=HDR
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.load(response).get("fields", {})
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+
+
+def check_liked_me_pairs():
+    """Un like recibido solo sirve si el par NO tiene ya un match de antes.
+
+    QUE FALLABA: el backend trata cualquier match que no este 'active'
+    (unmatch, cierre con elegancia) como terminal y contesta 'blocked' a un
+    like nuevo. Si en una ronda anterior el revisor respondio a uno de estos
+    likes y luego deshizo el match, al re-sembrar la tarjeta volvia a salir en
+    "Te han dado like" (el like vuelve a 'active'), pero "Responder" mostraba
+    "No puedes interactuar con este perfil" en el flujo estrella de la demo.
+    Con el match aun 'active' la tarjeta ni siquiera sale. Este script no
+    borra matches ni mensajes, asi que se para ANTES de escribir nada y dice
+    como dejar esos pares limpios.
+    """
+    stale = {}
+    for uid in LIKED_ME:
+        fields = find_document(f"matches/{pair_id(DEMO_UID, uid)}")
+        if fields is not None:
+            stale[uid] = fields.get("status", {}).get("stringValue", "active")
+    if stale:
+        found = ", ".join(f"{uid} ({status})" for uid, status in stale.items())
+        raise SystemExit(
+            "La cuenta demo ya tiene match con mocks que deben llegar como "
+            f"like recibido: {found}. Limpia esos pares con\n"
+            f"  python tool/reset_mock_feed.py --uid {DEMO_UID} "
+            f"--only {' '.join(stale)}\n"
+            "(borra likes, descartes, bloqueos, matches y chats de esos pares) "
+            "y vuelve a ejecutar este script."
+        )
+
+
 def check_prerequisites(keep_profile, peer_uid=None):
     fields = require_document(f"users/{DEMO_UID}")
     if keep_profile and not all(
@@ -266,6 +313,7 @@ def check_prerequisites(keep_profile, peer_uid=None):
                 f"Perfil semilla incompleto: {uid}. Ejecuta "
                 "python tool/seed_mock_profiles.py."
             )
+    check_liked_me_pairs()
     if peer_uid:
         require_document(f"users/{peer_uid}")
 

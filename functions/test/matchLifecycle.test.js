@@ -11,13 +11,18 @@
  *  - C40/C43: sendAttra leia el tier en crudo y un Plus caducado seguia
  *    comentando.
  *  - C39: "Le gustas a alguien" tambien para likes que ya nacian 'matched'.
+ *  - Revision: tras un unmatch (o bloqueo, o cuenta borrada) la marcha atras
+ *    dejaba "deshacer" el like que hizo match: borraba el doc y devolvia el
+ *    like del dia y el Attra Swipe de pago.
  */
 const { test, afterEach, mock } = require("node:test");
 const assert = require("node:assert/strict");
 const { installFakeFirestore } = require("./fakeFirestore.js");
 const { sendLike } = require("../lib/likes.js");
 const { sendAttra, attraCommentFields } = require("../lib/attras.js");
-const { unmatch } = require("../lib/safety.js");
+const { unmatch, applyBlock } = require("../lib/safety.js");
+const { rewindFeedAction } = require("../lib/rewind.js");
+const { cleanupDeletedAccount } = require("../lib/accountCleanup.js");
 const { closeConversationGracefully } = require("../lib/chat.js");
 const { replyToStory } = require("../lib/stories.js");
 const { onLikeCreated } = require("../lib/notifications.js");
@@ -228,4 +233,150 @@ test("C47: a like that lands right after a block does not reappear in the bell",
   });
   await onLikeCreated.run(likeEvent({ fromUid: B, toUid: A, status: "active", type: "attra" }));
   assert.equal(inbox(docs, A).length, 0);
+});
+
+// Marcha atras sobre un par cerrado ------------------------------------------
+
+const USAGE_DAY = "20260926";
+const usagePath = `users/${A}/usage/likes_${USAGE_DAY}`;
+
+/// A es Plus y su like a B se pago con un Attra Swipe y conto en el cupo de
+/// hoy: lo que un rewind indebido devolveria.
+function paidLike(extra = {}) {
+  return {
+    [`userEntitlements/${A}`]: { tier: "plus", expiresAt: new Date(Date.now() + DAY) },
+    [usagePath]: { count: 5 },
+    ...extra,
+  };
+}
+
+const rewind = (uid, targetUid, action) =>
+  rewindFeedAction.run({ auth: { uid }, data: { targetUid, action } });
+
+test("C07/rewind: after an unmatch, the like that made the match cannot be undone nor refunded", async () => {
+  const { docs, writes } = installFakeFirestore(
+    mock,
+    matchedPair(
+      paidLike({
+        [`likes/${A}_${B}`]: {
+          status: "matched",
+          fromUid: A,
+          toUid: B,
+          type: "like",
+          consumedSwipe: true,
+          usageKey: USAGE_DAY,
+          commentText: "me encanta tu foto",
+        },
+      })
+    )
+  );
+  await unmatch.run({ auth: { uid: A }, data: { matchId: PAIR } });
+  assert.equal(docs.get(`likes/${A}_${B}`).cancelReason, "unmatched");
+  const before = writes.length;
+
+  await assert.rejects(rewind(A, B, "like"), { code: "failed-precondition" });
+
+  // Ni se borra el like (ni su comentario) ni se devuelve nada.
+  assert.equal(writes.length, before);
+  assert.equal(docs.get(`likes/${A}_${B}`).commentText, "me encanta tu foto");
+  assert.equal(docs.get(usagePath).count, 5);
+  assert.equal(docs.get(`users/${A}`).wallet, undefined);
+});
+
+test("C07/rewind: a block or an account deletion also closes the rewind (like and pass)", async () => {
+  // B bloquea a A despues de que A le diera like y le pasara: el pase no puede
+  // "deshacerse" para devolverle a A la tarjeta de quien le bloqueo.
+  const { docs, writes } = installFakeFirestore(
+    mock,
+    paidLike({
+      [`users/${A}`]: {},
+      [`users/${B}`]: {},
+      [`likes/${A}_${B}`]: {
+        status: "active",
+        fromUid: A,
+        toUid: B,
+        type: "like",
+        consumedSwipe: true,
+        usageKey: USAGE_DAY,
+      },
+      [`dislikes/${A}_${B}`]: { fromUid: A, toUid: B },
+    })
+  );
+  await applyBlock(B, A);
+  const before = writes.length;
+  await assert.rejects(rewind(A, B, "like"), { code: "failed-precondition" });
+  await assert.rejects(rewind(A, B, "pass"), {
+    code: "failed-precondition",
+    // Mismo texto neutro: no delata el bloqueo.
+    message: "Este gesto ya no se puede deshacer.",
+  });
+  assert.equal(writes.length, before);
+  assert.equal(docs.get(usagePath).count, 5);
+  mock.restoreAll();
+
+  // Cuenta borrada con match: el match queda 'deleted' y sigue siendo terminal.
+  const deleted = installFakeFirestore(
+    mock,
+    matchedPair(
+      paidLike({
+        [`likes/${A}_${B}`]: {
+          status: "matched",
+          fromUid: A,
+          toUid: B,
+          type: "like",
+          consumedSwipe: true,
+          usageKey: USAGE_DAY,
+        },
+      })
+    )
+  );
+  await cleanupDeletedAccount(B);
+  assert.equal(deleted.docs.get(`matches/${PAIR}`).status, "deleted");
+  await assert.rejects(rewind(A, B, "like"), { code: "failed-precondition" });
+  assert.ok(deleted.docs.has(`likes/${A}_${B}`));
+  assert.equal(deleted.docs.get(usagePath).count, 5);
+});
+
+test("C07/rewind: a like cancelled by an account deletion without a match stays put", async () => {
+  const { docs } = installFakeFirestore(
+    mock,
+    paidLike({
+      [`likes/${A}_${B}`]: {
+        status: "active",
+        fromUid: A,
+        toUid: B,
+        type: "like",
+        consumedSwipe: true,
+        usageKey: USAGE_DAY,
+      },
+    })
+  );
+  await cleanupDeletedAccount(B);
+  assert.equal(docs.get(`likes/${A}_${B}`).cancelReason, "account_deleted");
+  assert.equal(docs.has(`matches/${PAIR}`), false);
+
+  await assert.rejects(rewind(A, B, "like"), { code: "failed-precondition" });
+  assert.ok(docs.has(`likes/${A}_${B}`));
+  assert.equal(docs.get(usagePath).count, 5);
+});
+
+test("C07/rewind: a plain like with no match is still undone and refunded", async () => {
+  const { docs, writes } = installFakeFirestore(
+    mock,
+    paidLike({
+      [`users/${A}`]: {},
+      [`likes/${A}_${B}`]: {
+        status: "active",
+        fromUid: A,
+        toUid: B,
+        type: "like",
+        consumedSwipe: true,
+        usageKey: USAGE_DAY,
+      },
+    })
+  );
+  assert.deepEqual(await rewind(A, B, "like"), { ok: true, rewound: true });
+  assert.equal(docs.has(`likes/${A}_${B}`), false);
+  assert.equal(docs.get(usagePath).count, 4);
+  assert.ok(writes.some((w) => w.path === `users/${A}` && w.value.wallet));
 });
