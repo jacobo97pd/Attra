@@ -59,6 +59,7 @@ import '../../spark/data/spark_service.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../profile/domain/profile_trait.dart';
 import '../../onboarding/domain/interested_in.dart';
+import '../../profile/presentation/interested_in_gate.dart';
 import '../../profile/presentation/interested_in_sheet.dart';
 import '../../settings/data/settings_repository.dart';
 import '../../settings/presentation/settings_controller.dart';
@@ -757,8 +758,10 @@ class _HomeShellState extends State<HomeShell> {
           : _openGroups,
     );
 
+    // Sin "Me interesan" en citas, Descubrir lo pide en vez de cargar el feed.
+    final Widget? interestGate = _interestedInGate(uid);
     final List<Widget> tabs = <Widget>[
-      feedTab,
+      interestGate ?? feedTab,
       likesTab,
       chatsTab,
       profileTab,
@@ -809,6 +812,7 @@ class _HomeShellState extends State<HomeShell> {
         // tour (señala pestañas de esta barra) ni con lector de pantalla, que
         // navega por la barra y no tendría gesto de "subir" para recuperarla.
         hidden: _destination == _HomeDestination.discover &&
+            interestGate == null &&
             _feedChromeHidden &&
             _tourStep < 0 &&
             !MediaQuery.accessibleNavigationOf(context),
@@ -890,10 +894,55 @@ class _HomeShellState extends State<HomeShell> {
               : 'Modo actualizado')));
     } catch (_) {
       if (mounted) {
+        // "Me interesan" se guarda antes que el modo: si lo que falló fue el
+        // modo, la preferencia nueva ya está escrita y el feed debe usarla.
+        setState(() => _feedReloadToken++);
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('No se pudo cambiar el modo.')));
       }
     }
+  }
+
+  /// Arreglo de C11 para quien YA estaba en citas/ambas con "Me interesan"
+  /// vacío: nada volvía a pedírselo y seguía viendo (y saliéndole a) todos los
+  /// géneros. Mientras falte, Descubrir enseña [InterestedInGate] en vez del
+  /// feed, que así no llega a cargarse. No es un modal: las demás pestañas
+  /// siguen a mano. Null = no hace falta (hay interés, no hay citas o es bot).
+  ///
+  /// Se guarda por la misma vía que el editor del perfil (onSetTrait: campos
+  /// que exigen las reglas, re-sync de discovery y recarga del usuario); con
+  /// el usuario recargado esto devuelve null y vuelve el feed.
+  Widget? _interestedInGate(String uid) {
+    final AppUser? user = widget.user;
+    if (user == null ||
+        !InterestedIn.promptBeforeFeed(
+          mode: user.intentMode,
+          current: user.interestedIn,
+          isBot: user.isBot,
+        )) {
+      return null;
+    }
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: AttraAppShellBackground.contentColorOf(context),
+        body: InterestedInGate(
+          key: const ValueKey<String>('interested-in-gate'),
+          actions: <Widget>[
+            if (widget.notificationService != null && uid.isNotEmpty)
+              NotificationBell(
+                service: widget.notificationService!,
+                uid: uid,
+                onTap: _openNotifications,
+              ),
+          ],
+          onSave: (List<String> values) =>
+              widget.onSetTrait(InterestedIn.trait, values),
+          onChangeMode: widget.onSetIntentMode == null ? null : _openFriendMode,
+        ),
+      ),
+    );
   }
 
   /// Config remota de SafeDate (todo OFF por defecto; fallback seguro).

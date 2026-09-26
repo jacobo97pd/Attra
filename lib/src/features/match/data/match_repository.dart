@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../domain/like.dart';
 import '../domain/received_like_priority.dart';
@@ -84,14 +85,8 @@ class MatchRepository {
   /// `active`; [UserMatch.isOpen] quita además los cerrados con elegancia que
   /// quedaron en `active` con el recorrido archivado.
   Stream<List<UserMatch>> observeMatches(String uid) {
-    return _matches
-        .where('users', arrayContains: uid)
-        .where('status', isEqualTo: 'active')
-        .snapshots()
-        .map((QuerySnapshot<Map<String, dynamic>> snap) {
-      final List<UserMatch> items = snap.docs
-          .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
-              UserMatch.fromMap(d.id, d.data()))
+    return activeMatchesSource(uid).map((List<UserMatch> all) {
+      final List<UserMatch> items = all
           .where((UserMatch m) => m.isOpen)
           .toList(growable: true)
         ..sort((UserMatch a, UserMatch b) =>
@@ -99,6 +94,18 @@ class MatchRepository {
       return items;
     });
   }
+
+  /// La consulta de [observeMatches] (`active`), sin el filtro de cliente.
+  /// Separada para probar ese filtro sin Firestore.
+  @visibleForTesting
+  Stream<List<UserMatch>> activeMatchesSource(String uid) => _matches
+      .where('users', arrayContains: uid)
+      .where('status', isEqualTo: 'active')
+      .snapshots()
+      .map((QuerySnapshot<Map<String, dynamic>> snap) => snap.docs
+          .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+              UserMatch.fromMap(d.id, d.data()))
+          .toList(growable: false));
 
   Stream<UserMatch?> observeMatchById(String matchId) {
     return _matches.doc(matchId).snapshots().map(

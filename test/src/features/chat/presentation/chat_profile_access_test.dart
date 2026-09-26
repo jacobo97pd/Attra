@@ -5,6 +5,7 @@ import 'package:attra/src/features/chat/domain/chat.dart';
 import 'package:attra/src/features/chat/domain/chat_message.dart';
 import 'package:attra/src/features/chat/presentation/chat_detail_screen.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
+import 'package:attra/src/features/match/domain/user_match.dart';
 import 'package:attra/src/features/profile/domain/profile_summary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,13 +33,30 @@ class _FakeChatService implements ChatService {
 }
 
 class _FakeMatchService implements MatchService {
+  _FakeMatchService(this._match);
+
+  final Stream<UserMatch?> Function() _match;
+
+  @override
+  Stream<UserMatch?> observeMatchById(String matchId) => _match();
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Chat _chat(String status) => Chat.fromMap('me_bea', <String, dynamic>{
+Chat _chat(String status, {String? closedBy}) =>
+    Chat.fromMap('me_bea', <String, dynamic>{
       'matchId': 'me_bea',
       'users': <String>['me', 'bea'],
+      'status': status,
+      if (closedBy != null) 'closedByUserId': closedBy,
+    });
+
+UserMatch _match(String status) =>
+    UserMatch.fromMap('me_bea', <String, dynamic>{
+      'users': <String>['me', 'bea'],
+      'userA': 'bea',
+      'userB': 'me',
       'status': status,
     });
 
@@ -47,8 +65,9 @@ const ProfileSummary _bea =
 
 Future<List<String>> _pump(
   WidgetTester tester,
-  Stream<Chat?> Function() chat,
-) async {
+  Stream<Chat?> Function() chat, {
+  Stream<UserMatch?> Function()? match,
+}) async {
   // La grabadora de notas de voz se crea con la pantalla: sin plugin en los
   // tests, su canal se contesta en vacío.
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -66,7 +85,8 @@ Future<List<String>> _pump(
       currentUid: 'me',
       other: _bea,
       chatService: _FakeChatService(chat),
-      matchService: _FakeMatchService(),
+      matchService: _FakeMatchService(
+          match ?? () => Stream<UserMatch?>.value(_match('active'))),
       loadProfile: (String uid) async {
         loads.add(uid);
         return null;
@@ -135,5 +155,46 @@ void main() {
 
     expect(loads, isEmpty);
     expect(find.text('Este perfil ya no está disponible.'), findsOneWidget);
+  });
+
+  group('cierre con elegancia y después "Deshacer match"', () {
+    // El chat queda `closed` y firmado, igual que un archivo: por el chat solo
+    // no se distingue. Lo sabe el match.
+    Stream<Chat?> archivo() =>
+        Stream<Chat?>.value(_chat('closed', closedBy: 'bea'));
+
+    testWidgets('match deshecho: la cabecera ya no lleva al perfil',
+        (WidgetTester tester) async {
+      final List<String> loads = await _pump(tester, archivo,
+          match: () => Stream<UserMatch?>.value(_match('unmatched')));
+
+      await tester.tap(_header);
+      await tester.pump();
+      await tester.pump();
+      expect(loads, isEmpty);
+      expect(find.text('Este perfil ya no está disponible.'), findsOneWidget);
+    });
+
+    testWidgets('solo cerrado con elegancia: el archivo sí lo abre',
+        (WidgetTester tester) async {
+      final List<String> loads = await _pump(tester, archivo,
+          match: () => Stream<UserMatch?>.value(_match('closed')));
+
+      await tester.tap(_header);
+      await tester.pump();
+      await tester.pump();
+      expect(loads, <String>['bea']);
+    });
+
+    testWidgets('si no se puede leer el match, no se enseña',
+        (WidgetTester tester) async {
+      final List<String> loads = await _pump(tester, archivo,
+          match: () => Stream<UserMatch?>.error(StateError('sin red')));
+
+      await tester.tap(_header);
+      await tester.pump();
+      await tester.pump();
+      expect(loads, isEmpty);
+    });
   });
 }

@@ -27,6 +27,7 @@ import '../../profile/presentation/profile_view_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../match/domain/date_builder.dart';
 import '../../match/domain/match_journey.dart';
+import '../../match/domain/user_match.dart';
 import '../../match/presentation/date_builder_sheet.dart';
 import '../../match/presentation/icebreaker_sheet.dart';
 import '../../match/presentation/match_journey_card.dart';
@@ -1002,6 +1003,23 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       if (!mounted) return;
     }
     if (!(chat?.allowsProfileAccess ?? false)) {
+      _snack('Este perfil ya no está disponible.');
+      return;
+    }
+    // El chat no basta: tras "Cerrar con elegancia", "Deshacer match" deja el
+    // chat `closed` y firmado, igual que un archivo; solo el match sabe que el
+    // par terminó. Sin doc de match manda el chat; si no se puede leer, no.
+    UserMatch? match;
+    bool matchUnknown = false;
+    try {
+      match = await widget.matchService
+          .observeMatchById(chat?.matchId ?? widget.chatId)
+          .first;
+    } catch (_) {
+      matchUnknown = true;
+    }
+    if (!mounted) return;
+    if (matchUnknown || (match?.isUndone ?? false)) {
       _snack('Este perfil ya no está disponible.');
       return;
     }

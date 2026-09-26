@@ -25,6 +25,52 @@ class BlockedNotificationFilter {
 
   static const BlockedNotificationFilter none = BlockedNotificationFilter();
 
+  /// Desde `blocks` con `blockerUid == yo`: a quién he bloqueado yo y el par.
+  factory BlockedNotificationFilter.fromBlocks(
+      Iterable<Map<String, dynamic>> docs) {
+    final Set<String> uids = <String>{};
+    final Set<String> pairs = <String>{};
+    for (final Map<String, dynamic> d in docs) {
+      final Object? blocked = d['blockedUid'];
+      final Object? matchId = d['matchId'];
+      if (blocked is String && blocked.isNotEmpty) uids.add(blocked);
+      if (matchId is String && matchId.isNotEmpty) pairs.add(matchId);
+    }
+    return BlockedNotificationFilter(blockedUids: uids, blockedPairIds: pairs);
+  }
+
+  /// Desde `matches` en `blocked` donde estoy ([docsById]: id del par → doc).
+  ///
+  /// Es la fuente que cubre también a quien ME bloqueó (su documento de
+  /// `blocks` no se puede leer desde este lado), y aunque no hubiera match:
+  /// applyBlock escribe `users` en matches/{par} en todo bloqueo. Antes se
+  /// miraban los chats, pero el chat de un par sin match se crea sin `users`,
+  /// así que el Attra de quien te bloqueaba antes de hacer match seguía en la
+  /// bandeja con su nombre.
+  factory BlockedNotificationFilter.fromBlockedPairs(
+    String uid,
+    Map<String, Map<String, dynamic>> docsById,
+  ) {
+    final Set<String> uids = <String>{};
+    final Set<String> pairs = <String>{};
+    docsById.forEach((String id, Map<String, dynamic> data) {
+      if (id.isNotEmpty) pairs.add(id);
+      final Object? users = data['users'];
+      if (users is! List) return;
+      for (final Object? u in users) {
+        if (u is String && u.isNotEmpty && u != uid) uids.add(u);
+      }
+    });
+    return BlockedNotificationFilter(blockedUids: uids, blockedPairIds: pairs);
+  }
+
+  /// Lo bloqueado por cualquiera de las dos fuentes.
+  BlockedNotificationFilter union(BlockedNotificationFilter other) =>
+      BlockedNotificationFilter(
+        blockedUids: <String>{...blockedUids, ...other.blockedUids},
+        blockedPairIds: <String>{...blockedPairIds, ...other.blockedPairIds},
+      );
+
   bool hides(AppNotification n) {
     String field(String key) => (n.data[key] ?? '').toString().trim();
     final String fromUid = field('fromUid');

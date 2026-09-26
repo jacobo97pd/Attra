@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/async/shared_latest_stream.dart';
 import '../domain/app_notification.dart';
 import '../domain/blocked_notification_filter.dart';
 
@@ -16,35 +17,46 @@ class NotificationService {
 
   final FirebaseFirestore _db;
 
+  /// Un stream por uid (ver [shareLatest]). La campana y la bandeja los piden
+  /// dentro de build(): sin esto, cada repintado del HomeShell cerraba y
+  /// reabría TRES escuchas (avisos, bloqueos propios y pares bloqueados).
+  final Map<String, Stream<List<AppNotification>>> _watchStreams =
+      <String, Stream<List<AppNotification>>>{};
+  final Map<String, Stream<int>> _unreadStreams = <String, Stream<int>>{};
+
+  /// Lo bloqueado, compartido por la bandeja y la campana: con las dos
+  /// abiertas sigue habiendo UNA escucha de cada fuente de bloqueo.
+  final Map<String, Stream<BlockedNotificationFilter>> _blockedStreams =
+      <String, Stream<BlockedNotificationFilter>>{};
+
   CollectionReference<Map<String, dynamic>> _items(String uid) =>
       _db.collection('notifications').doc(uid).collection('items');
 
   /// Últimas notificaciones (desc por fecha), sin las de gente bloqueada.
+  /// Devuelve siempre la misma instancia para el mismo uid y [limit].
   Stream<List<AppNotification>> watch(String uid, {int limit = 50}) {
     if (uid.isEmpty) return const Stream<List<AppNotification>>.empty();
-    return _withoutBlocked(
-      uid,
-      _items(uid)
-          .orderBy('createdAt', descending: true)
-          .limit(limit)
-          .snapshots()
-          .map(_parse),
+    return _watchStreams.putIfAbsent(
+      '$uid#$limit',
+      () => shareLatest(() => _withoutBlocked(
+            itemsSource(uid, limit: limit),
+            _blocked(uid),
+          )),
     );
   }
 
   /// Nº de no leídas (para el badge de la campana). Cuenta lo mismo que enseña
   /// la bandeja: si el badge contara las de un bloqueado, marcaría novedades
-  /// que luego no aparecen.
+  /// que luego no aparecen. Misma instancia para el mismo uid.
   Stream<int> watchUnreadCount(String uid) {
     if (uid.isEmpty) return Stream<int>.value(0);
-    return _withoutBlocked(
+    return _unreadStreams.putIfAbsent(
       uid,
-      _items(uid)
-          .where('read', isEqualTo: false)
-          .limit(50)
-          .snapshots()
-          .map(_parse),
-    ).map((List<AppNotification> items) => items.length);
+      () => shareLatest(() => _withoutBlocked(
+            itemsSource(uid, limit: 50, unreadOnly: true),
+            _blocked(uid),
+          ).map((List<AppNotification> items) => items.length)),
+    );
   }
 
   static List<AppNotification> _parse(
@@ -54,40 +66,124 @@ class NotificationService {
               AppNotification.fromMap(d.id, d.data()))
           .toList(growable: false);
 
-  /// Filtra [items] con lo que el cliente SABE que está bloqueado:
-  /// * a quién he bloqueado yo (`blocks` con `blockerUid == uid`), y
-  /// * los chats en `blocked`, que cubren también a quien ME bloqueó a mí (su
-  ///   documento de bloqueo no se puede leer desde este lado).
-  ///
-  /// Espera a tener las dos listas antes de emitir para no enseñar un instante
-  /// lo que se va a esconder. Si alguna falla, se sigue sin ella: el backend
-  /// ya borra estas notificaciones y la bandeja no debe romperse por esto.
-  Stream<List<AppNotification>> _withoutBlocked(
-    String uid,
+  /// Avisos del buzón. [unreadOnly] = solo los no leídos (badge); si no, los
+  /// últimos por fecha (bandeja). Separado para probar el filtro sin Firestore.
+  @visibleForTesting
+  Stream<List<AppNotification>> itemsSource(
+    String uid, {
+    required int limit,
+    bool unreadOnly = false,
+  }) {
+    final Query<Map<String, dynamic>> query = unreadOnly
+        ? _items(uid).where('read', isEqualTo: false)
+        : _items(uid).orderBy('createdAt', descending: true);
+    return query.limit(limit).snapshots().map(_parse);
+  }
+
+  /// A quién he bloqueado yo (`blocks` con `blockerUid == uid`).
+  @visibleForTesting
+  Stream<BlockedNotificationFilter> blockedByMeSource(String uid) => _db
+      .collection('blocks')
+      .where('blockerUid', isEqualTo: uid)
+      .snapshots()
+      .map((QuerySnapshot<Map<String, dynamic>> snap) =>
+          BlockedNotificationFilter.fromBlocks(snap.docs.map(
+              (QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data())));
+
+  /// Pares bloqueados en cualquier sentido, con o sin match previo: `matches`
+  /// en `blocked` donde estoy (ver [BlockedNotificationFilter.fromBlockedPairs]).
+  /// Misma forma de consulta que observeMatches: no necesita índice compuesto.
+  @visibleForTesting
+  Stream<BlockedNotificationFilter> blockedPairsSource(String uid) => _db
+      .collection('matches')
+      .where('users', arrayContains: uid)
+      .where('status', isEqualTo: 'blocked')
+      .snapshots()
+      .map((QuerySnapshot<Map<String, dynamic>> snap) =>
+          BlockedNotificationFilter.fromBlockedPairs(
+              uid, <String, Map<String, dynamic>>{
+            for (final QueryDocumentSnapshot<Map<String, dynamic>> d
+                in snap.docs)
+              d.id: d.data(),
+          }));
+
+  Stream<BlockedNotificationFilter> _blocked(String uid) =>
+      _blockedStreams.putIfAbsent(
+        uid,
+        () => shareLatest(() => _union(<Stream<BlockedNotificationFilter>>[
+              blockedByMeSource(uid),
+              blockedPairsSource(uid),
+            ])),
+      );
+
+  /// Une las fuentes de bloqueo y emite cuando TODAS han contestado, para no
+  /// enseñar un instante lo que se va a esconder. Una que falla cuenta como
+  /// vacía (se sigue sin ella): el backend ya borra estas notificaciones y la
+  /// bandeja no debe romperse por esto.
+  static Stream<BlockedNotificationFilter> _union(
+    List<Stream<BlockedNotificationFilter>> sources,
+  ) {
+    late final StreamController<BlockedNotificationFilter> controller;
+    final List<StreamSubscription<BlockedNotificationFilter>> subs =
+        <StreamSubscription<BlockedNotificationFilter>>[];
+    final List<BlockedNotificationFilter?> latest =
+        List<BlockedNotificationFilter?>.filled(sources.length, null);
+
+    void emitIfReady() {
+      if (controller.isClosed) return;
+      BlockedNotificationFilter all = BlockedNotificationFilter.none;
+      for (final BlockedNotificationFilter? f in latest) {
+        if (f == null) return;
+        all = all.union(f);
+      }
+      controller.add(all);
+    }
+
+    controller = StreamController<BlockedNotificationFilter>(
+      onListen: () {
+        for (int i = 0; i < sources.length; i++) {
+          subs.add(sources[i].listen(
+            (BlockedNotificationFilter value) {
+              latest[i] = value;
+              emitIfReady();
+            },
+            onError: (Object error) {
+              if (kDebugMode) {
+                debugPrint('NotificationService: bloqueos[$i] -> $error');
+              }
+              latest[i] ??= BlockedNotificationFilter.none;
+              emitIfReady();
+            },
+          ));
+        }
+      },
+      onCancel: () async {
+        for (final StreamSubscription<BlockedNotificationFilter> s in subs) {
+          await s.cancel();
+        }
+        subs.clear();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Aplica lo bloqueado a [items]. No emite hasta tener las dos cosas. Un
+  /// error de los avisos sí llega a la pantalla; uno de [blocked] no la tumba.
+  static Stream<List<AppNotification>> _withoutBlocked(
     Stream<List<AppNotification>> items,
+    Stream<BlockedNotificationFilter> blocked,
   ) {
     late final StreamController<List<AppNotification>> controller;
     StreamSubscription<List<AppNotification>>? itemsSub;
-    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blocksSub;
-    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? chatsSub;
-
+    StreamSubscription<BlockedNotificationFilter>? blockedSub;
     List<AppNotification>? latest;
-    Set<String> blockedByMe = const <String>{};
-    Set<String> myBlockPairs = const <String>{};
-    Set<String> blockedChatUids = const <String>{};
-    Set<String> blockedChatIds = const <String>{};
-    bool hasBlocks = false;
-    bool hasChats = false;
+    BlockedNotificationFilter? filter;
 
     void emitIfReady() {
       final List<AppNotification>? current = latest;
-      if (current == null || !hasBlocks || !hasChats || controller.isClosed) {
-        return;
-      }
-      controller.add(BlockedNotificationFilter(
-        blockedUids: <String>{...blockedByMe, ...blockedChatUids},
-        blockedPairIds: <String>{...myBlockPairs, ...blockedChatIds},
-      ).apply(current));
+      final BlockedNotificationFilter? f = filter;
+      if (current == null || f == null || controller.isClosed) return;
+      controller.add(f.apply(current));
     }
 
     controller = StreamController<List<AppNotification>>(
@@ -98,67 +194,24 @@ class NotificationService {
             emitIfReady();
           },
           onError: controller.addError,
+          // Firestore cierra el stream tras un error: se cierra también aquí
+          // para que el siguiente oyente vuelva a abrir la consulta.
+          onDone: controller.close,
         );
-        blocksSub = _db
-            .collection('blocks')
-            .where('blockerUid', isEqualTo: uid)
-            .snapshots()
-            .listen(
-          (QuerySnapshot<Map<String, dynamic>> snap) {
-            final Set<String> uids = <String>{};
-            final Set<String> pairs = <String>{};
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-                in snap.docs) {
-              final Object? blocked = d.data()['blockedUid'];
-              final Object? matchId = d.data()['matchId'];
-              if (blocked is String && blocked.isNotEmpty) uids.add(blocked);
-              if (matchId is String && matchId.isNotEmpty) pairs.add(matchId);
-            }
-            blockedByMe = uids;
-            myBlockPairs = pairs;
-            hasBlocks = true;
+        blockedSub = blocked.listen(
+          (BlockedNotificationFilter value) {
+            filter = value;
             emitIfReady();
           },
-          onError: (Object error) {
-            if (kDebugMode) debugPrint('NotificationService: blocks -> $error');
-            hasBlocks = true;
-            emitIfReady();
-          },
-        );
-        chatsSub = _db
-            .collection('chats')
-            .where('users', arrayContains: uid)
-            .where('status', isEqualTo: 'blocked')
-            .snapshots()
-            .listen(
-          (QuerySnapshot<Map<String, dynamic>> snap) {
-            final Set<String> uids = <String>{};
-            final Set<String> ids = <String>{};
-            for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-                in snap.docs) {
-              ids.add(d.id);
-              final List<dynamic> users =
-                  (d.data()['users'] as List<dynamic>?) ?? const <dynamic>[];
-              for (final dynamic u in users) {
-                if (u is String && u.isNotEmpty && u != uid) uids.add(u);
-              }
-            }
-            blockedChatUids = uids;
-            blockedChatIds = ids;
-            hasChats = true;
-            emitIfReady();
-          },
-          onError: (Object error) {
-            if (kDebugMode) debugPrint('NotificationService: chats -> $error');
-            hasChats = true;
+          onError: (Object _) {
+            filter ??= BlockedNotificationFilter.none;
             emitIfReady();
           },
         );
       },
       onCancel: () async {
         await itemsSub?.cancel();
-        await blocksSub?.cancel();
-        await chatsSub?.cancel();
+        await blockedSub?.cancel();
       },
     );
     return controller.stream;

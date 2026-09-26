@@ -195,12 +195,54 @@ void main() {
     });
   });
 
+  group('InterestedIn.promptBeforeFeed (quien ya estaba en citas)', () {
+    test('citas o ambas con la lista vacía: se pide antes del feed', () {
+      expect(
+          InterestedIn.promptBeforeFeed(
+              mode: IntentMode.dating, current: const <String>[]),
+          isTrue);
+      expect(
+          InterestedIn.promptBeforeFeed(
+              mode: IntentMode.both, current: const <String>['']),
+          isTrue);
+    });
+
+    test('con algo elegido, en amistad/grupos o siendo bot: no', () {
+      expect(
+          InterestedIn.promptBeforeFeed(
+              mode: IntentMode.dating, current: <String>['male']),
+          isFalse);
+      expect(
+          InterestedIn.promptBeforeFeed(
+              mode: IntentMode.friends, current: const <String>[]),
+          isFalse);
+      expect(
+          InterestedIn.promptBeforeFeed(
+              mode: IntentMode.groups, current: const <String>[]),
+          isFalse);
+      expect(
+          InterestedIn.promptBeforeFeed(
+              mode: IntentMode.dating, current: const <String>[], isBot: true),
+          isFalse);
+    });
+  });
+
   test(
-      'el caso del informe: con "Mujer" guardado, Carlos deja de salir en el '
-      'feed de un hombre que busca hombres', () {
-    // Desde el lado de ese hombre, FeedFilter mira si Carlos le quiere a él:
-    // wants(interestedIn de Carlos, 'male'). Con la lista vacía salía siempre.
-    expect(GenderMatching.wants(const <String>[], 'male'), isTrue);
-    expect(GenderMatching.wants(<String>['female'], 'male'), isFalse);
+      'el caso del informe: Carlos pasa de amistad a citas, se le pide "Me '
+      'interesan" y, con "Mujer", deja de salir a quien busca hombres',
+      () async {
+    final _Calls calls = _Calls();
+    await _switch(calls,
+        from: IntentMode.friends,
+        to: IntentMode.dating,
+        answer: <String>['female']);
+
+    // Desde el lado de un hombre que busca hombres, FeedFilter mira si Carlos
+    // le quiere a él: wants(interestedIn de Carlos, 'male'). Antes del arreglo
+    // se cambiaba de modo sin preguntar, la lista seguía vacía y salía siempre.
+    final List<String> carlos = calls.savedInterest ?? const <String>[];
+    expect(calls.savedMode, IntentMode.dating);
+    expect(GenderMatching.wants(carlos, 'male'), isFalse);
+    expect(GenderMatching.wants(carlos, 'female'), isTrue);
   });
 }

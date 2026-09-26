@@ -44,6 +44,20 @@ class InterestedIn {
       mode.channels.contains(SocialChannel.dating) &&
       !current.any((String v) => v.trim().isNotEmpty);
 
+  /// ¿Hay que pedírselo al entrar, en lugar de cargarle el feed de Descubrir?
+  ///
+  /// Es el arreglo para quien YA estaba en citas/ambas con la lista vacía
+  /// (se registró en amistad o grupos y cambió de modo antes de que el
+  /// selector lo exigiera): nada volvía a pedírselo y seguía viendo, y
+  /// saliéndole a, todos los géneros. Los perfiles semilla ([isBot]) no abren
+  /// la app, así que no se les pide nada.
+  static bool promptBeforeFeed({
+    required IntentMode mode,
+    required Iterable<String> current,
+    bool isBot = false,
+  }) =>
+      !isBot && requiredFor(mode, current);
+
   /// Texto legible de lo elegido ("Mujer, Hombre"). Vacío si no hay nada.
   static String describe(Iterable<String> values) {
     String label(String code) {

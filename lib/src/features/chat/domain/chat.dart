@@ -143,6 +143,25 @@ class Chat {
     }
   }
 
+  /// Los chats de [chats] que salen en la lista, sabiendo además qué matches
+  /// se deshicieron ([undoneMatchIds]).
+  ///
+  /// [isListed] decide con lo que lleva el propio chat, pero hay un caso que
+  /// el chat no distingue: tras "Cerrar con elegancia", "Deshacer match" deja
+  /// el chat `closed` CON `closedByUserId` (el unmatch no toca la firma), igual
+  /// que un archivo, y los dos seguían viéndose en "Conversaciones". Solo el
+  /// match lo sabe (`unmatched`), así que se cruza con él.
+  static List<Chat> listable(
+    Iterable<Chat> chats, {
+    Set<String> undoneMatchIds = const <String>{},
+  }) =>
+      chats
+          .where((Chat c) =>
+              c.isListed &&
+              !undoneMatchIds.contains(c.matchId) &&
+              !undoneMatchIds.contains(c.id))
+          .toList(growable: true);
+
   /// ¿Se puede abrir el perfil del otro desde este chat? Lo mismo que listarlo:
   /// si el chat ya no se enseña (bloqueo, match deshecho) tampoco su cabecera
   /// debe llevar al perfil completo, aunque se llegue por un push o un enlace.

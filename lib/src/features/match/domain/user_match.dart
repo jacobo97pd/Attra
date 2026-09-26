@@ -100,6 +100,14 @@ class UserMatch {
   bool get isOpen =>
       status.isActive && journeyStatus != MatchJourneyStatus.archived.wireName;
 
+  /// El par ya no existe: match deshecho, bloqueado o retirado (cuenta
+  /// borrada). A diferencia de `closed` (cierre con elegancia, que deja la
+  /// conversación como archivo), aquí no queda nada que enseñar del otro.
+  bool get isUndone =>
+      status == MatchStatus.unmatched ||
+      status == MatchStatus.blocked ||
+      status == MatchStatus.deleted;
+
   /// ID determinista del match/chat para el par (a, b).
   static String idFor(String a, String b) => pairId(a, b);
 
