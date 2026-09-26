@@ -9,6 +9,8 @@ import 'package:attra/src/features/settings/data/settings_repository.dart';
 import 'package:attra/src/features/settings/domain/setting_definition.dart';
 import 'package:attra/src/features/settings/domain/settings_catalog.dart';
 import 'package:attra/src/features/settings/presentation/settings_controller.dart';
+import 'package:attra/src/features/settings/presentation/settings_section_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Repositorio en memoria: lo que importa aquí es QUÉ se persiste.
@@ -135,14 +137,60 @@ void main() {
       stored: <String, dynamic>{'privacy.incognito': true},
     );
     final SettingDefinition incognito = _def('privacy.incognito');
-    expect(c.effectiveFor(incognito).locked, isFalse,
-        reason: 'antes se quedaba bloqueado en ON');
+    final EffectiveSetting eff = c.effectiveFor(incognito);
+    expect(eff.locked, isFalse, reason: 'antes se quedaba bloqueado en ON');
+    // Y dice que ya NO se aplica: el backend vuelve a listarle con su ciudad
+    // y su actividad. Antes el interruptor seguía en ON sin ninguna pista.
+    expect(eff.paused, isTrue);
+    expect(eff.notice, contains('pausa'));
+    expect(eff.notice, contains('ciudad'));
+    expect(eff.notice, contains('Plus'));
     await c.setValue(incognito, false);
     expect(repo.stored['privacy.incognito'], isFalse);
     // Y una vez apagado, sin plan no se vuelve a encender.
     expect(c.effectiveFor(incognito).locked, isTrue);
+    expect(c.effectiveFor(incognito).notice, isNull,
+        reason: 'apagado ya no hay nada en pausa: solo el bloqueo');
+    expect(c.effectiveFor(incognito).lockedReason, 'Disponible con Plus');
     await c.setValue(incognito, true);
     expect(repo.stored['privacy.incognito'], isFalse);
+  });
+
+  test('con plan, el incógnito encendido no está en pausa', () async {
+    final (SettingsController c, _) = await _settingsFor(
+      SubscriptionTier.plus,
+      stored: <String, dynamic>{'privacy.incognito': true},
+    );
+    final EffectiveSetting eff = c.effectiveFor(_def('privacy.incognito'));
+    expect(eff.locked, isFalse);
+    expect(eff.notice, isNull);
+    expect(eff.paused, isFalse);
+  });
+
+  testWidgets('Privacidad enseña el aviso de pausa bajo el interruptor en ON',
+      (WidgetTester tester) async {
+    late SettingsController c;
+    await tester.runAsync(() async {
+      (c, _) = await _settingsFor(
+        SubscriptionTier.free,
+        stored: <String, dynamic>{'privacy.incognito': true},
+      );
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: SettingsSectionScreen(
+        controller: c,
+        sectionKey: SettingsCatalog.secPrivacy,
+      ),
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('En pausa'), findsOneWidget);
+    final SwitchListTile tile = tester.widget<SwitchListTile>(find.ancestor(
+      of: find.text('Modo incognito'),
+      matching: find.byType(SwitchListTile),
+    ));
+    expect(tile.value, isTrue);
+    expect(tile.onChanged, isNotNull, reason: 'se tiene que poder apagar');
   });
 
   test('sin resolver de entitlements todo lo de pago queda bloqueado',

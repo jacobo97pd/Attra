@@ -146,7 +146,9 @@ DEMO_PROFILE = {
     "preferences": {
         "interestedIn": ["female"],
         # Los mocks estan repartidos por Espana; 100 km ocultaba casi todos.
-        "maxDistanceKm": 1000,
+        # 500 es el maximo que admite la app (FeedFilters.distanceCeil): con
+        # 1000 se recortaba a 500 igualmente y el documento decia otra cosa.
+        "maxDistanceKm": 500,
         "preferredAgeMin": 24,
         "preferredAgeMax": 40,
     },
@@ -318,13 +320,33 @@ def check_prerequisites(keep_profile, peer_uid=None):
         require_document(f"users/{peer_uid}")
 
 
-def check_only(keep_profile, peer_uid):
+def check_only(keep_profile, peer_uid, travel_spain=False):
     """Comprueba acceso y contenido existente sin escribir ni exponer secretos."""
     check_prerequisites(keep_profile, peer_uid)
     flags = require_document("config/featureFlags")
     print("Requisitos de perfil y perfiles semilla: OK.")
     print("storiesEnabled=" + str(
         flags.get("storiesEnabled", {}).get("booleanValue", False)))
+    if travel_spain:
+        # Antes no se miraba: la cuenta COMPANION llego a revision con un
+        # viaje caducado que el backend iba a apagar.
+        now = datetime.now(timezone.utc)
+        problems = []
+        for uid in filter(None, [DEMO_UID, peer_uid]):
+            problems += travel_problems(
+                uid,
+                find_document(f"users/{uid}"),
+                find_document(f"userEntitlements/{uid}"),
+                now,
+            )
+        if problems:
+            raise SystemExit(
+                "Modo viajes a Espana NO listo para la revision:\n  - "
+                + "\n  - ".join(problems)
+                + "\nVuelve a ejecutar el script con --keep-profile "
+                "--travel-spain (y --peer-uid) y repite --check-only."
+            )
+        print("Modo viajes a Espana: OK en todas las cuentas revisadas.")
     print("Comprobacion terminada. No se ha escrito en Firebase. "
           "El acceso desde la app y el contenido vigente requieren validacion.")
 
@@ -415,6 +437,101 @@ def seed_profile():
     }
     patch(f"discovery/{DEMO_UID}", discovery)
     print(f"Preparado perfil demo: users/{DEMO_UID} + discovery/{DEMO_UID}")
+
+
+def travel_spain_patch():
+    """Modo viajes "Espana sin ciudad" de una cuenta de revision.
+
+    La mascara de commit_writes es de HOJAS: lo que no se nombra se conserva.
+    Antes solo se escribian active/iso2/country/city, asi que sobrevivian:
+      - un `until`/`untilAt` de un viaje anterior. La cuenta COMPANION tenia
+        uno de agosto YA PASADO: la app avisaba "Tu viaje a Espana ha
+        terminado", el barrido horario del backend lo apagaba y el revisor
+        veia Descubrir vacio fuera de Espana. Resembrar no lo arreglaba.
+      - `lat`/`lng` de un viaje a una ciudad: el viaje a un pais entero se
+        media desde esa ciudad con 500 km y dejaba fuera Barcelona o Bilbao.
+    Los None se escriben como null y borran esos valores. Sin fecha, el
+    viaje no caduca durante la revision.
+    """
+    return {
+        "preferences": {"maxDistanceKm": 500},
+        "settings": {"travel": {
+            "active": True, "iso2": "ES", "country": "España",
+            "city": "",
+            "until": None, "untilAt": None,
+            "lat": None, "lng": None, "geoCity": None, "geoIso2": None,
+            "geoSource": "none",
+            "updatedAt": STAMP,
+        }},
+    }
+
+
+def _plain(value):
+    """Valor tipado de Firestore REST -> Python (solo lo que se revisa)."""
+    if not isinstance(value, dict):
+        return None
+    if "mapValue" in value:
+        return {k: _plain(v)
+                for k, v in value["mapValue"].get("fields", {}).items()}
+    if "timestampValue" in value:
+        return datetime.fromisoformat(
+            value["timestampValue"].replace("Z", "+00:00"))
+    for key in ("booleanValue", "stringValue", "doubleValue"):
+        if key in value:
+            return value[key]
+    if "integerValue" in value:
+        return int(value["integerValue"])
+    return None
+
+
+def _as_date(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return "ilegible"
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return None
+
+
+def travel_problems(uid, user_fields, entitlement_fields, now):
+    """Por que el viaje a Espana de `uid` NO serviria al revisor ([] = OK).
+
+    Mismas reglas que la app y el backend: tiene que estar activo, en Espana,
+    sin fecha pasada (manda la mas tardia de until/untilAt), sin centro de
+    otra ciudad, y con un plan de pago vigente (el viaje es Plus/Pro).
+    """
+    problems = []
+    settings = _plain((user_fields or {}).get("settings")) or {}
+    travel = settings.get("travel") if isinstance(settings.get("travel"), dict) else {}
+    if travel.get("active") is not True:
+        problems.append("settings.travel.active no es true")
+    iso2 = (travel.get("iso2") or "").strip().upper()
+    country = (travel.get("country") or "").strip().lower()
+    if iso2 != "ES" and country not in ("españa", "espana", "spain"):
+        problems.append("el destino no es Espana")
+    dates = [_as_date(travel.get(k)) for k in ("untilAt", "until")]
+    if "ilegible" in dates:
+        problems.append("fecha de fin ilegible")
+    dates = [d for d in dates if isinstance(d, datetime)]
+    if dates and max(dates) <= now:
+        problems.append(f"viaje caducado ({max(dates).isoformat()}): "
+                        "el barrido del backend lo apagara")
+    if not (travel.get("city") or "").strip() and (
+            travel.get("lat") is not None or travel.get("lng") is not None):
+        problems.append("viaje sin ciudad con lat/lng de un viaje anterior")
+    ent = {k: _plain(v) for k, v in (entitlement_fields or {}).items()}
+    tier = (ent.get("tier") or "free")
+    expires = ent.get("expiresAt")
+    paid = tier != "free" and (
+        ent.get("isLifetime") is True
+        or not isinstance(expires, datetime) or expires >= now)
+    if not paid:
+        problems.append("sin plan de pago vigente: el viaje no cuenta "
+                        f"(ejecuta el script con --uid {uid})")
+    return [f"{uid}: {p}" for p in problems]
 
 
 def seed_entitlement():
@@ -572,7 +689,9 @@ def main(argv=None):
     parser.add_argument("--stories-only", action="store_true",
                         help="Renueva solo historias demo; conserva perfil y chats.")
     parser.add_argument("--travel-spain", action="store_true",
-                        help="Configura Modo viajes a Espana para ver los mocks desde cualquier pais.")
+                        help="Configura Modo viajes a Espana (sin fecha de fin) "
+                             "para ver los mocks desde cualquier pais; tambien "
+                             "en --peer-uid. Con --check-only, lo comprueba.")
     args = parser.parse_args(argv)
     DEMO_UID = args.uid.strip()
     DRY_RUN = args.dry_run
@@ -609,7 +728,7 @@ def main(argv=None):
         "1", "true", "yes"
     )
     if args.check_only:
-        check_only(keep_profile, peer_uid)
+        check_only(keep_profile, peer_uid, args.travel_spain)
         return
     if not DRY_RUN:
         check_prerequisites(keep_profile, peer_uid)
@@ -619,13 +738,12 @@ def main(argv=None):
         else:
             seed_profile()
         if args.travel_spain:
-            patch(f"users/{DEMO_UID}", {
-                "preferences": {"maxDistanceKm": 1000},
-                "settings": {"travel": {
-                    "active": True, "iso2": "ES", "country": "Espa\u00f1a",
-                    "city": "",
-                }},
-            })
+            # Tambien la cuenta compa\u00f1era: las notas de revision dicen que
+            # AMBAS viajan a Espana y antes solo se tocaba --uid. OJO: el viaje
+            # solo cuenta con plan de pago y la concesion Pro de este script es
+            # solo para --uid (compruebalo con --check-only --travel-spain).
+            for uid in filter(None, [DEMO_UID, peer_uid]):
+                patch(f"users/{uid}", travel_spain_patch())
         seed_entitlement()
         seed_received_likes()
         for other_uid, messages in MATCHED:
@@ -648,7 +766,8 @@ def main(argv=None):
         "Information.\n"
         "  - Verifica en la app: feed con perfiles, likes recibidos, chats "
         "con historial y funciones Pro visibles.\n"
-        "  - Los mocks estan en Espana: revisa ubicacion/Modo viajes.\n"
+        "  - Los mocks estan en Espana: revisa ubicacion/Modo viajes con\n"
+        "    --check-only --travel-spain (y --peer-uid) tras el despliegue.\n"
         "  - Si storiesEnabled activa A ciegas, usa --with-stories y renueva "
         "con --stories-only al menos cada 72 h durante la revision.\n"
         "  - Los mocks no responden a juegos ni llamadas; prepara otra "

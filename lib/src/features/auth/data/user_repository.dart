@@ -576,6 +576,12 @@ class UserRepository {
       // 4 decimales (~11 m) bastan para el centro de una ciudad.
       'lat': located ? _round4(latitude!) : null,
       'lng': located ? _round4(longitude!) : null,
+      // Para QUÉ destino se resolvió el centro. Las versiones anteriores
+      // cambian ciudad o país sin tocar lat/lng: con esto el centro viejo deja
+      // de valer en vez de publicarse como si fuera el del destino nuevo
+      // (TravelRules.centerMatchesDestination / travelCenter del backend).
+      'geoCity': located ? city.trim() : null,
+      'geoIso2': located ? iso2.trim().toUpperCase() : null,
       'geoSource': located ? geoSource.wireName : TravelGeoSource.none.wireName,
       // `until` (ISO) lo siguen leyendo las versiones anteriores de la app;
       // `untilAt` (Timestamp) es el que usan el barrido y el backend.
@@ -623,19 +629,30 @@ class UserRepository {
   /// (ni `active` ni la fecha de fin): es la auto-reparación de los viajes
   /// guardados antes de que existieran las coordenadas. El trigger republica
   /// entonces la ficha en el destino.
+  ///
+  /// [city]/[iso2] son el destino para el que se resolvió el centro y se
+  /// guardan con él (`geoCity`/`geoIso2`). Si mientras tanto el viaje cambió
+  /// (otro dispositivo, una versión antigua), este centro no casa con el
+  /// destino nuevo y nadie lo usa, en vez de publicar el viaje en la ciudad
+  /// vieja.
   Future<void> patchTravelGeo({
     required String uid,
     required double latitude,
     required double longitude,
     required TravelGeoSource source,
+    required String city,
+    required String iso2,
   }) async {
     if (!TravelDestination.isValid(latitude, longitude)) return;
+    if (city.trim().isEmpty) return;
     await _usersCollection.doc(uid).set(
           _withRequiredUserFields(uid, <String, dynamic>{
             'settings': <String, dynamic>{
               'travel': <String, dynamic>{
                 'lat': _round4(latitude),
                 'lng': _round4(longitude),
+                'geoCity': city.trim(),
+                'geoIso2': iso2.trim().toUpperCase(),
                 'geoSource': source.wireName,
               },
             },

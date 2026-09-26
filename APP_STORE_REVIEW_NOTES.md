@@ -186,8 +186,16 @@ Comprobación de requisitos en Firebase, sin escribir:
 ```powershell
 $env:GTOKEN = gcloud auth print-access-token
 $env:DEMO_UID = "[UID PRIMARY del archivo privado]"
-python tool/seed_review_demo.py --check-only --keep-profile
+python tool/seed_review_demo.py --check-only --keep-profile --travel-spain --peer-uid "[UID COMPANION]"
 ```
+
+Con `--travel-spain`, la comprobación falla si alguna de las dos cuentas no
+tiene el viaje a España activo, lo tiene con una fecha de fin ya pasada o con
+el centro de una ciudad anterior, o no tiene un plan de pago vigente (el modo
+viajes es Plus/Pro). La copia previa de COMPANION tenía un viaje de agosto ya
+caducado: tras desplegar las functions, el barrido horario lo habría apagado.
+Ejecutarla después del despliegue y otra vez tras la primera pasada de
+`sweepTravelModes`, antes de enviar la build.
 
 Resembrar los perfiles de la matriz de identidades (idempotente, no toca las
 cuentas de revisión ni sus chats):
@@ -209,6 +217,12 @@ de nuevo el contenido; no ejecutarla como mecanismo periódico de renovación:
 ```powershell
 python tool/seed_review_demo.py --keep-profile --travel-spain --peer-uid "[UID COMPANION]"
 ```
+
+`--travel-spain` deja el viaje de **las dos** cuentas (PRIMARY y la de
+`--peer-uid`) en España sin ciudad, sin fecha de fin y sin centro: borra
+`until`/`untilAt`/`lat`/`lng` de viajes anteriores, que antes sobrevivían a la
+resiembra. La concesión Pro del script solo es para `--uid`; COMPANION conserva
+la suya (compruébalo con `--check-only --travel-spain`).
 
 La siembra no elimina bloqueos, denuncias ni dislikes previos. Después de grabar,
 comprobar que siguen quedando perfiles visibles; usar un perfil distinto para el

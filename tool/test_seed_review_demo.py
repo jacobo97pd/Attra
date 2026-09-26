@@ -218,6 +218,109 @@ class ReviewDemoSeedTest(unittest.TestCase):
         travel = next(row['fields']['settings']['mapValue']['fields']['travel']
                       for row in user_rows if 'settings' in row['fields'])
         self.assertEqual(travel['mapValue']['fields']['active'], {'booleanValue': True})
+        # La cuenta compañera tambien viaja (las notas dicen "Ambas").
+        peer_rows = [row for row in rows if row['path'] == 'users/' + peer
+                     and 'settings' in row['fields']]
+        self.assertEqual(len(peer_rows), 1)
+        peer_travel = peer_rows[0]['fields']['settings']['mapValue']['fields'][
+            'travel']['mapValue']['fields']
+        self.assertEqual(peer_travel['iso2'], {'stringValue': 'ES'})
+        self.assertEqual(peer_travel['until'], {'nullValue': None})
+
+    def test_travel_spain_clears_old_end_date_and_center(self):
+        # La cuenta COMPANION tenia un `until` de agosto ya pasado. Con la
+        # mascara de hojas, resembrar dejaba esa fecha (el barrido lo apagaba
+        # otra vez) y un centro viejo medía el viaje "a Espana" desde otra
+        # ciudad.
+        self.seed.TOKEN = 'offline-placeholder'
+        commits = []
+        fields = {'isBot': {'booleanValue': True},
+                  'onboardingCompleted': {'booleanValue': True},
+                  'profileCompleted': {'booleanValue': True},
+                  'photoUrl': {'stringValue': 'https://example.test/photo'},
+                  'displayName': {'stringValue': 'Demo'}}
+
+        def fake_urlopen(request, timeout):
+            if request.get_method() == 'POST':
+                commits.append(json.loads(request.data))
+                return io.BytesIO(b'{}')
+            if '/matches/' in request.full_url:
+                raise urllib.error.HTTPError(request.full_url, 404, 'missing', {}, None)
+            return io.BytesIO(json.dumps({'fields': fields}).encode())
+
+        peer = 'other_review_account'
+        with patch.object(self.seed.urllib.request, 'urlopen', fake_urlopen):
+            self.run_seed('--keep-profile', '--travel-spain', '--peer-uid', peer)
+        writes = {w['update']['name'].rsplit('/documents/', 1)[1]: w
+                  for w in commits[0]['writes']}
+        for uid in (self.uid, peer):
+            write = writes['users/' + uid]
+            masks = set(write['updateMask']['fieldPaths'])
+            for leaf in ('until', 'untilAt', 'lat', 'lng', 'geoCity', 'geoIso2'):
+                self.assertIn(f'settings.travel.{leaf}', masks, (uid, leaf))
+            travel = write['update']['fields']['settings']['mapValue']['fields'][
+                'travel']['mapValue']['fields']
+            for leaf in ('until', 'untilAt', 'lat', 'lng'):
+                self.assertEqual(travel[leaf], {'nullValue': None}, (uid, leaf))
+            self.assertEqual(travel['geoSource'], {'stringValue': 'none'})
+            self.assertEqual(travel['city'], {'stringValue': ''})
+            # La app recorta a 500: el documento dice lo mismo que se aplica.
+            self.assertEqual(write['update']['fields']['preferences']['mapValue'][
+                'fields']['maxDistanceKm'], {'integerValue': '500'})
+            # Nunca se sustituye el mapa entero (conserva otros ajustes).
+            self.assertNotIn('settings.travel', masks)
+            self.assertNotIn('settings', masks)
+
+    def test_check_only_travel_spain_flags_expired_trip_and_free_peer(self):
+        self.seed.TOKEN = 'offline-placeholder'
+        peer = 'other_review_account'
+        seed_fields = {'isBot': {'booleanValue': True},
+                       'photoUrl': {'stringValue': 'https://example.test/photo'},
+                       'displayName': {'stringValue': 'Demo'},
+                       'onboardingCompleted': {'booleanValue': True},
+                       'profileCompleted': {'booleanValue': True}}
+
+        def travel_doc(**travel):
+            typed = {k: self.seed.to_value(v) for k, v in travel.items()}
+            return {'settings': {'mapValue': {'fields': {
+                'travel': {'mapValue': {'fields': typed}}}}}}
+
+        docs = {
+            # Viaje bien sembrado: sin fecha, sin centro.
+            f'users/{self.uid}': travel_doc(active=True, iso2='ES',
+                                            country='España', city='',
+                                            until=None, untilAt=None),
+            f'userEntitlements/{self.uid}': {
+                'tier': {'stringValue': 'pro'},
+                'isLifetime': {'booleanValue': True}},
+            # El de COMPANION antes del arreglo: `until` de agosto ya pasado.
+            f'users/{peer}': travel_doc(active=True, iso2='ES', country='Spain',
+                                        city='Madrid',
+                                        until='2026-09-07T11:18:30Z'),
+        }
+
+        def find(path):
+            return docs.get(path)
+
+        with patch.object(self.seed, 'require_document', return_value=seed_fields), \
+                patch.object(self.seed, 'find_document', side_effect=find), \
+                patch.object(self.seed.urllib.request, 'urlopen') as network:
+            with self.assertRaises(SystemExit) as raised:
+                self.run_seed('--check-only', '--travel-spain', '--peer-uid', peer)
+        network.assert_not_called()
+        message = str(raised.exception)
+        self.assertIn(f'{peer}: viaje caducado', message)
+        self.assertIn(f'{peer}: sin plan de pago vigente', message)
+        self.assertNotIn(f'{self.uid}:', message)
+        self.assertFalse(self.seed.PENDING_WRITES)
+
+        # Arreglado (sin fecha y con plan), la comprobacion pasa.
+        docs[f'users/{peer}'] = docs[f'users/{self.uid}']
+        docs[f'userEntitlements/{peer}'] = docs[f'userEntitlements/{self.uid}']
+        with patch.object(self.seed, 'require_document', return_value=seed_fields), \
+                patch.object(self.seed, 'find_document', side_effect=find):
+            output = self.run_seed('--check-only', '--travel-spain', '--peer-uid', peer)
+        self.assertIn('Modo viajes a Espana: OK', output)
 
     def test_missing_real_peer_aborts_before_commit(self):
         self.seed.TOKEN = 'offline-placeholder'

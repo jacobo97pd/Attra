@@ -29,6 +29,7 @@ import '../../feed/data/ranking_signals_repository.dart';
 import '../../feed/domain/feed_filter.dart';
 import '../../feed/domain/feed_filters.dart';
 import '../../geo/data/travel_destination_resolvers.dart';
+import '../../geo/domain/place_names.dart';
 import '../../geo/domain/travel_destination_resolver.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import '../../profile/domain/intro_media.dart';
@@ -303,7 +304,20 @@ class SessionController extends ChangeNotifier {
         city: user.travelCity,
         countryName: user.travelCountry,
       );
-      if (center == null || _isDisposed || _state.user?.uid != user.uid) {
+      if (center == null || _isDisposed) return;
+      // Mientras se resolvía, el viaje pudo cambiar (a un país entero, a otra
+      // ciudad) o apagarse, o repararse por otro lado. Antes solo se miraba el
+      // uid y el centro de la ciudad VIEJA caía sobre el viaje nuevo: un
+      // "España" sin ciudad acababa medido desde Cádiz.
+      final AppUser? now = _state.user;
+      if (now == null ||
+          now.uid != user.uid ||
+          !now.isTraveling ||
+          now.hasTravelOrigin ||
+          PlaceNames.normalize(now.travelCity) !=
+              PlaceNames.normalize(user.travelCity) ||
+          now.travelIso2.trim().toUpperCase() !=
+              user.travelIso2.trim().toUpperCase()) {
         return;
       }
       await _userRepository.patchTravelGeo(
@@ -311,6 +325,8 @@ class SessionController extends ChangeNotifier {
         latitude: center.latitude,
         longitude: center.longitude,
         source: center.source,
+        city: user.travelCity,
+        iso2: user.travelIso2,
       );
       await _refreshAuthenticatedUser(user.uid);
     } catch (error) {

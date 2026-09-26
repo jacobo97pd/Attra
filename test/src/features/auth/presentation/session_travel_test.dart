@@ -90,6 +90,9 @@ void main() {
     expect(users.patches.single.lat, closeTo(36.53, 1e-9));
     expect(users.patches.single.lng, closeTo(-6.29, 1e-9));
     expect(users.patches.single.source, TravelGeoSource.asset);
+    // El centro se guarda con el destino para el que se resolvió.
+    expect(users.patches.single.city, 'Cadiz');
+    expect(users.patches.single.iso2, 'ES');
     expect(users.travelWrites, isEmpty,
         reason: 'la reparación solo añade el centro: ni reactiva ni alarga '
             'el viaje');
@@ -97,6 +100,29 @@ void main() {
     // Una segunda entrada de la misma sesión no vuelve a gastar geocodificador.
     await controller.healTravelGeo(_viajera(travelLat: null, travelLng: null));
     expect(users.patches, hasLength(1));
+  });
+
+  test('si el viaje cambia mientras se resuelve, el centro viejo no se guarda',
+      () async {
+    // Carrera: la sesión empieza a situar Cádiz y, antes de que termine, el
+    // viaje pasa a "España" sin ciudad. Antes solo se comprobaba el uid y el
+    // centro de Cádiz caía sobre el viaje a un país entero.
+    users.current = _viajera(travelLat: null, travelLng: null, travelCity: '');
+    await signIn('yo');
+    await pumpEventQueue();
+    expect(resolver.calls, isEmpty, reason: 'un país entero no tiene centro');
+
+    await controller.healTravelGeo(_viajera(travelLat: null, travelLng: null));
+    expect(resolver.calls, hasLength(1));
+    expect(users.patches, isEmpty);
+  });
+
+  test('si otro dispositivo ya lo situó, no se pisa', () async {
+    users.current = _viajera(travelLat: 36.53, travelLng: -6.29);
+    await signIn('yo');
+    await controller.healTravelGeo(_viajera(travelLat: null, travelLng: null));
+    expect(resolver.calls, hasLength(1));
+    expect(users.patches, isEmpty);
   });
 
   test('quien no viaja (o ya tiene centro) no dispara nada', () async {
@@ -200,6 +226,7 @@ AppUser _viajera({
   String travelIso2 = 'ES',
   String countryIso2 = 'ES',
   String countryName = 'España',
+  String travelCity = 'Cadiz',
 }) {
   return AppUser(
     uid: 'yo',
@@ -214,7 +241,7 @@ AppUser _viajera({
     countryIso2: countryIso2,
     travelActive: travelActive,
     travelIso2: travelIso2,
-    travelCity: 'Cadiz',
+    travelCity: travelCity,
     travelCountry: 'Spain',
     travelUntil: DateTime.now().add(const Duration(days: 20)),
     travelLat: travelLat,
@@ -273,8 +300,20 @@ class _FirebaseUser extends _UnexpectedCalls implements User {
 class _UserRepository extends _UnexpectedCalls implements UserRepository {
   late AppUser current;
   Completer<void>? patched;
-  final List<({double lat, double lng, TravelGeoSource source})> patches =
-      <({double lat, double lng, TravelGeoSource source})>[];
+  final List<
+      ({
+        double lat,
+        double lng,
+        TravelGeoSource source,
+        String city,
+        String iso2,
+      })> patches = <({
+    double lat,
+    double lng,
+    TravelGeoSource source,
+    String city,
+    String iso2,
+  })>[];
   final List<_TravelWrite> travelWrites = <_TravelWrite>[];
 
   @override
@@ -293,8 +332,16 @@ class _UserRepository extends _UnexpectedCalls implements UserRepository {
     required double latitude,
     required double longitude,
     required TravelGeoSource source,
+    required String city,
+    required String iso2,
   }) async {
-    patches.add((lat: latitude, lng: longitude, source: source));
+    patches.add((
+      lat: latitude,
+      lng: longitude,
+      source: source,
+      city: city,
+      iso2: iso2,
+    ));
     patched?.complete();
   }
 

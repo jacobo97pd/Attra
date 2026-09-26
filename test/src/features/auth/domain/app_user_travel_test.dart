@@ -13,7 +13,11 @@ void main() {
       AppUser.fromDocument(_FakeDoc(<String, dynamic>{'uid': 'u1', ...data}));
 
   test('viaje nuevo: centro, origen y fin como Timestamp', () {
-    final DateTime until = DateTime.utc(2030, 1, 15, 12);
+    // Dentro de lo creíble (la app escribe 30 días): una fecha a años vista
+    // ahora cuenta como caducada, igual que en el backend.
+    final DateTime today = DateTime.now().toUtc();
+    final DateTime until = DateTime.utc(today.year, today.month, today.day, 12)
+        .add(const Duration(days: 20));
     final AppUser user = parse(<String, dynamic>{
       'settings': <String, dynamic>{
         'travel': <String, dynamic>{
@@ -58,8 +62,11 @@ void main() {
     expect(user.travelGeoSource, '');
   });
 
-  test('untilAt manda sobre el ISO antiguo', () {
-    final AppUser user = parse(<String, dynamic>{
+  test('manda la fecha más tardía entre untilAt y el ISO antiguo', () {
+    // Una versión antigua reactivó el viaje: solo renueva `until` y el
+    // `untilAt` viejo se queda. Antes mandaba untilAt: el viaje recién puesto
+    // salía caducado ("Tu viaje ha terminado") y se apagaba.
+    final AppUser reactivado = parse(<String, dynamic>{
       'settings': <String, dynamic>{
         'travel': <String, dynamic>{
           'active': true,
@@ -71,11 +78,86 @@ void main() {
         },
       },
     });
+    expect(reactivado.isTraveling, isTrue);
+    expect(reactivado.travelExpired, isFalse);
 
-    expect(user.isTraveling, isFalse);
-    expect(user.travelExpired, isTrue,
+    final AppUser caducado = parse(<String, dynamic>{
+      'settings': <String, dynamic>{
+        'travel': <String, dynamic>{
+          'active': true,
+          'country': 'Spain',
+          'until': DateTime.now()
+              .subtract(const Duration(days: 2))
+              .toIso8601String(),
+          'untilAt': Timestamp.fromDate(
+              DateTime.now().subtract(const Duration(days: 1))),
+        },
+      },
+    });
+    expect(caducado.isTraveling, isFalse);
+    expect(caducado.travelExpired, isTrue,
         reason: 'sigue marcado como activo con la fecha pasada: hay que '
             'apagarlo');
+  });
+
+  test('una fecha de fin imposible cuenta como caducada, como el backend', () {
+    final AppUser user = parse(<String, dynamic>{
+      'settings': <String, dynamic>{
+        'travel': <String, dynamic>{
+          'active': true,
+          'country': 'Spain',
+          'until':
+              DateTime.now().add(const Duration(days: 400)).toIso8601String(),
+        },
+      },
+    });
+    expect(user.isTraveling, isFalse);
+    expect(user.travelExpired, isTrue);
+  });
+
+  test('un viaje a un PAÍS entero no hereda el centro de un viaje anterior',
+      () {
+    // La demo de App Review: "España" sin ciudad sobre un documento que aún
+    // tenía el centro de Cádiz. El feed se medía desde Cádiz (500 km) y dejaba
+    // fuera Barcelona, Valencia y Bilbao.
+    final AppUser user = parse(<String, dynamic>{
+      'settings': <String, dynamic>{
+        'travel': <String, dynamic>{
+          'active': true,
+          'iso2': 'ES',
+          'city': '',
+          'country': 'España',
+          'lat': 36.5267,
+          'lng': -6.2891,
+        },
+      },
+    });
+    expect(user.isTraveling, isTrue);
+    expect(user.travelLat, isNull);
+    expect(user.hasTravelOrigin, isFalse);
+  });
+
+  test('el centro de OTRA ciudad (o país) no vale para el destino actual', () {
+    AppUser conDestino(String city, String iso2) => parse(<String, dynamic>{
+          'settings': <String, dynamic>{
+            'travel': <String, dynamic>{
+              'active': true,
+              'iso2': iso2,
+              'city': city,
+              'country': 'Spain',
+              'lat': 36.5267,
+              'lng': -6.2891,
+              'geoCity': 'Cádiz',
+              'geoIso2': 'ES',
+            },
+          },
+        });
+
+    // Una versión antigua cambió a Barcelona sin tocar lat/lng.
+    expect(conDestino('Barcelona', 'ES').hasTravelOrigin, isFalse);
+    expect(conDestino('Valencia', 'VE').hasTravelOrigin, isFalse);
+    // La misma ciudad con otra grafía sigue valiendo.
+    expect(conDestino('cadiz', 'es').hasTravelOrigin, isTrue);
   });
 
   test('un centro fuera de rango no se usa (settings no valida tipos)', () {

@@ -200,6 +200,53 @@ void main() {
       }
     });
 
+    test('un centro sobrante de otro destino no se publica, como el backend',
+        () {
+      // "España" sin ciudad (la demo de App Review) sobre un documento que
+      // aún tenía el centro de Cádiz: se publicaba en Cádiz.
+      final Map<String, dynamic> pais = aCadiz();
+      ((pais['settings'] as Map<String, dynamic>)['travel']
+          as Map<String, dynamic>)['city'] = '';
+      // Una versión antigua cambió a Barcelona sin tocar lat/lng.
+      final Map<String, dynamic> otraCiudad = aCadiz();
+      ((otraCiudad['settings'] as Map<String, dynamic>)['travel']
+          as Map<String, dynamic>)
+        ..['city'] = 'Barcelona'
+        ..['geoCity'] = 'Cadiz'
+        ..['geoIso2'] = 'ES';
+
+      for (final Map<String, dynamic> data in <Map<String, dynamic>>[
+        pais,
+        otraCiudad,
+      ]) {
+        final Map<String, dynamic> out =
+            DiscoveryPublisher.buildPayload('viajero', data);
+        expect(out['traveling'], isTrue);
+        expect(out.containsKey('geo'), isFalse);
+      }
+    });
+
+    test('manda la fecha más tardía; una imposible cuenta como caducada', () {
+      // Versión antigua que reactivó el viaje: `until` nuevo, `untilAt` viejo.
+      final Map<String, dynamic> reactivado = DiscoveryPublisher.buildPayload(
+        'viajero',
+        aCadiz(
+          untilAt: DateTime.now().subtract(const Duration(days: 3)),
+        ),
+      );
+      expect(reactivado['traveling'], isTrue);
+
+      final Map<String, dynamic> lejano = DiscoveryPublisher.buildPayload(
+        'viajero',
+        aCadiz(
+            until: DateTime.now()
+                .add(const Duration(days: 400))
+                .toIso8601String()),
+      );
+      expect(lejano['traveling'], isFalse);
+      expect(lejano['currentCity'], 'Madrid');
+    });
+
     test('sin viajar publica el ISO2 de casa aunque el nombre sea otro idioma',
         () {
       final Map<String, dynamic> data = _user(traveling: false);
