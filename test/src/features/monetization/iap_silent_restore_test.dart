@@ -56,7 +56,7 @@ class _FakeBoosts implements BoostService {
   final List<Map<String, String?>> verified = <Map<String, String?>>[];
 
   @override
-  Future<({bool ok, bool permanent, String? message})>
+  Future<({bool ok, bool permanent, String? message, String? reason})>
       verifySubscriptionDetailed({
     required String productId,
     required String platform,
@@ -70,7 +70,7 @@ class _FakeBoosts implements BoostService {
       'verificationData': verificationData,
       'purchaseId': purchaseId,
     });
-    return (ok: true, permanent: false, message: null);
+    return (ok: true, permanent: false, message: null, reason: null);
   }
 
   @override

@@ -1,9 +1,10 @@
 /**
  * C02 / C10 (reglas): profileCards/{uid} es la ficha por uid de quien NO sale
  * en el feed (perfil oculto, cuenta pausada, sin recomendaciones, incognito).
- * La leen el dueno, su match ACTIVO y las personas a las que el dueno dio like
- * (lo que promete el incognito: "Solo te ven las personas a las que tu has
- * dado like"). Nadie mas, nadie la escribe y no se puede listar.
+ * La leen el dueno, su match ACTIVO o CERRADO CON ELEGANCIA y las personas a
+ * las que el dueno dio like (lo que promete el incognito: "Solo te ven las
+ * personas a las que tu has dado like"). Nadie mas, nadie la escribe y no se
+ * puede listar.
  *
  * Necesita el EMULADOR de Firestore; sin el, se salta (la suite normal
  * `node --test test/*.test.js` no depende de Java ni de la CLI). Desde la raiz:
@@ -143,9 +144,21 @@ test("an active match sees each other, whatever the uid order", { skip }, async 
   assert.equal(await read(A, `profileCards/${B}`), 200); // lector < dueno
 });
 
-test("blocked, unmatched, closed or deleted pairs lose access even with likes left", { skip }, async () => {
+// "Cerrar con elegancia" deja el match en 'closed' y el chat sigue en
+// Conversaciones como archivo de solo lectura, desde donde se abre el perfil.
+// Con solo 'active', la otra persona oculta o en incognito salia como
+// "Alguien" y "No se pudo cargar el perfil".
+test("a gracefully closed match still opens the profile from the archive", { skip }, async () => {
+  await seed(`matches/${A}_${B}`, { users: [A, B], status: "closed" });
+  assert.equal(await read(B, `profileCards/${A}`), 200);
+  assert.equal(await read(A, `profileCards/${B}`), 200);
+  // Sin likes que lo sostengan: es el match cerrado el que da acceso.
+  assert.equal(await read(C, `profileCards/${A}`), 403);
+});
+
+test("blocked, unmatched or deleted pairs lose access even with likes left", { skip }, async () => {
   await seed(`likes/${A}_${B}`, { fromUid: A, toUid: B, status: "active" });
-  for (const status of ["blocked", "unmatched", "closed", "deleted"]) {
+  for (const status of ["blocked", "unmatched", "deleted"]) {
     await seed(`matches/${A}_${B}`, { users: [A, B], status });
     assert.equal(await read(B, `profileCards/${A}`), 403, status);
     assert.equal(await read(A, `profileCards/${B}`), 403, status);

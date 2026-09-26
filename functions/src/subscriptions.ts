@@ -166,6 +166,14 @@ export const UNVERIFIED_RENEWAL_SLACK_MS = 7 * 24 * 60 * 60 * 1000;
 /// que nunca necesita mas que eso; el margen cubre el retraso entre la compra
 /// y su primera entrega, que es lo que separa nuestra caducidad provisional
 /// del ciclo real de Google.
+///
+/// [sandbox]: compra VERIFICADA de sandbox (App Review, TestFlight, testers de
+/// Play). Alli la tienda acelera el reloj: un mensual caduca a los ~5 minutos y
+/// un anual a la hora, y deja de renovar tras ~12 ciclos. Con la fecha de la
+/// tienda tal cual, el revisor que compra ve Pro bloqueado minutos despues y
+/// la app se rechaza. Para sandbox (y SOLO sandbox) la compra concede
+/// max(fecha de la tienda, un periodo de calendario desde hoy), como antes de
+/// verificar. Produccion sigue mandando la tienda sin retoques.
 export function resolveGrant(input: {
   tier: Tier;
   productId: string;
@@ -177,6 +185,7 @@ export function resolveGrant(input: {
   currentIsLifetime: boolean;
   storeExpiresAtMs?: number | null;
   newTransaction?: boolean;
+  sandbox?: boolean;
 }): { tier: Tier; expiresAtMs: number; extended: boolean; reason: string } {
   const {
     tier, productId, period, nowMs,
@@ -186,8 +195,13 @@ export function resolveGrant(input: {
 
   const isUpgrade = TIER_RANK[tier] > TIER_RANK[currentTier];
   const isSameTier = TIER_RANK[tier] === TIER_RANK[currentTier];
+  const calendarExpiresAtMs = expiryFor(period, new Date(nowMs)).getTime();
   const purchaseExpiresAtMs =
-    storeExpiresAtMs ?? expiryFor(period, new Date(nowMs)).getTime();
+    storeExpiresAtMs === null
+      ? calendarExpiresAtMs
+      : input.sandbox === true
+        ? Math.max(storeExpiresAtMs, calendarExpiresAtMs)
+        : storeExpiresAtMs;
 
   if (isUpgrade) {
     return {
@@ -205,6 +219,10 @@ export function resolveGrant(input: {
     const mismaSuscripcion = vigente && currentProductId === productId;
     if (mismaSuscripcion && !currentIsLifetime && currentExpiresAtMs !== null) {
       if (storeExpiresAtMs !== null) {
+        // Aqui va la fecha CRUDA de la tienda, tambien en sandbox: las
+        // renovaciones aceleradas (cada ~5 min) y cada "restaurar compras"
+        // son la misma suscripcion vigente, y con el suelo de calendario cada
+        // una deslizaria el mes otra vez desde hoy.
         const expiresAtMs = Math.max(currentExpiresAtMs, storeExpiresAtMs);
         const extended = expiresAtMs > currentExpiresAtMs;
         return {
@@ -309,6 +327,8 @@ export function resolveStoreSync(input: {
   entitled: boolean;
   revoked: boolean;
   allowRevocation: boolean;
+  /// Notificacion de sandbox: mismo suelo de calendario que [resolveGrant].
+  sandbox?: boolean;
 }):
   | { action: "grant"; tier: Tier; expiresAtMs: number; reason: string }
   | { action: "revoke"; expiresAtMs: number; reason: string }
@@ -336,6 +356,7 @@ export function resolveStoreSync(input: {
     currentExpiresAtMs: input.currentExpiresAtMs,
     currentIsLifetime: input.currentIsLifetime,
     storeExpiresAtMs: input.storeExpiresAtMs,
+    sandbox: input.sandbox === true,
   });
   if (!grant.extended) return { action: "ignore", reason: grant.reason };
   return {
@@ -420,6 +441,7 @@ export async function applyStoreSubscriptionUpdate(input: {
       entitled: purchase.entitled,
       revoked: purchase.revoked,
       allowRevocation: input.allowRevocation,
+      sandbox: purchase.sandbox === true,
     });
 
     if (decision.action === "grant") {
@@ -709,6 +731,9 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
       currentIsLifetime,
       storeExpiresAtMs: verified?.expiresAtMs ?? null,
       newTransaction: !ledgerSnap.exists && !legacySnap.exists && stableKey,
+      // Solo una compra VERIFICADA como sandbox recibe el suelo de calendario;
+      // sin verificar no hay fecha de la tienda que corregir.
+      sandbox: verified?.sandbox === true,
     });
     if (reclamadaDe !== null || suscripcionDe !== null) {
       console.log(

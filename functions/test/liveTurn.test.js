@@ -1,7 +1,7 @@
 /**
  * Tests de la generacion de credenciales TURN efimeras (functions/src/liveTurn.ts).
  *
- * COMO SE EJECUTAN (el proyecto no tiene runner de JS: se usa el de Node 20+):
+ * COMO SE EJECUTAN (el proyecto no tiene runner de JS: se usa el de Node 22, el runtime desplegado):
  *
  *   cd functions && npm run build && node --test test/liveTurn.test.js
  *

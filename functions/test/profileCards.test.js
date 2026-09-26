@@ -152,6 +152,26 @@ test("the card has the listing shape without geo or filter-only traits", () => {
   assert.equal(card.religion, undefined);
 });
 
+// El rango de edad que alguien BUSCA solo sirve para emparejar en el feed; en
+// la ficha lo leian sus matches y quien recibio su like (oculto o incognito
+// incluidos).
+test("the card never carries the age range the owner is looking for", () => {
+  const data = ana({ preferences: { preferredAgeMin: 30, preferredAgeMax: 40 } });
+  const { listing, card } = publicDocsFor("ana", data, false, AHORA);
+  assert.equal(listing.preferredAgeMin, 30, "el feed lo sigue necesitando");
+  assert.equal(listing.preferredAgeMax, 40);
+  assert.equal("preferredAgeMin" in card, false);
+  assert.equal("preferredAgeMax" in card, false);
+  for (const [extra, isPaid] of [
+    [{ settings: { "privacy.hideProfile": true } }, false],
+    [{ settings: { "privacy.incognito": true } }, true],
+  ]) {
+    const oculta = publicDocsFor("ana", ana({ ...data, ...extra }), isPaid, AHORA);
+    assert.equal("preferredAgeMin" in oculta.card, false);
+    assert.equal("preferredAgeMax" in oculta.card, false);
+  }
+});
+
 test("a paid incognito card hides location and activity, as the setting promises", () => {
   const data = ana({ settings: { "privacy.incognito": true } });
   const { listing, card } = publicDocsFor("ana", data, true, AHORA);
@@ -163,6 +183,9 @@ test("a paid incognito card hides location and activity, as the setting promises
   assert.equal(card.geo, undefined);
   assert.equal(card.showDistance, false);
   assert.equal(card.showActiveStatus, false);
+  // `updatedAt` cambia con cada escritura de users/{uid} (login, token push):
+  // leido en crudo diria cuando abrio la app por ultima vez.
+  assert.equal("updatedAt" in card, false);
   // Ocultarse sin incognito NO promete esconder la ciudad.
   const oculta = publicDocsFor("ana", ana({ settings: { "privacy.hideProfile": true } }), false, AHORA);
   assert.equal(oculta.card.currentCity, "Madrid");

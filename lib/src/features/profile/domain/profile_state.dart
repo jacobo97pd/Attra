@@ -191,6 +191,11 @@ class SeedProfile {
   final String company;
   final List<String> interests;
   final String photoUrl;
+
+  /// Perfil semilla (mock de `seed_profiles`). Solo cuenta si el documento lo
+  /// dice: el feed rellena con semillas un Descubrir vacío
+  /// (`FeedFilter.sampleProfiles`) y una ficha real sin el campo no puede
+  /// colarse ahí como "semilla" de otro país.
   final bool isBot;
   final int botProfileVersion;
   final String botScenario;
@@ -381,7 +386,7 @@ class SeedProfile {
           _strList(profile['interests']) ??
           const <String>[],
       photoUrl: _str(data['photoUrl']) ?? _str(data['profilePhotoUrl']) ?? '',
-      isBot: _bool(data['isBot']) ?? true,
+      isBot: _bool(data['isBot']) ?? false,
       botProfileVersion: _asInt(data['botProfileVersion']) ?? 1,
       botScenario: _str(data['botScenario']) ?? 'generic',
       seedQualityScore: _asInt(data['seedQualityScore']) ?? 0,

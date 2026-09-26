@@ -1,7 +1,7 @@
 /**
  * Tests del buscador por PROMPT (functions/src/promptMatch.ts).
  *
- * COMO SE EJECUTAN (el proyecto no tiene runner de JS: se usa el de Node 20+):
+ * COMO SE EJECUTAN (el proyecto no tiene runner de JS: se usa el de Node 22, el runtime desplegado):
  *
  *   cd functions && npm run build && node --test test/promptMatch.test.js
  *

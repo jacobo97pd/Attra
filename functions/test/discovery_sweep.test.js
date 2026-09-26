@@ -17,7 +17,13 @@ const assert = require("node:assert/strict");
 const { Query, Timestamp } = require("firebase-admin/firestore");
 const { installFakeFirestore } = require("./fakeFirestore.js");
 const { db } = require("../lib/firebase.js");
-const { runPublicationBackfill, runTravelSweep } = require("../lib/discovery.js");
+const {
+  BACKFILL_MAX_BATCH_WRITES,
+  decideTravelSweepFor,
+  publicDocsFor,
+  runPublicationBackfill,
+  runTravelSweep,
+} = require("../lib/discovery.js");
 
 afterEach(() => mock.restoreAll());
 
@@ -186,4 +192,164 @@ test("backfill: un documento que no se puede construir se cuenta y se salta", as
   assert.equal(docs.get("discovery/b_fecha").traveling, false);
   assert.equal(docs.get("discovery/b_fecha").currentCity, "Madrid");
   assert.equal(docs.has("profileCards/c_normal"), true);
+});
+
+/// Cuenta las escrituras de cada commit (el fake no tiene limite; Firestore
+/// rechaza un batch de mas de 500).
+function countCommits() {
+  const fakeBatch = db.batch;
+  const commits = [];
+  mock.method(db, "batch", () => {
+    const inner = fakeBatch.call(db);
+    const paths = [];
+    const wrapped = {
+      set: (ref, ...rest) => (paths.push(ref.path), inner.set(ref, ...rest), wrapped),
+      update: (ref, ...rest) => (paths.push(ref.path), inner.update(ref, ...rest), wrapped),
+      delete: (ref) => (paths.push(ref.path), inner.delete(ref), wrapped),
+      commit: async () => {
+        commits.push(paths.slice());
+        await inner.commit();
+      },
+    };
+    return wrapped;
+  });
+  return commits;
+}
+
+// Cada usuario son DOS escrituras (discovery + profileCards). Con paginas de
+// 300 el primer commit real llevaba 600: Firestore lo rechaza entero y la
+// migracion no se hacia. El ensayo no lo veia porque nunca confirma.
+test("backfill: ningun commit pasa de 500 escrituras", async () => {
+  const mundo = {};
+  for (let i = 0; i < 650; i++) {
+    mundo[`users/u${String(i).padStart(4, "0")}`] = usuaria();
+  }
+  const { docs } = installFakeFirestore(mock, mundo);
+  installUserPaging(docs);
+  const commits = countCommits();
+
+  // Pagina por defecto...
+  const result = await runPublicationBackfill({ dryRun: false, nowMs: AHORA });
+  assert.equal(result.processed, 650);
+  assert.equal(result.cardsPublished, 650);
+  assert.ok(commits.length > 1);
+  for (const c of commits) {
+    assert.ok(c.length <= BACKFILL_MAX_BATCH_WRITES, `commit de ${c.length}`);
+    assert.ok(c.length < 500);
+  }
+  assert.equal(
+    commits.reduce((n, c) => n + c.length, 0),
+    1300,
+    "no se pierde ninguna escritura al partir"
+  );
+
+  // ...y aunque alguien pida una pagina enorme.
+  commits.length = 0;
+  await runPublicationBackfill({ dryRun: false, pageSize: 1000, nowMs: AHORA });
+  for (const c of commits) assert.ok(c.length <= BACKFILL_MAX_BATCH_WRITES);
+  // Listado y ficha de cada usuario, siempre en el mismo commit.
+  for (const c of commits) {
+    const ids = new Set(c.map((path) => path.split("/")[1]));
+    for (const id of ids) {
+      assert.ok(c.includes(`discovery/${id}`) && c.includes(`profileCards/${id}`));
+    }
+  }
+
+  // En ensayo, nada se confirma.
+  commits.length = 0;
+  await runPublicationBackfill({ dryRun: true, nowMs: AHORA });
+  assert.equal(commits.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Coste del barrido: un viajero de pago que NO sale en el feed (oculto,
+// pausado, sin recomendaciones, incognito) no tiene listado, solo ficha. Solo
+// se miraba discovery, asi que se le republicaba en CADA pasada, para siempre.
+// ---------------------------------------------------------------------------
+
+/// Lo que hay publicado si el trigger ya hizo su trabajo.
+function publicado(uid, data, isPaid) {
+  const { listing, card } = publicDocsFor(uid, data, isPaid, AHORA);
+  return { listing: listing ?? undefined, card: card ?? undefined };
+}
+
+test("decision: el viajero oculto con su ficha al dia no se toca", () => {
+  const oculto = usuaria({
+    settings: { "privacy.hideProfile": true, travel: viaje() },
+  });
+  const pub = publicado("o", oculto, true);
+  assert.equal(pub.listing, undefined, "no sale en el feed");
+  assert.equal(pub.card.traveling, true);
+  assert.equal(decideTravelSweepFor("o", oculto, true, pub, AHORA), "none");
+  // Sin ficha, o con la ficha desalineada con el plan: si hay que republicar.
+  assert.equal(
+    decideTravelSweepFor("o", oculto, true, { listing: undefined, card: undefined }, AHORA),
+    "resync"
+  );
+  assert.equal(
+    decideTravelSweepFor("o", oculto, false, pub, AHORA),
+    "resync",
+    "el plan caduco: la ficha ya no puede decir 'de viaje'"
+  );
+  // Un listado que ya no le toca tambien se corrige.
+  assert.equal(
+    decideTravelSweepFor("o", oculto, true, { listing: { traveling: true }, card: pub.card }, AHORA),
+    "resync"
+  );
+});
+
+test("decision: la ficha de incognito (traveling=false forzado) no se republica en bucle", () => {
+  const incognito = usuaria({
+    settings: { "privacy.incognito": true, travel: viaje() },
+  });
+  const pub = publicado("i", incognito, true);
+  assert.equal(pub.listing, undefined);
+  assert.equal(pub.card.traveling, false, "incognito no dice que viaja");
+  assert.equal(decideTravelSweepFor("i", incognito, true, pub, AHORA), "none");
+});
+
+test("decision: sin ficha posible (sin fecha de nacimiento) no se borra cada hora", () => {
+  const sinFecha = usuaria({ settings: { travel: viaje() } });
+  sinFecha.profile = { ...sinFecha.profile, birthDate: null };
+  assert.equal(
+    decideTravelSweepFor("s", sinFecha, true, { listing: undefined, card: undefined }, AHORA),
+    "none"
+  );
+});
+
+test("decision: el viajero que sale en el feed se compara con su listado, como antes", () => {
+  const visible = usuaria({ settings: { travel: viaje() } });
+  const pub = publicado("v", visible, true);
+  assert.equal(pub.listing.traveling, true);
+  assert.equal(decideTravelSweepFor("v", visible, true, pub, AHORA), "none");
+  assert.equal(
+    decideTravelSweepFor("v", visible, true, { listing: { traveling: false }, card: pub.card }, AHORA),
+    "resync"
+  );
+  // Caducado: se apaga, publique lo que publique.
+  const caducado = usuaria({
+    settings: { travel: viaje({ untilAt: Timestamp.fromMillis(AHORA - DIA) }) },
+  });
+  assert.equal(decideTravelSweepFor("v", caducado, true, pub, AHORA), "deactivate");
+});
+
+test("barrido: viajeros de pago fuera del feed y al dia -> cero escrituras", async () => {
+  const oculto = usuaria({ settings: { "privacy.hideProfile": true, travel: viaje() } });
+  const incognito = usuaria({ settings: { "privacy.incognito": true, travel: viaje() } });
+  const pubO = publicado("oculto", oculto, true);
+  const pubI = publicado("incognito", incognito, true);
+  const { writes } = installFakeFirestore(mock, {
+    "users/oculto": oculto,
+    "userEntitlements/oculto": PRO,
+    "profileCards/oculto": pubO.card,
+    "users/incognito": incognito,
+    "userEntitlements/incognito": PRO,
+    "profileCards/incognito": pubI.card,
+  });
+  installGetAll();
+
+  const result = await runTravelSweep(AHORA);
+
+  assert.deepEqual(result, { deactivated: 0, resynced: 0, failed: 0 });
+  assert.equal(writes.length, 0, "antes: 2 escrituras por usuario y hora");
 });

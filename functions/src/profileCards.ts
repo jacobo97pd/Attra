@@ -122,10 +122,17 @@ export function cardBlocker(
 /// parser, pero sin lo que solo sirve para el feed:
 ///   - `geo` (ni aproximado): quien te ve por uid no necesita tu posicion;
 ///   - `filterTraits`: rasgos sensibles que el usuario solo cedio para FILTRAR,
-///     no para ensenarlos en su perfil.
+///     no para ensenarlos en su perfil;
+///   - `preferredAgeMin/Max`: el rango de edad que BUSCA solo sirve para
+///     emparejar en el feed (la reciprocidad de edad). En la ficha lo leian sus
+///     matches y cualquiera a quien diera like, tambien si estaba oculto o en
+///     incognito, y la app no lo pinta en ninguna parte.
 /// Con incognito de pago activo tampoco lleva ubicacion ni actividad: el ajuste
 /// promete "Oculta tu ubicacion y tu estado de actividad", y antes, sin ficha
-/// alguna, no se veia nada de eso.
+/// alguna, no se veia nada de eso. Eso incluye `updatedAt`: es un
+/// serverTimestamp que cambia con CADA escritura de users/{uid} (el
+/// lastLoginAt y el token push de cada arranque), asi que leido en crudo decia
+/// cuando habia abierto la app por ultima vez. La app no lo lee de la ficha.
 export function profileCardFrom(
   listing: DocumentData,
   opts: { incognito: boolean }
@@ -133,6 +140,8 @@ export function profileCardFrom(
   const card: DocumentData = { ...listing };
   delete card.geo;
   delete card.filterTraits;
+  delete card.preferredAgeMin;
+  delete card.preferredAgeMax;
   if (opts.incognito) {
     card.currentCity = "";
     card.currentCountryName = "";
@@ -141,6 +150,7 @@ export function profileCardFrom(
     delete card.travelUntil;
     card.showDistance = false;
     card.showActiveStatus = false;
+    delete card.updatedAt;
   }
   return card;
 }

@@ -171,9 +171,13 @@ service cloud.firestore {
     // a quien habia dado like veian "Alguien" sin foto.
     //
     // La leen el dueno y quien tiene RELACION con el:
-    //   - el match del par, si esta ACTIVO. Bloqueado, deshecho, cerrado o
-    //     borrado corta el acceso aunque queden likes (applyBlock deja el match
-    //     'blocked' incluso sin match previo);
+    //   - el match del par, si esta ACTIVO o CERRADO CON ELEGANCIA ('closed',
+    //     closeConversationGracefully). El chat cerrado sigue en Conversaciones
+    //     como archivo de solo lectura y desde ahi se abre el perfil: con solo
+    //     'active', la otra persona oculta, pausada o en incognito salia como
+    //     "Alguien" sin foto y "No se pudo cargar el perfil". Bloqueado,
+    //     deshecho ('unmatched') o borrado corta el acceso aunque queden likes
+    //     (applyBlock deja el match 'blocked' incluso sin match previo);
     //   - sin match, un like DEL DUENO al lector que no este cancelado. Es lo
     //     que promete el incognito: "Solo te ven las personas a las que tu has
     //     dado like". Por eso NO basta con haberle dado like tu: cualquiera que
@@ -192,7 +196,7 @@ service cloud.firestore {
       let pair = me < ownerUid ? me + '_' + ownerUid : ownerUid + '_' + me;
       let matchDoc = get(/databases/$(database)/documents/matches/$(pair));
       return matchDoc != null
-        ? matchDoc.data.get('status', 'active') == 'active'
+        ? matchDoc.data.get('status', 'active') in ['active', 'closed']
         : isLiveLike(get(/databases/$(database)/documents/likes/$(ownerUid + '_' + me)));
     }
 

@@ -157,8 +157,27 @@ el feed no dependa de quién mire: cubren las **8 identidades de género**, las
 **10 orientaciones** y los **4 modos de intención** que ofrece el onboarding, con
 edades de 19 a 58. Antes solo había perfiles `male` y `female`, de modo que una
 cuenta que se declarase no binaria, trans o agénero podía terminar el onboarding
-y encontrarse el feed vacío. Si el revisor crea una cuenta propia con cualquier
-identidad, ahora ve perfiles.
+y encontrarse el feed vacío.
+
+**Si el revisor crea una cuenta propia.** Todos los perfiles semilla son de
+España, y el feed de casa nunca enseña a gente de otro país. Lo que ve una
+cuenta nueva depende de dónde esté:
+
+- **En España:** los perfiles semilla de su zona, como cualquier usuario.
+- **Fuera de España** (sin viaje, sin búsqueda IA): no hay nadie de su país ni
+  dentro de su radio, así que Descubrir se rellena con **perfiles semilla de
+  cualquier país**, con el aviso «Aún no hay nadie en tu zona: te enseñamos
+  perfiles de ejemplo de otros lugares». Solo con semillas (`isBot: true`):
+  nunca con personas reales de otro país. De esas semillas solo se ignoran el
+  país y el radio; se siguen aplicando la compatibilidad de género en los dos
+  sentidos, el modo de intención, el rango de edad en los dos sentidos y sus
+  filtros. Por eso **no ve las 96**: con el rango del onboarding (24-35 por
+  defecto) y la identidad que declare, ve solo las que encajan.
+
+Este comportamiento está cubierto por tests
+(`test/src/features/feed/presentation/feed_location_refresh_test.dart`), pero
+**falta comprobarlo con una cuenta nueva en un dispositivo fuera de España**
+antes de enviar. Las dos cuentas demo no dependen de esto: viajan a España.
 
 No se han falsificado aceptaciones legales ni consentimientos de IA. Al entrar
 en la nueva build, completar los consentimientos que se soliciten. Ambas

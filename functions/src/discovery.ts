@@ -731,6 +731,58 @@ export function decideTravelSweep(
   return publishedTraveling === shouldTravel ? "none" : "resync";
 }
 
+/// Lo que hay publicado de un usuario: su listado del feed y su ficha por uid
+/// (undefined = no existe).
+export interface PublishedDocs {
+  listing: DocumentData | undefined;
+  card: DocumentData | undefined;
+}
+
+/// Decision del barrido mirando el documento que DE VERDAD le corresponde (puro,
+/// testeable).
+///
+/// QUE FALLABA: se comparaba solo con `discovery`. Un viajero de pago que no
+/// sale en el feed (perfil oculto, cuenta pausada, sin recomendaciones o en
+/// incognito) no tiene listado, solo ficha, asi que [decideTravelSweep] veia
+/// "no hay ficha publicada" y devolvia "resync" en CADA pasada, para siempre:
+/// una lectura de entitlements y dos escrituras por usuario y hora, y un
+/// `updatedAt` nuevo en su ficha cada vez (con incognito, justo lo que no debe
+/// cambiar). Ahora:
+///   - listado esperado -> se compara el `traveling` del listado, como antes;
+///   - sin listado -> no puede quedar listado publicado, y la ficha tiene que
+///     existir (o no) como se espera y con su `traveling` (la de incognito lo
+///     lleva siempre a false: se compara con ESO, no con el plan);
+///   - sin ficha posible (sin fecha de nacimiento, menor...) -> nada que
+///     borrar si ya no hay nada.
+export function decideTravelSweepFor(
+  uid: string,
+  data: DocumentData,
+  isPaid: boolean,
+  published: PublishedDocs,
+  nowMs: number = Date.now()
+): TravelSweepAction {
+  const travel = travelOf(data);
+  if (travel.active !== true) return "none";
+  if (travelExpired(travel, nowMs)) return "deactivate";
+  const expected = publicDocsFor(uid, data, isPaid, nowMs);
+  if (expected.listing) {
+    const listed = published.listing;
+    return decideTravelSweep(
+      travel,
+      isPaid,
+      listed === undefined ? undefined : listed.traveling === true,
+      nowMs
+    );
+  }
+  if (published.listing !== undefined) return "resync";
+  if (!expected.card) return published.card === undefined ? "none" : "resync";
+  if (published.card === undefined) return "resync";
+  return (published.card.traveling === true) ===
+    (expected.card.traveling === true)
+    ? "none"
+    : "resync";
+}
+
 /// Lo que escribe el barrido al apagar un viaje caducado. Mismo contrato que
 /// al apagarlo desde la app (`UserRepository.buildTravelPatch`): pais, ciudad
 /// e ISO2 se CONSERVAN para poder reactivarlo de un toque; el centro y las
@@ -817,9 +869,21 @@ export async function runTravelSweep(
     ]);
     const paidById = new Map<string, boolean>();
     for (const es of entSnaps) paidById.set(es.id, isPaidActive(es.data(), nowMs));
-    const publishedById = new Map<string, boolean | undefined>();
+    const listingById = new Map<string, DocumentData | undefined>();
     for (const ds of discSnaps) {
-      publishedById.set(ds.id, ds.exists ? ds.data()?.traveling === true : undefined);
+      listingById.set(ds.id, ds.exists ? ds.data() : undefined);
+    }
+    // La ficha (profileCards) solo de quien NO tiene listado: es lo unico
+    // publicado de quien no sale en el feed (ver decideTravelSweepFor), y a
+    // quien si lo tiene se le compara con el listado.
+    const sinListado = ids.filter((id) => listingById.get(id) === undefined);
+    const cardSnaps =
+      sinListado.length > 0
+        ? await db.getAll(...sinListado.map((id) => profileCards.doc(id)))
+        : [];
+    const cardById = new Map<string, DocumentData | undefined>();
+    for (const cs of cardSnaps) {
+      cardById.set(cs.id, cs.exists ? cs.data() : undefined);
     }
 
     const batch = db.batch();
@@ -827,10 +891,11 @@ export async function runTravelSweep(
     for (const doc of snap.docs) {
       try {
         const data = doc.data();
-        const action = decideTravelSweep(
-          travelOf(data),
+        const action = decideTravelSweepFor(
+          doc.id,
+          data,
           paidById.get(doc.id) ?? false,
-          publishedById.get(doc.id),
+          { listing: listingById.get(doc.id), card: cardById.get(doc.id) },
           nowMs
         );
         if (action === "deactivate") {
@@ -924,6 +989,14 @@ export interface PublicationBackfillResult {
   reasons: Record<string, number>;
 }
 
+/// Tope de escrituras por commit del backfill. Firestore admite 500 por
+/// batch; cada usuario son DOS (discovery + profileCards), asi que una pagina
+/// de 300 usuarios eran 600 escrituras en un solo commit: el primer lote real
+/// habria fallado entero y la migracion de profileCards/18+ no se hacia (el
+/// ensayo no lo detecta porque nunca confirma). Margen como el resto del repo
+/// (accountCleanup, firestore_rest.py).
+export const BACKFILL_MAX_BATCH_WRITES = 400;
+
 /// Recorre TODOS los users y deja discovery y profileCards como los dejaria el
 /// trigger. Hace falta una vez al desplegar profileCards: la ficha de los ya
 /// ocultos no existe hasta que su usuario vuelva a escribir su documento.
@@ -939,7 +1012,10 @@ export async function runPublicationBackfill(opts: {
   pageSize?: number;
   nowMs?: number;
 }): Promise<PublicationBackfillResult> {
-  const pageSize = opts.pageSize ?? 300;
+  // 200 usuarios = 400 escrituras: una pagina cabe en un commit. Aun asi el
+  // lote se parte por [BACKFILL_MAX_BATCH_WRITES] (un `pageSize` mayor no
+  // puede volver a pasarse del limite).
+  const pageSize = opts.pageSize ?? 200;
   const nowMs = opts.nowMs ?? Date.now();
   const result: PublicationBackfillResult = {
     dryRun: opts.dryRun,
@@ -974,7 +1050,14 @@ export async function runPublicationBackfill(opts: {
       }
     }
 
-    const batch = db.batch();
+    let batch = db.batch();
+    let pending = 0;
+    // En ensayo el batch se descarta sin enviarse: nada se escribe.
+    const flush = async (): Promise<void> => {
+      if (pending > 0 && !opts.dryRun) await batch.commit();
+      batch = db.batch();
+      pending = 0;
+    };
     for (const doc of snap.docs) {
       result.processed += 1;
       lastId = doc.id;
@@ -1001,6 +1084,10 @@ export async function runPublicationBackfill(opts: {
       if (plan.reason) {
         result.reasons[plan.reason] = (result.reasons[plan.reason] ?? 0) + 1;
       }
+      // Listado y ficha de un mismo usuario van SIEMPRE en el mismo commit,
+      // como en syncOne: no pueden quedar contradiciendose si otro falla.
+      if (pending + 2 > BACKFILL_MAX_BATCH_WRITES) await flush();
+      pending += 2;
       if (listing) {
         batch.set(discovery.doc(doc.id), listing);
         result.published += 1;
@@ -1016,8 +1103,7 @@ export async function runPublicationBackfill(opts: {
         result.cardsRemoved += 1;
       }
     }
-    // En ensayo el batch se descarta sin enviarse: nada se escribe.
-    if (!opts.dryRun) await batch.commit();
+    await flush();
     if (snap.size < pageSize) break;
   }
   return result;

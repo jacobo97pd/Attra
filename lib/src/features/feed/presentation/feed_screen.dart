@@ -505,6 +505,11 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// de otro país, sin explicación, parece un error.
   bool _countryFallback = false;
 
+  /// La carga actual se ha quedado vacía en casa y se ha rellenado con perfiles
+  /// de MUESTRA (semillas) de cualquier país (ver `FeedFilter.sampleProfiles`).
+  /// Se dice en un banner: son perfiles de ejemplo y no son de tu zona.
+  bool _sampleFallback = false;
+
   /// Viajando no había nadie en el radio del destino y se ha ampliado una vez
   /// a [TravelScope.widenedRadiusKm]. Se cuenta en un banner.
   bool _travelWidened = false;
@@ -1585,6 +1590,40 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           countryFallback = true;
         }
       }
+      // RESPALDO DE MUESTRA: sigue vacío (ni tu país ni tu zona tienen a nadie).
+      // Pasaba a toda cuenta nueva fuera de España, y al revisor de App Review
+      // que se crea la suya: Descubrir vacío, que es el rechazo 2.1(a). Se
+      // rellena SOLO con perfiles semilla, ignorando únicamente país y radio;
+      // nunca con personas reales de otro país. Ni viajando (el destino manda)
+      // ni en búsqueda IA (ya es global).
+      //
+      // En la segunda vuelta NO entra nadie nuevo: solo vuelven las semillas
+      // que pasaste, que es lo que promete esa pantalla. Sin esto, quien había
+      // pasado muestras veía "Puedes volver a ver a las N personas que
+      // pasaste" y, al pulsarlo, un mazo vacío (la regla de país las tira).
+      bool sampleFallback = false;
+      if (filtered.isEmpty && !traveling && !travelingPending && !aiSearch) {
+        List<SeedProfile> samples = FeedFilter.sampleProfiles(
+          profiles: all,
+          myUid: myUid,
+          myGender: widget.user?.gender ?? '',
+          myInterestedIn: widget.user?.interestedIn ?? const <String>[],
+          excludedUids: excluded,
+          filters: filters,
+          myCity: widget.user?.city ?? '',
+          myIntent: widget.user?.intentMode ?? IntentMode.dating,
+          myAge: myAge,
+        );
+        if (_secondRound) {
+          samples = samples
+              .where((SeedProfile p) => disliked.contains(p.id))
+              .toList(growable: false);
+        }
+        if (samples.isNotEmpty) {
+          filtered = samples;
+          sampleFallback = true;
+        }
+      }
       // Segunda vuelta: quédate SOLO con los pases que se pueden reconsiderar.
       if (_secondRound) {
         filtered = filtered
@@ -1741,6 +1780,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         _activeBoostsByUid = activeBoosts;
         _aiSearch = aiState;
         _countryFallback = countryFallback;
+        _sampleFallback = sampleFallback;
         _travelWidened = travelWidened;
         _rankedPool = filtered;
         _profiles = const <SeedProfile>[];
@@ -2794,6 +2834,35 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Aviso de que el mazo son perfiles de MUESTRA de otros lugares porque en tu
+  /// zona todavía no hay nadie. Sin él parecerían gente de alrededor.
+  Widget _sampleFallbackBanner() {
+    final ThemeData theme = Theme.of(context);
+    final Color color = theme.colorScheme.outline;
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.public_rounded, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Aún no hay nadie en tu zona: te enseñamos perfiles de ejemplo '
+                'de otros lugares',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Viaje guardado que NO cuenta porque el plan ya no lo incluye. Sin esto el
   /// usuario seguía viendo "De viaje en Cádiz" con el feed de casa (o al revés)
   /// y no sabía por qué. El toque abre la hoja, que deja apagarlo sin plan.
@@ -3139,6 +3208,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // devuelve `none`): el feed del destino es intencionado, no un fallo.
       if (_locationNotice != LocationNotice.none) _locationBanner(),
       if (_countryFallback) _countryFallbackBanner(),
+      if (_sampleFallback) _sampleFallbackBanner(),
       // Aviso siempre visible del filtro IA: sin él, el usuario no tenía
       // ninguna pista de que una búsqueda IA le estaba recortando el feed.
       if (ai != null) _aiSearchBanner(ai),

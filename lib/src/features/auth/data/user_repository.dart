@@ -485,7 +485,7 @@ class UserRepository {
       if (page == null) continue;
       for (final MapEntry<String, Map<String, dynamic>> d in page) {
         if (d.key == excludeUid || byUid.containsKey(d.key)) continue;
-        final SeedProfile? p = parseDiscoveryDoc(d.key, d.value);
+        final SeedProfile? p = parseRealDiscoveryDoc(d.key, d.value);
         if (p != null) byUid[d.key] = p;
       }
     }
@@ -503,6 +503,18 @@ class UserRepository {
       return null;
     }
   }
+
+  /// Como [parseDiscoveryDoc], pero para `discovery`, que SOLO publica personas
+  /// reales (el backend escribe `isBot: false` y no publica cuentas bot). Se
+  /// fuerza aquí por si una ficha antigua trae otra cosa: el respaldo de
+  /// muestra del feed (`FeedFilter.sampleProfiles`) enseña semillas de
+  /// cualquier país, y una persona real nunca puede entrar por esa puerta.
+  @visibleForTesting
+  static SeedProfile? parseRealDiscoveryDoc(
+    String id,
+    Map<String, dynamic> data,
+  ) =>
+      parseDiscoveryDoc(id, <String, dynamic>{...data, 'isBot': false});
 
   /// Perfiles de `discovery` por UID concreto, en lotes de 10 (límite de
   /// `whereIn`). Se usa para meter en el feed a gente que NO entró en el corte
@@ -526,7 +538,7 @@ class UserRepository {
                 .get();
         // Ficha a ficha: una mal formada ya no tira las otras nueve del lote.
         for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
-          final SeedProfile? p = parseDiscoveryDoc(d.id, d.data());
+          final SeedProfile? p = parseRealDiscoveryDoc(d.id, d.data());
           if (p != null) out.add(p);
         }
       } catch (error) {

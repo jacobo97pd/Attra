@@ -211,6 +211,52 @@ class FeedFilter {
     }).toList(growable: false);
   }
 
+  /// RESPALDO DE MUESTRA para un feed de casa que se ha quedado VACÍO.
+  ///
+  /// Quien se registra en un país donde todavía no hay nadie en Attra (el
+  /// revisor de App Review en EE. UU., por ejemplo) veía Descubrir vacío: la
+  /// regla de país tira a todos los perfiles semilla (son de España) y el
+  /// respaldo de país solo admite a gente con coordenadas dentro del radio.
+  /// Un Descubrir vacío es justo el motivo del rechazo 2.1(a).
+  ///
+  /// Regla estrecha a propósito:
+  /// - SOLO perfiles semilla ([SeedProfile.isBot]). Nunca personas reales de
+  ///   otro país: a ellas las siguen separando el país y el radio.
+  /// - De los semilla solo se ignoran el PAÍS y el RADIO. Todo lo demás se
+  ///   aplica igual que en [apply]: exclusiones (likes, pases, matches,
+  ///   bloqueos), reciprocidad de género, intención, rango de edad en los dos
+  ///   sentidos y los filtros del usuario.
+  /// - Quien llama decide CUÁNDO: solo sin viaje, sin búsqueda IA, fuera de la
+  ///   segunda vuelta y con el mazo ya vacío (tras el respaldo de país).
+  static List<SeedProfile> sampleProfiles({
+    required List<SeedProfile> profiles,
+    required String myUid,
+    required String myGender,
+    required List<String> myInterestedIn,
+    required Set<String> excludedUids,
+    FeedFilters filters = const FeedFilters(),
+    String myCity = '',
+    IntentMode myIntent = IntentMode.dating,
+    int? myAge,
+  }) {
+    return apply(
+      profiles: profiles.where((SeedProfile p) => p.isBot).toList(),
+      myUid: myUid,
+      myGender: myGender,
+      myInterestedIn: myInterestedIn,
+      excludedUids: excludedUids,
+      filters: filters,
+      // Sin mis coordenadas no hay radio que medir, y sin mi país no hay regla
+      // de país: son las DOS únicas reglas que se levantan.
+      myLat: null,
+      myLng: null,
+      travelersNeedGeo: true,
+      myCity: myCity,
+      myIntent: myIntent,
+      myAge: myAge,
+    );
+  }
+
   /// Excluye si: el filtro tiene valor, es no-negociable, el candidato tiene
   /// dato y no coincide.
   static bool _excludesString(

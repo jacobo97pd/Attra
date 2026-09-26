@@ -277,6 +277,116 @@ void main() {
     expect(find.textContaining('No hay más personas'), findsOneWidget);
   });
 
+  // App Review 2.1(a): el revisor se crea una cuenta en EE. UU. y todas las
+  // semillas son de España. La regla de país las tiraba, el respaldo de país
+  // solo admite gente dentro del radio, y Descubrir salía VACÍO.
+  testWidgets('cuenta nueva fuera de España: las semillas rellenan Descubrir',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    const double nyLat = 40.7128;
+    const double nyLng = -74.0060;
+    await tester.pumpWidget(_host(
+      user: _user(
+        latitude: nyLat,
+        longitude: nyLng,
+        locationUpdatedAt: DateTime.now().subtract(const Duration(minutes: 10)),
+        countryName: 'Estados Unidos',
+      ),
+      source: _FakeSource(permission: LocationAuthorization.granted),
+      saved: _Saved(),
+      profiles: <SeedProfile>[
+        SeedProfile.fromMap('mock_lucia', <String, dynamic>{
+          'displayName': 'Lucía',
+          'isBot': true,
+          'currentCity': 'Madrid',
+          'currentCountryName': 'España',
+          'countryIso2': 'ES',
+          'gender': 'female',
+          'geo': <String, dynamic>{'lat': madridLat, 'lng': madridLng},
+          'photos': <String>['https://example.test/l.jpg'],
+        }),
+        // Persona REAL de otro país: nunca entra por el respaldo de muestra.
+        SeedProfile.fromMap('real_marta', <String, dynamic>{
+          'displayName': 'Marta',
+          'isBot': false,
+          'currentCity': 'Madrid',
+          'currentCountryName': 'España',
+          'countryIso2': 'ES',
+          'gender': 'female',
+          'geo': <String, dynamic>{'lat': madridLat, 'lng': madridLng},
+          'photos': <String>['https://example.test/m.jpg'],
+        }),
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('perfiles de ejemplo'), findsOneWidget);
+    expect(find.textContaining('No hay más personas'), findsNothing);
+    expect(find.textContaining('Lucía'), findsWidgets);
+    expect(find.textContaining('Marta'), findsNothing);
+  });
+
+  testWidgets('sin semillas que encajen, fuera de España sigue vacío',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(_host(
+      user: _user(
+        latitude: 40.7128,
+        longitude: -74.0060,
+        locationUpdatedAt: DateTime.now().subtract(const Duration(minutes: 10)),
+        countryName: 'Estados Unidos',
+      ),
+      source: _FakeSource(permission: LocationAuthorization.granted),
+      saved: _Saved(),
+      profiles: <SeedProfile>[
+        SeedProfile.fromMap('real_marta', <String, dynamic>{
+          'displayName': 'Marta',
+          'isBot': false,
+          'currentCity': 'Madrid',
+          'currentCountryName': 'España',
+          'countryIso2': 'ES',
+          'geo': <String, dynamic>{'lat': madridLat, 'lng': madridLng},
+          'photos': <String>['https://example.test/m.jpg'],
+        }),
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('perfiles de ejemplo'), findsNothing);
+    expect(find.textContaining('No hay más personas'), findsOneWidget);
+  });
+
+  testWidgets('viajando no se rellena con muestras: manda el destino',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(_host(
+      user: _user(
+        latitude: madridLat,
+        longitude: madridLng,
+        locationUpdatedAt: DateTime.now().subtract(const Duration(minutes: 10)),
+        traveling: true,
+      ),
+      source: _FakeSource(permission: LocationAuthorization.granted),
+      saved: _Saved(),
+      profiles: <SeedProfile>[
+        // Semilla de OTRO país que el destino (España).
+        SeedProfile.fromMap('mock_lisboa', <String, dynamic>{
+          'displayName': 'Rita',
+          'isBot': true,
+          'currentCity': 'Lisboa',
+          'currentCountryName': 'Portugal',
+          'countryIso2': 'PT',
+          'geo': <String, dynamic>{'lat': 38.7223, 'lng': -9.1393},
+          'photos': <String>['https://example.test/r.jpg'],
+        }),
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('perfiles de ejemplo'), findsNothing);
+    expect(find.textContaining('Rita'), findsNothing);
+  });
+
   testWidgets('la ubicación llega antes que la carga y NO la duplica',
       (WidgetTester tester) async {
     _usePhoneViewport(tester);
@@ -481,6 +591,7 @@ AppUser _user({
   DateTime? locationUpdatedAt,
   bool traveling = false,
   int? maxDistanceKm,
+  String countryName = 'España',
 }) {
   return AppUser(
     maxDistanceKm: maxDistanceKm,
@@ -495,7 +606,7 @@ AppUser _user({
     latitude: latitude,
     longitude: longitude,
     locationUpdatedAt: locationUpdatedAt,
-    countryName: 'España',
+    countryName: countryName,
     travelActive: traveling,
     travelCountry: traveling ? 'España' : '',
     travelCity: traveling ? 'Madrid' : '',

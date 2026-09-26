@@ -86,6 +86,35 @@ void main() {
       expect(avisos, greaterThan(0), reason: 'la UI tiene que enterarse');
     });
 
+    // Viaje en pausa (plan caducado, viaje guardado): cada `load()` posterior
+    // (tras una compra, un Boost, Ajustes) ponía `isLoading` a true, el feed
+    // contaba el viaje durante la recarga y se recargaba dos veces, vaciando
+    // el mazo. Lo que el feed mira ahora es solo la PRIMERA carga.
+    test('solo la primera carga cuenta como "plan aún desconocido"', () async {
+      final _StreamEntitlementService ents =
+          _StreamEntitlementService(UserEntitlements.free(uid: 'u'));
+      final _StreamFlagService flags = _StreamFlagService();
+      final EntitlementController controller = EntitlementController(
+        entitlementService: ents,
+        featureFlagService: flags,
+        uid: 'u',
+      );
+      addTearDown(controller.dispose);
+
+      expect(controller.isFirstLoadPending, isTrue,
+          reason: 'arranca como Free sin saberlo todavía');
+      await controller.load();
+      expect(controller.isFirstLoadPending, isFalse);
+
+      final List<bool> vistos = <bool>[];
+      controller.addListener(() => vistos.add(controller.isFirstLoadPending));
+      await controller.load();
+
+      expect(vistos, isNotEmpty, reason: 'la recarga sí notifica');
+      expect(vistos.every((bool pending) => !pending), isTrue,
+          reason: 'una recarga no vuelve a dar el plan por desconocido');
+    });
+
     test('se suscribe una sola vez aunque se recargue varias veces', () async {
       final _StreamEntitlementService ents =
           _StreamEntitlementService(UserEntitlements.free(uid: 'u'));

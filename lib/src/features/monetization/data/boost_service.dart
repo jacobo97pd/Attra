@@ -125,7 +125,7 @@ class BoostService {
   /// DEFINITIVO. Importa: ante un fallo permanente (el recibo ya lo canjeó otra
   /// cuenta) hay que cerrar la transacción en la tienda; si no, StoreKit la
   /// reencola en cada arranque y bloquea las compras siguientes.
-  Future<({bool ok, bool permanent, String? message})>
+  Future<({bool ok, bool permanent, String? message, String? reason})>
       verifySubscriptionDetailed({
     required String productId,
     required String platform,
@@ -145,6 +145,7 @@ class BoostService {
       ok: data['ok'] == true,
       permanent: data['permanent'] == true,
       message: data['message'] as String?,
+      reason: data['reason'] as String?,
     );
   }
 

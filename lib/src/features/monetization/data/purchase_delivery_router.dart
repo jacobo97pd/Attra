@@ -181,8 +181,12 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
 
     // Cualquier otra cosa es una suscripción.
     try {
-      final ({bool ok, bool permanent, String? message}) result =
-          await _boosts.verifySubscriptionDetailed(
+      final ({
+        bool ok,
+        bool permanent,
+        String? message,
+        String? reason
+      }) result = await _boosts.verifySubscriptionDetailed(
         productId: purchase.productID,
         platform: platform,
         verificationData: purchase.verificationData.serverVerificationData,
@@ -193,6 +197,7 @@ class PurchaseDeliveryRouter extends ChangeNotifier {
       return IapDeliveryResult(
         delivered: result.ok,
         permanent: result.permanent,
+        reason: result.reason,
         message: result.ok
             ? null
             : (result.message ?? 'No se pudo verificar la compra.'),
