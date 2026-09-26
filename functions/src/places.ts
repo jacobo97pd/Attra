@@ -157,6 +157,61 @@ export async function searchPlaces(query: string): Promise<PlaceResult[]> {
   return rank(results);
 }
 
+/// Centro de una LOCALIDAD (ciudad/pueblo) para el modo viaje: el dataset
+/// offline de la app no tiene centro para los homónimos lejanos y en web no hay
+/// geocodificador del sistema. Pide solo `places.location` y `places.types`
+/// (nada de fotos ni reseñas), sesgado al país con `regionCode` y al tipo
+/// `locality`. Devuelve null sin key, si Places falla o si lo que devuelve no
+/// es una localidad (mejor sin centro que en un bar con el mismo nombre).
+export async function geocodeLocality(
+  city: string,
+  iso2: string
+): Promise<{ lat: number; lng: number } | null> {
+  const key = placesApiKey();
+  if (!key || !city.trim() || !/^[A-Z]{2}$/.test(iso2)) return null;
+  try {
+    const res = await fetch(PLACES_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "places.location,places.types",
+      },
+      body: JSON.stringify({
+        textQuery: city.trim(),
+        includedType: "locality",
+        strictTypeFiltering: true,
+        regionCode: iso2,
+        maxResultCount: 1,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[Places] locality HTTP ${res.status}: ${body.slice(0, 300)}`);
+      return null;
+    }
+    return parseLocality(await res.json());
+  } catch (e) {
+    console.error(`[Places] locality error: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+/// Extrae el centro de la primera localidad de una respuesta de searchText.
+export function parseLocality(json: unknown): { lat: number; lng: number } | null {
+  const places = (json as { places?: unknown[] })?.places;
+  if (!Array.isArray(places) || places.length === 0) return null;
+  const first = places[0] as Record<string, unknown>;
+  const types = Array.isArray(first.types) ? (first.types as unknown[]) : [];
+  if (!types.includes("locality")) return null;
+  const loc = first.location as { latitude?: unknown; longitude?: unknown } | undefined;
+  const lat = typeof loc?.latitude === "number" ? loc.latitude : NaN;
+  const lng = typeof loc?.longitude === "number" ? loc.longitude : NaN;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
 /// Filtra por calidad y ordena por rating (desc), luego nº de reseñas.
 function rank(results: PlaceResult[]): PlaceResult[] {
   return results

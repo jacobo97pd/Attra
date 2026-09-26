@@ -58,7 +58,8 @@ void main() {
       expect(out['geo'], isNotNull);
     });
 
-    test('viajando publica el destino y NO publica coordenadas', () {
+    test('viaje SIN centro (antiguo o a un país): destino y NINGUNA coordenada',
+        () {
       final Map<String, dynamic> out =
           DiscoveryPublisher.buildPayload('viajero', _user(traveling: true));
 
@@ -117,6 +118,101 @@ void main() {
       );
 
       expect(visible, isEmpty);
+    });
+  });
+
+  group('Madrid → Cádiz con centro: solo le ven alrededor del destino', () {
+    // Antes, sin `geo`, el viajero se saltaba el radio de TODOS: le veía toda
+    // España, su propia ciudad incluida, con un "De viaje en Cádiz".
+    Map<String, dynamic> aCadiz({String? until, Object? untilAt}) {
+      final Map<String, dynamic> data = _user(traveling: false);
+      (data['settings'] as Map<String, dynamic>)['travel'] = <String, dynamic>{
+        'active': true,
+        'iso2': 'ES',
+        'city': 'Cadiz',
+        'country': 'Spain',
+        'lat': 36.5267,
+        'lng': -6.2891,
+        'geoSource': 'asset',
+        'until': until ??
+            DateTime.now().add(const Duration(days: 20)).toIso8601String(),
+        if (untilAt != null) 'untilAt': untilAt,
+      };
+      return data;
+    }
+
+    List<String> quienLoVe(
+      Map<String, dynamic> published, {
+      required double lat,
+      required double lng,
+    }) =>
+        FeedFilter.apply(
+          profiles: <SeedProfile>[SeedProfile.fromMap('viajero', published)],
+          myUid: 'local',
+          myGender: 'female',
+          myInterestedIn: const <String>['male'],
+          excludedUids: const <String>{},
+          myLat: lat,
+          myLng: lng,
+          myCountry: 'España',
+          myCountryIso2: 'ES',
+          filters: const FeedFilters(maxDistanceKm: 100),
+        ).map((SeedProfile p) => p.id).toList(growable: false);
+
+    test('publica el CENTRO del destino (nunca Madrid) y el país en ISO2', () {
+      final Map<String, dynamic> out =
+          DiscoveryPublisher.buildPayload('viajero', aCadiz());
+
+      expect(out['traveling'], isTrue);
+      expect(out['currentCity'], 'Cadiz');
+      expect(out['countryIso2'], 'ES');
+      expect(out['geo'], <String, dynamic>{'lat': 36.53, 'lng': -6.29});
+      expect(out['travelUntil'], isNotNull);
+    });
+
+    test('alguien de Madrid con radio 100 km ya NO le ve; en Jerez sí', () {
+      final Map<String, dynamic> out =
+          DiscoveryPublisher.buildPayload('viajero', aCadiz());
+
+      expect(quienLoVe(out, lat: 40.4168, lng: -3.7038), isEmpty);
+      expect(quienLoVe(out, lat: 36.69, lng: -6.14), <String>['viajero']);
+    });
+
+    test('viaje caducado o sin plan: vuelve a casa, como el backend', () {
+      final Map<String, dynamic> caducado = DiscoveryPublisher.buildPayload(
+        'viajero',
+        aCadiz(
+            until: DateTime.now()
+                .subtract(const Duration(days: 1))
+                .toIso8601String()),
+      );
+      final Map<String, dynamic> sinPlan =
+          DiscoveryPublisher.buildPayload('viajero', aCadiz(), isPaid: false);
+
+      for (final Map<String, dynamic> out in <Map<String, dynamic>>[
+        caducado,
+        sinPlan,
+      ]) {
+        expect(out['traveling'], isFalse);
+        expect(out['currentCity'], 'Madrid');
+        expect(out['geo'], <String, dynamic>{'lat': 40.42, 'lng': -3.7});
+        expect(out.containsKey('travelUntil'), isFalse);
+      }
+    });
+
+    test('sin viajar publica el ISO2 de casa aunque el nombre sea otro idioma',
+        () {
+      final Map<String, dynamic> data = _user(traveling: false);
+      (data['profile'] as Map<String, dynamic>)
+        ..['currentCountryName'] = 'Espanya'
+        ..['currentCountryIso2'] = 'ES';
+      final Map<String, dynamic> out =
+          DiscoveryPublisher.buildPayload('viajero', data);
+
+      expect(out['countryIso2'], 'ES');
+      // Paridad con el backend: el modo Amigos también se publica.
+      expect(out['intentMode'], 'dating');
+      expect(out['socialInterests'], isEmpty);
     });
   });
 }

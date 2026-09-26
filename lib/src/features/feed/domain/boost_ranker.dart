@@ -18,17 +18,28 @@ class BoostAwareRanker {
     required Map<String, ActiveBoost> activeBoosts,
     RankingSignals Function(SeedProfile)? signalsFor,
     RankingConfig config = const RankingConfig(),
+    bool diversify = true,
+    RankingOrigin? origin,
   }) {
     if (profiles.length <= 1 || activeBoosts.isEmpty) {
       return RankingScorer.rank(
-          profiles: profiles, me: me, signalsFor: signalsFor, config: config);
+        profiles: profiles,
+        me: me,
+        signalsFor: signalsFor,
+        config: config,
+        diversify: diversify,
+        origin: origin,
+      );
     }
 
+    // Misma referencia de cercanía que el ranking orgánico: viajando, el
+    // destino; nunca la ubicación real de casa.
     final List<_BoostedProfile> scored = RankingScorer.score(
       profiles: profiles,
       me: me,
       signalsFor: signalsFor,
       config: config,
+      origin: origin,
     ).map((RankedProfile ranked) {
       final ActiveBoost? boost = activeBoosts[ranked.profile.id];
       final double bonus = boostContribution(boost);

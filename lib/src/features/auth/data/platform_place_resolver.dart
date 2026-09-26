@@ -18,6 +18,13 @@ import '../domain/resolved_place.dart';
 class PlatformPlaceResolver implements PlaceResolver {
   const PlatformPlaceResolver();
 
+  /// Idioma FIJO de los resultados. Sin él, el sistema contesta en el idioma
+  /// del teléfono: un iPhone en catalán guardaba 'Espanya', uno en alemán
+  /// 'Spanien', y con el país comparado por nombre esa gente desaparecía del
+  /// feed de su propia ciudad. El país ya se compara por ISO2, pero el nombre
+  /// sigue saliendo en fichas y banners y tiene que ser estable.
+  static const String localeIdentifier = 'es_ES';
+
   @override
   Future<ResolvedPlace?> resolve({
     required double latitude,
@@ -27,6 +34,10 @@ class PlatformPlaceResolver implements PlaceResolver {
     // canal, que ahí lanzaría.
     if (kIsWeb) return null;
     try {
+      // En iOS el plugin guarda el idioma en Dart y lo manda en CADA llamada;
+      // en Android lo fija en el Geocoder nativo. Llamarlo siempre cubre los
+      // dos y no cuesta nada.
+      await setLocaleIdentifier(localeIdentifier);
       final List<Placemark> marks =
           await placemarkFromCoordinates(latitude, longitude);
       if (marks.isEmpty) return null;
@@ -44,10 +55,13 @@ class PlatformPlaceResolver implements PlaceResolver {
             orElse: () => '',
           )!
           .trim();
+      final String iso2 = (m.isoCountryCode ?? '').trim().toUpperCase();
       return ResolvedPlace(
         city: city,
         countryName: (m.country ?? '').trim(),
-        countryIso2: (m.isoCountryCode ?? '').trim().toUpperCase(),
+        // Solo un ISO2 de verdad: algún geocodificador devuelve vacío o un
+        // código raro, y publicarlo partiría el país en dos claves.
+        countryIso2: RegExp(r'^[A-Z]{2}$').hasMatch(iso2) ? iso2 : '',
       );
     } catch (error) {
       // Sin red, sin servicio o pasado de tasa. No poder nombrar la ciudad NO

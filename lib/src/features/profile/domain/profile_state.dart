@@ -19,11 +19,17 @@ class AdditionalPhoto {
   final String? createdAtIso;
 
   factory AdditionalPhoto.fromMap(Map<String, dynamic> map) {
+    // Tolerante al tipo: llega de documentos públicos sin validar y una foto
+    // mal formada no puede tumbar la ficha (ni la carga del feed) entera.
+    final Object? url = map['url'];
+    final Object? storagePath = map['storagePath'];
+    final Object? source = map['source'];
+    final Object? order = map['order'];
     return AdditionalPhoto(
-      url: (map['url'] as String?) ?? '',
-      storagePath: (map['storagePath'] as String?) ?? '',
-      source: (map['source'] as String?) ?? 'unknown',
-      order: (map['order'] as num?)?.toInt() ?? 0,
+      url: url is String ? url : '',
+      storagePath: storagePath is String ? storagePath : '',
+      source: source is String ? source : 'unknown',
+      order: order is num ? order.toInt() : 0,
       createdAtIso: map['createdAt']?.toString(),
     );
   }
@@ -52,10 +58,13 @@ class PublicPrompt {
   final String answer;
 
   factory PublicPrompt.fromMap(Map<String, dynamic> map) {
+    final Object? id = map['id'];
+    final Object? question = map['question'];
+    final Object? answer = map['answer'];
     return PublicPrompt(
-      id: (map['id'] as String?) ?? '',
-      question: (map['question'] as String?) ?? '',
-      answer: (map['answer'] as String?) ?? '',
+      id: id is String ? id : '',
+      question: question is String ? question : '',
+      answer: answer is String ? answer : '',
     );
   }
 }
@@ -66,6 +75,7 @@ class SeedProfile {
     required this.displayName,
     required this.city,
     required this.country,
+    this.countryIso2 = '',
     required this.bio,
     required this.gender,
     required this.interestedIn,
@@ -82,6 +92,7 @@ class SeedProfile {
     this.verified = false,
     this.instagram = '',
     this.traveling = false,
+    this.travelUntil,
     this.showDistance = true,
     this.showActiveStatus = true,
     this.lat,
@@ -105,6 +116,11 @@ class SeedProfile {
   final String displayName;
   final String city;
   final String country;
+
+  /// ISO2 del país publicado (`countryIso2` en discovery; en seeds,
+  /// `currentCountryIso2`/`currentCountryCode`). Vacío = sin código: el feed
+  /// cae entonces a comparar el nombre.
+  final String countryIso2;
   final String bio;
   final String gender;
 
@@ -140,7 +156,18 @@ class SeedProfile {
   final String instagram;
 
   /// Modo viajes: el perfil aparece "de viaje" en este destino (discovery).
+  /// Ya descuenta un viaje caducado (ver [travelExpired]).
   final bool traveling;
+
+  /// Fin del viaje publicado (`travelUntil`). Sirve para no enseñar a alguien
+  /// "de viaje en Cádiz" semanas después de que se acabara, mientras el
+  /// barrido del backend no ha pasado todavía.
+  final DateTime? travelUntil;
+
+  /// La ficha dice "de viaje" pero el viaje ya terminó: la ficha está
+  /// publicada en un destino donde esa persona ya no está.
+  bool get travelExpired =>
+      travelUntil != null && !travelUntil!.isAfter(DateTime.now());
 
   /// Visibilidad (Privacidad del dueño): si false, no se muestra su distancia
   /// ni su estado de actividad a otros. Default true (compat docs antiguos).
@@ -224,103 +251,117 @@ class SeedProfile {
     return age;
   }
 
+  /// Lecturas TOLERANTES al tipo. `discovery` y `seed_profiles` no se validan
+  /// en las reglas (y `users/{uid}`, de donde el backend copia, tampoco): con
+  /// casts duros (`as String?`) un solo documento con `bio: 123` hacía lanzar
+  /// a toda la carga y el feed se quedaba sin NINGÚN usuario real. Un valor del
+  /// tipo equivocado cuenta como ausente.
+  static String? _str(Object? v) => v is String ? v : null;
+  static bool? _bool(Object? v) => v is bool ? v : null;
+  static List<String>? _strList(Object? v) =>
+      v is List ? v.whereType<String>().toList(growable: false) : null;
+  static Map<String, dynamic> _map(Object? v) => v is Map
+      ? v.map((dynamic k, dynamic val) => MapEntry(k.toString(), val))
+      : <String, dynamic>{};
+  static double? _coord(Object? v, double limit) {
+    if (v is! num) return null;
+    final double d = v.toDouble();
+    return d.isFinite && d.abs() <= limit ? d : null;
+  }
+
+  /// La media de presentación tiene su propio parser: un `durationMs` con
+  /// tipo raro no puede tumbar la ficha entera, solo quedarse sin audio/vídeo.
+  static T? _safeMedia<T>(T? Function() build) {
+    try {
+      return build();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _iso2(Object? v) {
+    final String s = (_str(v) ?? '').trim().toUpperCase();
+    return s.length == 2 ? s : '';
+  }
+
   factory SeedProfile.fromMap(String id, Map<String, dynamic> data) {
     final List<dynamic> rawPhotos =
-        (data['photos'] as List<dynamic>?) ?? <dynamic>[];
-    final Map<String, dynamic> profile = data['profile'] is Map
-        ? (data['profile'] as Map)
-            .map((dynamic k, dynamic v) => MapEntry(k.toString(), v))
-        : <String, dynamic>{};
-    final Map<String, dynamic> lifestyle = data['lifestyle'] is Map
-        ? (data['lifestyle'] as Map)
-            .map((dynamic k, dynamic v) => MapEntry(k.toString(), v))
-        : <String, dynamic>{};
-    final Map<String, dynamic> appearance = data['appearance'] is Map
-        ? (data['appearance'] as Map)
-            .map((dynamic k, dynamic v) => MapEntry(k.toString(), v))
-        : <String, dynamic>{};
-    final Map<String, dynamic> filterTraits = data['filterTraits'] is Map
-        ? (data['filterTraits'] as Map)
-            .map((dynamic k, dynamic v) => MapEntry(k.toString(), v))
-        : <String, dynamic>{};
-    final Map<String, dynamic> geo = data['geo'] is Map
-        ? (data['geo'] as Map)
-            .map((dynamic k, dynamic v) => MapEntry(k.toString(), v))
-        : <String, dynamic>{};
-    String pick(String key) =>
-        (data[key] as String?) ?? (profile[key] as String?) ?? '';
+        data['photos'] is List ? data['photos'] as List<dynamic> : <dynamic>[];
+    final Map<String, dynamic> profile = _map(data['profile']);
+    final Map<String, dynamic> lifestyle = _map(data['lifestyle']);
+    final Map<String, dynamic> appearance = _map(data['appearance']);
+    final Map<String, dynamic> filterTraits = _map(data['filterTraits']);
+    final Map<String, dynamic> geo = _map(data['geo']);
+    String pick(String key) => _str(data[key]) ?? _str(profile[key]) ?? '';
     // Plano (discovery) con fallback a anidado (seed_profiles).
     String pickNested(String key, Map<String, dynamic> nested) =>
-        (data[key] as String?) ?? (nested[key] as String?) ?? '';
+        _str(data[key]) ?? _str(nested[key]) ?? '';
     final DateTime? birthDate =
         _asDate(data['birthDate']) ?? _asDate(profile['birthDate']);
     final int? age = _asInt(data['age']) ??
         _asInt(profile['age']) ??
         _ageFromBirthDate(birthDate);
+    // Discovery publica `countryIso2`; los seeds lo traen anidado con la clave
+    // del onboarding o la del geocodificador.
+    final String countryIso2 = <String>[
+      _iso2(data['countryIso2']),
+      _iso2(data['currentCountryIso2']),
+      _iso2(profile['currentCountryIso2']),
+      _iso2(data['currentCountryCode']),
+      _iso2(profile['currentCountryCode']),
+    ].firstWhere((String s) => s.isNotEmpty, orElse: () => '');
+    final DateTime? travelUntil = _asDate(data['travelUntil']);
+    final bool travelOver =
+        travelUntil != null && !travelUntil.isAfter(DateTime.now());
     return SeedProfile(
       id: id,
-      displayName: (data['displayName'] as String?) ?? 'Seed',
+      displayName: _str(data['displayName']) ?? 'Seed',
       city: pick('currentCity').isNotEmpty ? pick('currentCity') : pick('city'),
       country: pick('currentCountryName'),
+      countryIso2: countryIso2,
       bio: pick('bio'),
       gender: pick('gender'),
-      interestedIn: (data['interestedIn'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
-          (_asPrefsMap(data)['interestedIn'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
+      interestedIn: _strList(data['interestedIn']) ??
+          _strList(_asPrefsMap(data)['interestedIn']) ??
           const <String>[],
-      orientation: (data['orientation'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
-          (profile['orientation'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
+      orientation: _strList(data['orientation']) ??
+          _strList(profile['orientation']) ??
           const <String>[],
       relationshipGoal: pick('relationshipIntent').isNotEmpty
           ? pick('relationshipIntent')
           : pick('relationshipGoal'),
       intentMode:
           IntentMode.fromValue(data['intentMode'] ?? profile['intentMode']),
-      socialInterests: (data['socialInterests'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
-          (profile['socialInterests'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
+      socialInterests: _strList(data['socialInterests']) ??
+          _strList(profile['socialInterests']) ??
           const <String>[],
       smoking: pickNested('smoking', lifestyle),
       drinking: pickNested('drinking', lifestyle),
       educationLevel: pick('educationLevel'),
-      heightCm: (data['heightCm'] as num?)?.toInt() ??
-          (appearance['heightCm'] as num?)?.toInt(),
-      ethnicity: (filterTraits['ethnicity'] as String?) ?? '',
-      religion: (filterTraits['religion'] as String?) ?? '',
-      verified: (data['verified'] as bool?) ?? false,
-      instagram: (data['instagram'] as String?)?.trim() ?? '',
-      traveling: (data['traveling'] as bool?) ?? false,
-      showDistance: (data['showDistance'] as bool?) ?? true,
-      showActiveStatus: (data['showActiveStatus'] as bool?) ?? true,
-      lat: (geo['lat'] as num?)?.toDouble(),
-      lng: (geo['lng'] as num?)?.toDouble(),
+      heightCm: _asInt(data['heightCm']) ?? _asInt(appearance['heightCm']),
+      ethnicity: _str(filterTraits['ethnicity']) ?? '',
+      religion: _str(filterTraits['religion']) ?? '',
+      verified: _bool(data['verified']) ?? false,
+      instagram: _str(data['instagram'])?.trim() ?? '',
+      // Un viaje caducado ya no es "de viaje": el barrido del backend lo
+      // republicará en casa, pero hasta entonces no se le enseña como tal.
+      traveling: (_bool(data['traveling']) ?? false) && !travelOver,
+      travelUntil: travelUntil,
+      showDistance: _bool(data['showDistance']) ?? true,
+      showActiveStatus: _bool(data['showActiveStatus']) ?? true,
+      lat: _coord(geo['lat'], 90),
+      lng: _coord(geo['lng'], 180),
       age: age,
       jobTitle: pick('jobTitle'),
       company: pick('company'),
-      interests: (data['interests'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
-          (profile['interests'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList(growable: false) ??
+      interests: _strList(data['interests']) ??
+          _strList(profile['interests']) ??
           const <String>[],
-      photoUrl: (data['photoUrl'] as String?) ??
-          (data['profilePhotoUrl'] as String?) ??
-          '',
-      isBot: (data['isBot'] as bool?) ?? true,
-      botProfileVersion: (data['botProfileVersion'] as num?)?.toInt() ?? 1,
-      botScenario: (data['botScenario'] as String?) ?? 'generic',
-      seedQualityScore: (data['seedQualityScore'] as num?)?.toInt() ?? 0,
+      photoUrl: _str(data['photoUrl']) ?? _str(data['profilePhotoUrl']) ?? '',
+      isBot: _bool(data['isBot']) ?? true,
+      botProfileVersion: _asInt(data['botProfileVersion']) ?? 1,
+      botScenario: _str(data['botScenario']) ?? 'generic',
+      seedQualityScore: _asInt(data['seedQualityScore']) ?? 0,
       photos: rawPhotos
           .whereType<Map>()
           .map((Map<dynamic, dynamic> e) => AdditionalPhoto.fromMap(
@@ -328,21 +369,22 @@ class SeedProfile {
                     MapEntry(key.toString(), value)),
               ))
           .toList(growable: false),
-      profilePrompts: ((data['profilePrompts'] as List<dynamic>?) ??
-              <dynamic>[])
+      profilePrompts: (data['profilePrompts'] is List
+              ? data['profilePrompts'] as List<dynamic>
+              : <dynamic>[])
           .whereType<Map>()
           .map((Map<dynamic, dynamic> e) =>
               e.map((dynamic k, dynamic v) => MapEntry(k.toString(), v)))
-          .where((Map<String, dynamic> m) => (m['isActive'] as bool?) ?? true)
+          .where((Map<String, dynamic> m) => _bool(m['isActive']) ?? true)
           .map(PublicPrompt.fromMap)
           .where(
               (PublicPrompt p) => p.question.isNotEmpty && p.answer.isNotEmpty)
           .toList(growable: false),
       // Plano (discovery, top-level) con fallback a anidado (seed_profiles).
-      introAudio:
-          IntroAudio.fromMap(data['introAudio'] ?? profile['introAudio']),
-      introVideo:
-          IntroVideo.fromMap(data['introVideo'] ?? profile['introVideo']),
+      introAudio: _safeMedia(() =>
+          IntroAudio.fromMap(data['introAudio'] ?? profile['introAudio'])),
+      introVideo: _safeMedia(() =>
+          IntroVideo.fromMap(data['introVideo'] ?? profile['introVideo'])),
     );
   }
 }

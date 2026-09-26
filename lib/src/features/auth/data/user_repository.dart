@@ -4,7 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../../core/config/legal_links.dart';
-import '../../profile/data/discovery_publisher.dart';
+import '../../geo/domain/travel_destination_resolver.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_completion.dart';
 import '../../profile/domain/profile_prompt.dart';
@@ -374,70 +374,28 @@ class UserRepository {
       SetOptions(merge: true),
     );
 
-    // Publica/actualiza el perfil publico para el feed de descubrimiento.
-    await _syncDiscoveryProfile(uid, data);
+    // `discovery/{uid}` lo publica SOLO el backend (trigger
+    // onUserWrittenSyncDiscovery), que salta con la escritura de arriba. El
+    // cliente ya no escribe su propia ficha: eran dos escritores con lógica
+    // distinta y ganaba el último (una usuaria en modo Amigos volvía a salir
+    // en feeds de citas si el `set` del cliente llegaba después del trigger).
   }
 
-  /// Espeja los campos PUBLICOS del usuario en `discovery/{uid}` (colección
-  /// legible por todos) para que aparezca en el feed de otros. Si el usuario no
-  /// es descubrible (onboarding incompleto o bot), borra su doc. Best-effort:
-  /// nunca rompe el login si las reglas aun no permiten escribir.
-  Future<void> _syncDiscoveryProfile(
-      String uid, Map<String, dynamic> data) async {
-    try {
-      // Ajustes de visibilidad (Privacidad): si el usuario se oculta, está en
-      // incognito o pidió no aparecer en recomendaciones, NO se publica en el
-      // feed (se borra su doc de discovery). Sus matches actuales no dependen de
-      // discovery, así que pueden seguir escribiéndole.
-      final Map<String, dynamic> settings = _asMap(data['settings']);
-      final bool hidden = settings['privacy.hideProfile'] == true ||
-          settings['privacy.incognito'] == true ||
-          settings['privacy.showInRecommendations'] == false;
-      final bool discoverable = data['onboardingCompleted'] == true &&
-          data['profileCompleted'] == true &&
-          data['isBot'] != true &&
-          !hidden;
-      final DocumentReference<Map<String, dynamic>> ref =
-          _discoveryCollection.doc(uid);
-      if (!discoverable) {
-        await ref.delete();
-        return;
-      }
-      // El payload público (respetando visibilidad/consentimiento por campo) se
-      // construye en DiscoveryPublisher: nunca email/nombre legal/tokens/selfie/
-      // lat-lng, y los rasgos sensibles solo si visibleInProfile=true.
-      final Map<String, dynamic> payload =
-          DiscoveryPublisher.buildPayload(uid, data);
-      // `set` sin merge: reconstruye el doc para que ocultar/borrar un campo lo
-      // elimine de discovery (no quedan restos de un valor revocado).
-      await ref.set(<String, dynamic>{
-        ...payload,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    } catch (error) {
-      if (kDebugMode) {
-        debugPrint('[Attra][Discovery] sync fallo (se ignora): $error');
-      }
-    }
-  }
-
-  static Map<String, dynamic> _asMap(Object? v) {
-    if (v is Map<String, dynamic>) return v;
-    if (v is Map) {
-      return v.map((dynamic k, dynamic val) => MapEntry(k.toString(), val));
-    }
-    return <String, dynamic>{};
-  }
-
-  /// Re-publica `discovery/{uid}` leyendo el doc del usuario. Lo llama Ajustes
-  /// al cambiar una opción de visibilidad/ubicación para que tenga efecto
-  /// inmediato en el feed (ocultarse, fuzz de ubicación, ciudad…).
+  /// Pide al backend que vuelva a publicar `discovery/{uid}`. Lo llama Ajustes
+  /// al cambiar una opción de visibilidad/ubicación.
+  ///
+  /// La ficha pública la construye SOLO el trigger de backend (las reglas ya no
+  /// dejan al cliente escribirla), y el trigger salta con cualquier escritura en
+  /// `users/{uid}`: basta con tocar `updatedAt`. Normalmente el propio ajuste ya
+  /// lo ha disparado; esto es la garantía de que se republica.
   Future<void> republishDiscovery(String uid) async {
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snap =
-          await _usersCollection.doc(uid).get();
-      final Map<String, dynamic>? data = snap.data();
-      if (data != null) await _syncDiscoveryProfile(uid, data);
+      await _usersCollection.doc(uid).set(
+            _withRequiredUserFields(uid, <String, dynamic>{
+              'updatedAt': FieldValue.serverTimestamp(),
+            }),
+            SetOptions(merge: true),
+          );
     } catch (error) {
       if (kDebugMode) {
         debugPrint('[Attra][Discovery] republish fallo (se ignora): $error');
@@ -445,19 +403,104 @@ class UserRepository {
     }
   }
 
+  /// Tope por país de la consulta de discovery. Holgado para que el feed no
+  /// se vacíe tras unos cuantos swipes, acotado para que cada carga no lea la
+  /// colección entera.
+  static const int discoveryCountryLimit = 200;
+
+  /// Corte de la consulta SIN filtro, la de siempre. Se mantiene mientras haya
+  /// fichas sin `countryIso2` (hasta que corra tool/backfill_country_iso2.py
+  /// y todas pasen por el trigger): sin ella esas fichas no saldrían nunca.
+  static const int discoveryLegacyLimit = 50;
+
   /// Perfiles reales publicados en `discovery`, excluyendo al propio usuario.
+  ///
+  /// El pool ERA `discovery.limit(50)` sin orden ni filtro: los 50 primeros por
+  /// id de documento, los mismos para todo el mundo. Con más de 50 fichas,
+  /// quien cayera detrás no salía en el feed de nadie (tampoco en el de quien
+  /// viaja a su ciudad). Ahora se consulta por país ([countryIso2s]: el de
+  /// casa, y el de destino si se viaja) con un tope por país, más el corte
+  /// antiguo mientras queden fichas sin código. Deduplicado por uid.
+  ///
+  /// Cada documento se lee por separado: uno mal formado se salta y no se
+  /// lleva por delante la carga entera.
   Future<List<SeedProfile>> fetchDiscoveryProfiles({
     required String excludeUid,
-    int limit = 50,
+    Iterable<String> countryIso2s = const <String>[],
+    int limit = discoveryLegacyLimit,
   }) async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-        await _discoveryCollection.limit(limit).get();
-    return snapshot.docs
-        .where((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
-            d.id != excludeUid)
-        .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
-            SeedProfile.fromMap(d.id, d.data()))
-        .toList(growable: false);
+    final Set<String> codes = <String>{
+      for (final String c in countryIso2s)
+        if (c.trim().length == 2) c.trim().toUpperCase(),
+    };
+    final List<Future<QuerySnapshot<Map<String, dynamic>>>> queries =
+        <Future<QuerySnapshot<Map<String, dynamic>>>>[
+      for (final String code in codes)
+        _discoveryCollection
+            .where('countryIso2', isEqualTo: code)
+            .limit(discoveryCountryLimit)
+            .get(),
+      _discoveryCollection.limit(limit).get(),
+    ];
+    // Una consulta que falla (índice aún no creado, red) no puede vaciar las
+    // demás: se recogen las que vuelvan.
+    final List<QuerySnapshot<Map<String, dynamic>>?> snapshots =
+        await Future.wait(queries.map(
+      (Future<QuerySnapshot<Map<String, dynamic>>> q) => q
+          .then<QuerySnapshot<Map<String, dynamic>>?>(
+              (QuerySnapshot<Map<String, dynamic>> s) => s,
+              onError: (Object error) {
+        debugPrint('[Attra][Discovery] consulta fallida: $error');
+        return null;
+      }),
+    ));
+    return mergeDiscoveryPages(
+      <List<MapEntry<String, Map<String, dynamic>>>?>[
+        for (final QuerySnapshot<Map<String, dynamic>>? snap in snapshots)
+          snap?.docs
+              .map((QueryDocumentSnapshot<Map<String, dynamic>> d) =>
+                  MapEntry<String, Map<String, dynamic>>(d.id, d.data()))
+              .toList(growable: false),
+      ],
+      excludeUid: excludeUid,
+    );
+  }
+
+  /// Junta las páginas de las consultas de discovery (una por país y la
+  /// antigua sin filtro): sin duplicados, sin el propio usuario y saltando la
+  /// ficha que no se pueda leer. `null` = esa consulta falló; si fallan TODAS,
+  /// lanza (quien llama se queda con los seeds, como antes).
+  @visibleForTesting
+  static List<SeedProfile> mergeDiscoveryPages(
+    List<List<MapEntry<String, Map<String, dynamic>>>?> pages, {
+    required String excludeUid,
+  }) {
+    if (pages.every(
+        (List<MapEntry<String, Map<String, dynamic>>>? page) => page == null)) {
+      throw StateError('discovery no disponible');
+    }
+    final Map<String, SeedProfile> byUid = <String, SeedProfile>{};
+    for (final List<MapEntry<String, Map<String, dynamic>>>? page in pages) {
+      if (page == null) continue;
+      for (final MapEntry<String, Map<String, dynamic>> d in page) {
+        if (d.key == excludeUid || byUid.containsKey(d.key)) continue;
+        final SeedProfile? p = parseDiscoveryDoc(d.key, d.value);
+        if (p != null) byUid[d.key] = p;
+      }
+    }
+    return byUid.values.toList(growable: false);
+  }
+
+  /// Parsea UNA ficha de discovery/seed. null si está tan rota que ni el
+  /// parser tolerante puede con ella: se salta esa ficha, no la carga entera.
+  @visibleForTesting
+  static SeedProfile? parseDiscoveryDoc(String id, Map<String, dynamic> data) {
+    try {
+      return SeedProfile.fromMap(id, data);
+    } catch (error) {
+      debugPrint('[Attra][Discovery] ficha $id ilegible, se salta: $error');
+      return null;
+    }
   }
 
   /// Perfiles de `discovery` por UID concreto, en lotes de 10 (límite de
@@ -480,9 +523,11 @@ class UserRepository {
             await _discoveryCollection
                 .where(FieldPath.documentId, whereIn: chunk)
                 .get();
-        out.addAll(snap.docs.map(
-            (QueryDocumentSnapshot<Map<String, dynamic>> d) =>
-                SeedProfile.fromMap(d.id, d.data())));
+        // Ficha a ficha: una mal formada ya no tira las otras nueve del lote.
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
+          final SeedProfile? p = parseDiscoveryDoc(d.id, d.data());
+          if (p != null) out.add(p);
+        }
       } catch (error) {
         // Un lote fallido no puede vaciar el feed.
         debugPrint('[Attra][Discovery] lote por uid fallo: $error');
@@ -492,12 +537,54 @@ class UserRepository {
   }
 
   /// MODO VIAJES (Plus/Pro): fija (o desactiva) el destino en
-  /// `users/{uid}.travel` y re-sincroniza discovery para que el perfil aparezca
-  /// allí "de viaje". El gate de tier se valida en la capa superior.
+  /// `users/{uid}.settings.travel`; el trigger de backend republica la ficha
+  /// para que el perfil aparezca allí "de viaje". El gate de tier se valida en
+  /// la capa superior (y el backend lo vuelve a exigir al publicar).
   /// Duración de un viaje. Sin caducidad, un usuario que cancelara su plan se
   /// quedaba "en Tokio" para siempre. El backend la respeta al publicar la
-  /// ficha (functions/src/discovery.ts -> travelExpired).
+  /// ficha (functions/src/discovery.ts -> travelExpired) y en su barrido horario.
   static const Duration travelDuration = Duration(days: 30);
+
+  /// [latitude]/[longitude] son el CENTRO de la ciudad de destino (nunca la
+  /// ubicación real) y [geoSource] de dónde salió. Sin centro, el viaje se
+  /// guarda igual y funciona a nivel de país.
+  ///
+  /// Al apagarlo se CONSERVAN país, ciudad e ISO2 (quien llama los manda): así
+  /// la hoja reabre con el destino puesto y se reactiva de un toque. Antes se
+  /// guardaba el ISO2 sin el nombre y la hoja enseñaba el país elegido con
+  /// "Viajar aquí" desactivado. Todo lo que mira el viaje exige `active`.
+  static Map<String, dynamic> buildTravelPatch({
+    required bool active,
+    String iso2 = '',
+    String city = '',
+    String country = '',
+    double? latitude,
+    double? longitude,
+    TravelGeoSource geoSource = TravelGeoSource.none,
+    DateTime? now,
+  }) {
+    final bool located =
+        active && TravelDestination.isValid(latitude, longitude);
+    final DateTime? until =
+        active ? (now ?? DateTime.now()).toUtc().add(travelDuration) : null;
+    return <String, dynamic>{
+      'active': active,
+      'iso2': iso2.trim().toUpperCase(),
+      'city': city.trim(),
+      'country': country.trim(),
+      // 4 decimales (~11 m) bastan para el centro de una ciudad.
+      'lat': located ? _round4(latitude!) : null,
+      'lng': located ? _round4(longitude!) : null,
+      'geoSource': located ? geoSource.wireName : TravelGeoSource.none.wireName,
+      // `until` (ISO) lo siguen leyendo las versiones anteriores de la app;
+      // `untilAt` (Timestamp) es el que usan el barrido y el backend.
+      'until': until?.toIso8601String(),
+      'untilAt': until == null ? null : Timestamp.fromDate(until),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  static double _round4(double v) => (v * 10000).roundToDouble() / 10000;
 
   Future<void> setTravelLocation({
     required String uid,
@@ -505,32 +592,55 @@ class UserRepository {
     String iso2 = '',
     String city = '',
     String country = '',
+    double? latitude,
+    double? longitude,
+    TravelGeoSource geoSource = TravelGeoSource.none,
   }) async {
-    final DocumentReference<Map<String, dynamic>> ref =
-        _usersCollection.doc(uid);
     // Vive bajo `settings.travel`: `settings` ya es escribible por el dueño, así
     // que NO requiere desplegar reglas (igual que el ajuste de Slow Dating).
-    await ref.set(
-      _withRequiredUserFields(uid, <String, dynamic>{
-        'settings': <String, dynamic>{
-          'travel': <String, dynamic>{
-            'active': active,
-            'iso2': iso2.toUpperCase(),
-            'city': city,
-            'country': country,
-            'until': active
-                ? DateTime.now().toUtc().add(travelDuration).toIso8601String()
-                : null,
+    // La ficha pública la republica el trigger de backend con esta escritura.
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'settings': <String, dynamic>{
+              'travel': buildTravelPatch(
+                active: active,
+                iso2: iso2,
+                city: city,
+                country: country,
+                latitude: latitude,
+                longitude: longitude,
+                geoSource: geoSource,
+              ),
+            },
             'updatedAt': FieldValue.serverTimestamp(),
-          },
-        },
-        'updatedAt': FieldValue.serverTimestamp(),
-      }),
-      SetOptions(merge: true),
-    );
-    // Re-publica discovery con (o sin) el destino de viaje.
-    final DocumentSnapshot<Map<String, dynamic>> snap = await ref.get();
-    await _syncDiscoveryProfile(uid, snap.data() ?? <String, dynamic>{});
+          }),
+          SetOptions(merge: true),
+        );
+  }
+
+  /// Añade el centro del destino a un viaje YA activo, sin tocar nada más
+  /// (ni `active` ni la fecha de fin): es la auto-reparación de los viajes
+  /// guardados antes de que existieran las coordenadas. El trigger republica
+  /// entonces la ficha en el destino.
+  Future<void> patchTravelGeo({
+    required String uid,
+    required double latitude,
+    required double longitude,
+    required TravelGeoSource source,
+  }) async {
+    if (!TravelDestination.isValid(latitude, longitude)) return;
+    await _usersCollection.doc(uid).set(
+          _withRequiredUserFields(uid, <String, dynamic>{
+            'settings': <String, dynamic>{
+              'travel': <String, dynamic>{
+                'lat': _round4(latitude),
+                'lng': _round4(longitude),
+                'geoSource': source.wireName,
+              },
+            },
+          }),
+          SetOptions(merge: true),
+        );
   }
 
   /// Escribe (o borra si vacío/null) un rasgo de perfil en
@@ -603,44 +713,77 @@ class UserRepository {
     //
     // Si no se pudo resolver (sin red, geocodificador pasado de tasa) NO se
     // toca nada: se conserva el sitio anterior entero.
-    final Map<String, dynamic> profilePlace = <String, dynamic>{
-      if (place != null && place.isUsable) ...<String, dynamic>{
-        if (place.city.isNotEmpty) 'currentCity': place.city,
-        'currentCountryName': place.countryName,
-        if (place.countryIso2.isNotEmpty)
-          'currentCountryIso2': place.countryIso2,
-      },
-    };
+    final ({
+      Map<String, dynamic> profile,
+      Map<String, dynamic> location
+    }) patch = buildDeviceLocationPatch(
+      latitude: latitude,
+      longitude: longitude,
+      fixedAt: fixedAt,
+      permissionStatus: permissionStatus,
+      permissionGranted: permissionGranted,
+      place: place,
+    );
     await _usersCollection.doc(uid).set(
           _withRequiredUserFields(uid, <String, dynamic>{
-            if (profilePlace.isNotEmpty) 'profile': profilePlace,
-            'location': <String, dynamic>{
-              'latitude': latitude,
-              'longitude': longitude,
-              if (permissionStatus != null)
-                'permissionStatus': permissionStatus,
-              if (permissionGranted != null)
-                'permissionGranted': permissionGranted,
-              'fixedAt': Timestamp.fromDate(fixedAt.toUtc()),
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
+            if (patch.profile.isNotEmpty) 'profile': patch.profile,
+            'location': patch.location,
             'updatedAt': FieldValue.serverTimestamp(),
           }),
           SetOptions(merge: true),
         );
     // Republicar `discovery/{uid}` es imprescindible: guardar la ubicación nueva
     // en `users` sin republicar deja a los demás viéndote donde estabas, que es
-    // exactamente el síntoma que se venía a arreglar.
-    //
-    // Quien lo hace DE VERDAD es el trigger de backend `onUserWrittenSyncDiscovery`
-    // (Admin SDK, ignora las reglas), que se dispara con la escritura de arriba.
-    // La republicación desde el cliente que hace `refreshProfileCompletion` es
-    // best-effort y para dos estados muy comunes las reglas la RECHAZAN siempre:
-    // `discovery/{uid}` prohíbe al cliente escribir `verified` o `traveling` en
-    // true (firestore.rules), y el payload los lleva si el usuario tiene selfie
-    // verificada o está de viaje. Para esos usuarios la red de seguridad "el feed
-    // funciona sin desplegar Cloud Functions" NO existe.
+    // exactamente el síntoma que se venía a arreglar. Lo hace el trigger de
+    // backend `onUserWrittenSyncDiscovery` (Admin SDK), que se dispara con la
+    // escritura de arriba.
     await refreshProfileCompletion(uid);
+  }
+
+  /// Lo que [setDeviceLocation] escribe (puro, para poder probarlo).
+  ///
+  /// - El ISO2 va a las DOS claves (`currentCountryIso2`, del geocodificador,
+  ///   y `currentCountryCode`, del onboarding): si solo se actualizara una, al
+  ///   cruzar una frontera quedaría un nombre nuevo con un código viejo según
+  ///   quién leyera.
+  /// - `location.placeLat/placeLng` apuntan dónde se resolvió el sitio. Sin
+  ///   sitio no se tocan: que se queden atrás es lo que delata que el país
+  ///   guardado es el de antes y hay que volver a preguntarlo.
+  static ({Map<String, dynamic> profile, Map<String, dynamic> location})
+      buildDeviceLocationPatch({
+    required double latitude,
+    required double longitude,
+    required DateTime fixedAt,
+    String? permissionStatus,
+    bool? permissionGranted,
+    ResolvedPlace? place,
+  }) {
+    final bool placeUsable = place != null && place.isUsable;
+    final Map<String, dynamic> profilePlace = <String, dynamic>{
+      if (place != null && place.isUsable) ...<String, dynamic>{
+        if (place.city.isNotEmpty) 'currentCity': place.city,
+        'currentCountryName': place.countryName,
+        if (place.countryIso2.isNotEmpty) ...<String, dynamic>{
+          'currentCountryIso2': place.countryIso2,
+          'currentCountryCode': place.countryIso2,
+        },
+      },
+    };
+    return (
+      profile: profilePlace,
+      location: <String, dynamic>{
+        'latitude': latitude,
+        'longitude': longitude,
+        if (permissionStatus != null) 'permissionStatus': permissionStatus,
+        if (permissionGranted != null) 'permissionGranted': permissionGranted,
+        if (placeUsable) ...<String, dynamic>{
+          'placeLat': latitude,
+          'placeLng': longitude,
+        },
+        'fixedAt': Timestamp.fromDate(fixedAt.toUtc()),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+    );
   }
 
   /// Modo Amigos: guarda la intención en `users/{uid}.profile.intentMode`
@@ -1189,9 +1332,11 @@ class UserRepository {
             .where('isBot', isEqualTo: true)
             .limit(limit)
             .get();
+    // Ficha a ficha, igual que discovery: un seed mal formado no vacía el feed.
     return snapshot.docs
         .map((QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-            SeedProfile.fromMap(doc.id, doc.data()))
+            parseDiscoveryDoc(doc.id, doc.data()))
+        .whereType<SeedProfile>()
         .toList(growable: false);
   }
 

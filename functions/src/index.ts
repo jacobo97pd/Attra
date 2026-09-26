@@ -174,3 +174,13 @@ export {
   registerPushToken,
   unregisterPushToken,
 } from "./notifications";
+// --- geo ---
+// MODO VIAJE: barrido horario (viajes caducados y planes que caducan sin que
+// nada escriba), resincronizacion de la ficha al cambiar el plan y el callable
+// que situa el destino cuando el dataset offline de la app no puede. Sin
+// exportarlos aqui no se despliegan y la ficha se queda "de viaje" para siempre.
+export {
+  sweepTravelModes,
+  onEntitlementsWrittenSyncDiscovery,
+} from "./discovery";
+export { resolveTravelDestination } from "./travel";

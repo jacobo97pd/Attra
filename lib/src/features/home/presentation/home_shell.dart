@@ -33,6 +33,7 @@ import '../../feed/data/ranking_signals_repository.dart';
 import '../../feed/domain/ranking_config.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../feed/presentation/travel_sheet.dart';
+import '../../geo/domain/travel_destination_resolver.dart';
 import '../../live/domain/live_flags.dart';
 import '../../live/presentation/live_entry.dart';
 import '../../notifications/data/notification_router.dart';
@@ -231,8 +232,9 @@ class HomeShell extends StatefulWidget {
   final Future<void> Function()? onRefreshUser;
   final Future<void> Function() onRepublishDiscovery;
 
-  /// Modo viajes (Plus/Pro): fija/desactiva el destino del feed.
-  final Future<void> Function({
+  /// Modo viajes (Plus/Pro): fija/desactiva el destino del feed. Devuelve si
+  /// el destino se pudo situar (para avisar en la hoja cuando no).
+  final Future<TravelApplyResult?> Function({
     required bool active,
     String iso2,
     String city,
@@ -574,7 +576,12 @@ class _HomeShellState extends State<HomeShell> {
           adsEnabled: (_entitlementController?.flags.adsEnabled ?? false) &&
               !(_entitlementController?.isPlusActive ?? false),
           canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
+          // Mientras cargan los entitlements el viaje cuenta: el controlador
+          // arranca como Free y, si no, todo viajero de pago veía un instante
+          // el feed de casa.
+          entitlementsLoading: _entitlementController?.isLoading ?? false,
           onOpenTravel: _openTravelSheet,
+          onTravelExpired: _endExpiredTravel,
           // Ranking inteligente: señales server-side + config remota. Detrás del
           // flag `ranking_enabled` (default off hasta desplegar el backend).
           rankingSignals: widget.rankingSignalsRepository,
@@ -935,10 +942,24 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
+  /// Apaga un viaje que ya pasó su fecha, CONSERVANDO el destino para poder
+  /// reactivarlo de un toque. La escritura hace que el backend republique la
+  /// ficha en casa sin esperar a su barrido.
+  Future<void> _endExpiredTravel() async {
+    await widget.onSetTravelLocation(
+      active: false,
+      iso2: widget.user?.travelIso2 ?? '',
+      city: widget.user?.travelCity ?? '',
+      country: widget.user?.travelCountry ?? '',
+    );
+  }
+
   Future<void> _openTravelSheet() async {
     await showTravelSheet(
       context,
       canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
+      // Con el plan caducado el viaje sigue "activo" en el documento: la hoja
+      // tiene que enseñar el interruptor para poder apagarlo.
       active: widget.user?.isTraveling ?? false,
       iso2: widget.user?.travelIso2,
       city: widget.user?.travelCity,

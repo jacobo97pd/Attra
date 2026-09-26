@@ -149,29 +149,24 @@ service cloud.firestore {
     }
 
     // Perfiles publicos para el feed de descubrimiento. Cualquier sesion lee;
-    // cada usuario solo escribe el SUYO (espejo de campos publicos), marcando
-    // isBot=false. Datos privados (email, ajustes) siguen solo en users/{uid}.
-    // El dueno publica su propio espejo publico (uid + isBot=false). El backend
-    // (trigger onUserWrittenSyncDiscovery) tambien lo mantiene via Admin SDK,
-    // pero permitir la escritura del dueno hace que el feed funcione SIN
-    // desplegar Cloud Functions. Datos privados (email, ajustes) NO van aqui.
+    // NADIE escribe desde el cliente: la ficha la construye SOLO el backend
+    // (trigger onUserWrittenSyncDiscovery, Admin SDK, desplegado y activo), que
+    // salta con cada escritura en users/{uid}, y la borra al ocultarse, al
+    // expulsar o al borrar la cuenta.
+    //
+    // Antes el dueno tambien podia escribirla "para que el feed funcionara sin
+    // desplegar Functions". Eran dos escritores con logica distinta y ganaba el
+    // ultimo: una usuaria en modo Amigos volvia a salir en feeds de citas, el
+    // cliente saltaba la validacion del backend (tipos, pais, plan) y una ficha
+    // mal formada podia dejar sin usuarios reales el feed de todos.
     match /discovery/{uid} {
       allow read: if isSignedIn();
-      allow write: if isOwner(uid)
-        && request.resource.data.get('uid', null) == uid
-        && request.resource.data.get('isBot', true) == false
-        // El cliente NO puede concederse ventajas de pago ni sellos de
-        // confianza escribiendo su propio espejo:
-        //  - `traveling` es Modo Viaje, funcion de Plus/Pro. El backend lo
-        //    concede solo con plan ACTIVO y sin caducar (discovery.ts).
-        //  - `verified` sale de la verificacion con selfie.
-        // Ambos los pone el trigger onUserWrittenSyncDiscovery con Admin SDK,
-        // que ignora estas reglas. Sin esta restriccion, un cliente modificado
-        // se ponia el pais que quisiera y el sello de verificado gratis.
-        && request.resource.data.get('traveling', false) == false
-        && request.resource.data.get('verified', false) == false;
-      allow delete: if isOwner(uid);
+      allow write: if false;
     }
+
+    // geoCache/{ISO2_ciudad} (centros de destino de viaje) y travelGeoUsage
+    // (tope diario del callable resolveTravelDestination) son solo del
+    // backend: sin `match`, el cliente no puede leerlos ni escribirlos.
 
     // --- Monetizacion: el cliente SOLO lee. Tier, saldo y ledger son
     // autoritativos en backend (Admin SDK bypassa reglas). El cliente nunca

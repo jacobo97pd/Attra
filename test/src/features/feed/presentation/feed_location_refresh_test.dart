@@ -3,6 +3,7 @@ import 'package:attra/src/features/auth/domain/app_user.dart';
 import 'package:attra/src/features/auth/domain/location_refresh_policy.dart';
 import 'package:attra/src/features/chat/data/chat_service.dart';
 import 'package:attra/src/features/feed/presentation/feed_screen.dart';
+import 'package:attra/src/features/geo/domain/travel_destination_resolver.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
 import 'package:attra/src/features/profile/domain/profile_state.dart';
 import 'package:attra/src/theme/app_theme.dart';
@@ -168,6 +169,38 @@ void main() {
         reason: 'el feed estaba filtrado alrededor de la ciudad de antes');
   });
 
+  testWidgets('con radio pequeño, un movimiento que se guarda también recarga',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    // Radio 10 km → se guarda a partir de 5 km. Antes la recarga pedía 10 km
+    // fijos: 8 km se guardaban y se publicaban, pero el mazo seguía filtrado
+    // desde el punto viejo (vecinos nuevos ocultos, gente a 18 km en pantalla).
+    const double ochoKmAlNorte = madridLat + 0.072;
+    final _FakeSource source = _FakeSource(
+      permission: LocationAuthorization.granted,
+      current: const LocationFix(latitude: ochoKmAlNorte, longitude: madridLng),
+    );
+    final _Saved saved = _Saved();
+    final _Loads loads = _Loads();
+
+    await tester.pumpWidget(_host(
+      user: _user(
+        latitude: madridLat,
+        longitude: madridLng,
+        locationUpdatedAt: DateTime.now().subtract(const Duration(days: 2)),
+        maxDistanceKm: 10,
+      ),
+      source: source,
+      saved: saved,
+      loads: loads,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(saved.calls, 1, reason: '8 km con radio 10 ya es moverse');
+    expect(loads.calls, 2,
+        reason: 'lo que se guarda y se publica tiene que ser lo que filtra');
+  });
+
   testWidgets('cruzar la frontera no deja el feed vacío: se ignora el país',
       (WidgetTester tester) async {
     _usePhoneViewport(tester);
@@ -206,6 +239,41 @@ void main() {
     expect(find.textContaining('No hay nadie de España en tu zona'),
         findsOneWidget);
     expect(find.textContaining('No hay más personas'), findsNothing);
+  });
+
+  testWidgets('el respaldo de país NO mete a gente sin ubicación de otro país',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    // El respaldo promete "gente de alrededor", pero el radio solo se mide con
+    // coordenadas en los dos lados: entraban perfiles sin ubicación de Kabul o
+    // Sídney (y viajeros de todo el mundo) presentados como vecinos.
+    final _FakeSource source = _FakeSource(
+      permission: LocationAuthorization.granted,
+    );
+
+    await tester.pumpWidget(_host(
+      user: _user(
+        latitude: madridLat,
+        longitude: madridLng,
+        locationUpdatedAt: DateTime.now().subtract(const Duration(minutes: 10)),
+      ),
+      source: source,
+      saved: _Saved(),
+      profiles: <SeedProfile>[
+        SeedProfile.fromMap('kabul', <String, dynamic>{
+          'displayName': 'Sara',
+          'currentCity': 'Kabul',
+          'currentCountryName': 'Afganistán',
+          'gender': 'female',
+          'photos': <String>['https://example.test/k.jpg'],
+        }),
+      ],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.textContaining('No hay nadie de España en tu zona'), findsNothing);
+    expect(find.textContaining('No hay más personas'), findsOneWidget);
   });
 
   testWidgets('la ubicación llega antes que la carga y NO la duplica',
@@ -411,8 +479,10 @@ AppUser _user({
   double? longitude,
   DateTime? locationUpdatedAt,
   bool traveling = false,
+  int? maxDistanceKm,
 }) {
   return AppUser(
+    maxDistanceKm: maxDistanceKm,
     uid: 'yo',
     email: 'yo@example.test',
     displayName: 'Yo',
@@ -438,6 +508,9 @@ Widget _host({
   _Loads? loads,
   Duration? loadDelay,
   List<SeedProfile> profiles = const <SeedProfile>[],
+  // El viaje solo cuenta con un plan que lo incluya: estos tests modelan a
+  // quien lo paga (el caso sin plan tiene su propio test).
+  bool canUseTravelMode = true,
 }) {
   return MaterialApp(
     theme: AppTheme.light,
@@ -453,6 +526,11 @@ Widget _host({
         chatService: _ChatServiceStub(),
         locationSource: source,
         onDeviceLocation: saved.call,
+        canUseTravelMode: canUseTravelMode,
+        // Estos tests van del GPS, no de dónde se centra el viaje: un destino
+        // sin centro deja el feed a nivel de país, como antes (lo del centro lo
+        // cubre feed_travel_test).
+        travelDestinationResolver: const _SinCentro(),
       ),
     ),
   );
@@ -532,6 +610,18 @@ class _FakeSource implements DeviceLocationSource {
     currentFixCalls++;
     return current;
   }
+}
+
+class _SinCentro implements TravelDestinationResolver {
+  const _SinCentro();
+
+  @override
+  Future<TravelDestination?> resolve({
+    required String iso2,
+    required String city,
+    String countryName = '',
+  }) async =>
+      null;
 }
 
 class _MatchServiceStub implements MatchService {
