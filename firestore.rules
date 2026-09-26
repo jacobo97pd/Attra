@@ -164,6 +164,44 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Ficha de perfil por uid: la escribe SOLO el backend (el mismo trigger)
+    // para todo usuario publicable, salga o no en el feed. Ocultar el perfil,
+    // pausar la cuenta, no salir en recomendaciones o el incognito solo le
+    // quitan de `discovery`. Antes le borraban la unica ficha y sus matches y
+    // a quien habia dado like veian "Alguien" sin foto.
+    //
+    // La leen el dueno y quien tiene RELACION con el:
+    //   - el match del par, si esta ACTIVO. Bloqueado, deshecho, cerrado o
+    //     borrado corta el acceso aunque queden likes (applyBlock deja el match
+    //     'blocked' incluso sin match previo);
+    //   - sin match, un like DEL DUENO al lector que no este cancelado. Es lo
+    //     que promete el incognito: "Solo te ven las personas a las que tu has
+    //     dado like". Por eso NO basta con haberle dado like tu: cualquiera que
+    //     conozca un uid podria darle like a mano para ver a alguien oculto.
+    // IDs de functions/src/ids.ts: matches/{menor}_{mayor} (pairId) y
+    // likes/{de}_{a} (directedId). Como mucho 2 get() por lectura, y solo en
+    // el fallback del cliente (quien sale en el feed se resuelve por discovery).
+    // Sin `list`: la coleccion no se puede recorrer.
+    function isLiveLike(likeDoc) {
+      return likeDoc != null
+        && likeDoc.data.get('status', 'active') != 'cancelled';
+    }
+
+    function canSeeProfileCard(ownerUid) {
+      let me = request.auth.uid;
+      let pair = me < ownerUid ? me + '_' + ownerUid : ownerUid + '_' + me;
+      let matchDoc = get(/databases/$(database)/documents/matches/$(pair));
+      return matchDoc != null
+        ? matchDoc.data.get('status', 'active') == 'active'
+        : isLiveLike(get(/databases/$(database)/documents/likes/$(ownerUid + '_' + me)));
+    }
+
+    match /profileCards/{uid} {
+      allow get: if isOwner(uid) || (isSignedIn() && canSeeProfileCard(uid));
+      allow list: if false;
+      allow write: if false;
+    }
+
     // geoCache/{ISO2_ciudad} (centros de destino de viaje) y travelGeoUsage
     // (tope diario del callable resolveTravelDestination) son solo del
     // backend: sin `match`, el cliente no puede leerlos ni escribirlos.

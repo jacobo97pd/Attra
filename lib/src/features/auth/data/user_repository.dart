@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/config/legal_links.dart';
 import '../../geo/domain/travel_destination_resolver.dart';
+import '../../profile/data/profile_summary_repository.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_completion.dart';
 import '../../profile/domain/profile_prompt.dart';
@@ -1383,21 +1384,24 @@ class UserRepository {
         .toList(growable: false);
   }
 
-  /// Perfil completo de un usuario por uid para verlo (desde chats/matches):
-  /// primero `discovery` (perfiles reales), luego `seed_profiles` (mocks).
-  Future<SeedProfile?> fetchProfileByUid(String uid) async {
-    if (uid.isEmpty) return null;
-    final DocumentSnapshot<Map<String, dynamic>> disc =
-        await _discoveryCollection.doc(uid).get();
-    if (disc.exists) {
-      return SeedProfile.fromMap(disc.id, disc.data()!);
-    }
-    final DocumentSnapshot<Map<String, dynamic>> seed =
-        await _seedProfilesCollection.doc(uid).get();
-    if (seed.exists) {
-      return SeedProfile.fromMap(seed.id, seed.data()!);
-    }
-    return null;
+  /// Perfil completo de un usuario por uid para verlo (desde chats, matches y
+  /// likes): `discovery` (perfiles reales), `seed_profiles` (mocks) y, si no
+  /// sale en el feed, su `profileCards` (ver [kPublicProfileCollections]).
+  /// Antes un match o un like de alguien con el perfil oculto, la cuenta
+  /// pausada o el incógnito daba "No se pudo cargar el perfil.".
+  Future<SeedProfile?> fetchProfileByUid(String uid) =>
+      profileByUid(uid, firestoreProfileDocReader(_firestore));
+
+  /// Núcleo de [fetchProfileByUid] con el lector inyectable (tests).
+  @visibleForTesting
+  static Future<SeedProfile?> profileByUid(
+    String uid,
+    PublicProfileDocReader read,
+  ) async {
+    final MapEntry<String, Map<String, dynamic>>? found =
+        await findPublicProfileDoc(uid, read);
+    if (found == null) return null;
+    return SeedProfile.fromMap(uid, found.value);
   }
 
   Future<void> deleteUserData(String uid) async {

@@ -48,6 +48,8 @@ function madrileno(travel) {
       displayName: "Ana",
       gender: "female",
       bio: "Hola",
+      // Mayor de edad: sin fecha valida no se publica (18+ en servidor, D06).
+      birthDate: Timestamp.fromDate(new Date(Date.UTC(1995, 4, 20))),
       currentCity: "Madrid",
       currentCountryName: "España",
       currentCountryIso2: "ES",

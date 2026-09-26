@@ -5,11 +5,20 @@ import { FieldValue, DocumentData, Timestamp } from "firebase-admin/firestore";
 import { REGION, db } from "./firebase";
 import { col, requireAuthUid } from "./common";
 import { iso2ForCountryName, normalizeIso2 } from "./travel";
+import {
+  CardBlocker,
+  PROFILE_CARDS_COLLECTION,
+  cardBlocker,
+  profileCardFrom,
+} from "./profileCards";
 
 /// Base con NOMBRE (los triggers v2 apuntan a la default si no se indica).
 const DATABASE = "attra-database";
 
 const discovery = db.collection("discovery");
+/// Ficha por uid de TODO usuario publicable, este o no en el feed (ver
+/// profileCards.ts). discovery/{uid} queda solo como listado del feed.
+const profileCards = db.collection(PROFILE_CARDS_COLLECTION);
 
 interface PublicTraitDefinition {
   key: string;
@@ -115,33 +124,83 @@ export function isPaidActive(
   return true; // sin caducidad declarada => activo
 }
 
-/// Un usuario es descubrible (aparece en el feed de otros) si completo el
-/// onboarding y el perfil, NO es un bot, no esta expulsado y no se ha ocultado:
-///   - `isBanned`/`isDeleted`: la moderacion lo saca del feed. Antes el trigger
-///     lo volvia a publicar con la misma escritura que lo expulsaba y seguia
-///     saliendo en todos los feeds con una ficha a la que nadie podia dar like.
-///   - `privacy.hideProfile` (gratis): se sale del feed siempre.
+/// Por que un usuario con ficha NO sale en el listado del feed.
+export type ListingBlocker = "hidden" | "not_recommended" | "incognito";
+
+/// Ajustes con los que el usuario se saca del feed (sin perder su ficha):
+///   - `privacy.hideProfile` (gratis; tambien "Pausar cuenta"): siempre.
 ///   - `privacy.showInRecommendations=false`: no aparece recomendado.
 ///   - `privacy.incognito` (Plus): solo surte efecto con plan de pago activo;
 ///     asi el modo incognito es una ventaja real de Attra Plus/Pro.
-export function isDiscoverable(
+export function listingBlocker(
   data: DocumentData | undefined,
   isPaid: boolean
-): boolean {
-  if (!data) return false;
-  if (
-    data.onboardingCompleted !== true ||
-    data.profileCompleted !== true ||
-    data.isBot === true
-  ) {
-    return false;
+): ListingBlocker | null {
+  const settings = asMap(data?.settings);
+  if (settings["privacy.hideProfile"] === true) return "hidden";
+  if (settings["privacy.showInRecommendations"] === false) {
+    return "not_recommended";
   }
-  if (data.isBanned === true || data.isDeleted === true) return false;
-  const settings = asMap(data.settings);
-  if (settings["privacy.hideProfile"] === true) return false;
-  if (settings["privacy.showInRecommendations"] === false) return false;
-  if (settings["privacy.incognito"] === true && isPaid) return false;
-  return true;
+  if (settings["privacy.incognito"] === true && isPaid) return "incognito";
+  return null;
+}
+
+/// Un usuario es descubrible (aparece en el feed de otros) si puede tener
+/// ficha publica ([cardBlocker]: onboarding completo, no bot, no expulsado ni
+/// borrado, 18+) y no se ha sacado del feed ([listingBlocker]).
+/// `isBanned`/`isDeleted`: antes el trigger lo volvia a publicar con la misma
+/// escritura que lo expulsaba y seguia saliendo en todos los feeds.
+export function isDiscoverable(
+  data: DocumentData | undefined,
+  isPaid: boolean,
+  nowMs: number = Date.now()
+): boolean {
+  return (
+    cardBlocker(data, nowMs) === null && listingBlocker(data, isPaid) === null
+  );
+}
+
+/// Que se publica de un usuario: su ficha por uid (`card`) y, ademas, si sale
+/// en el feed (`listed`). `listed` implica `card`. `reason` = por que falta
+/// algo (null si se publica todo); lo usa el informe del backfill.
+export interface PublicationPlan {
+  card: boolean;
+  listed: boolean;
+  reason: CardBlocker | ListingBlocker | null;
+}
+
+export function planPublication(
+  data: DocumentData | undefined,
+  isPaid: boolean,
+  nowMs: number = Date.now()
+): PublicationPlan {
+  const blocked = cardBlocker(data, nowMs);
+  if (blocked) return { card: false, listed: false, reason: blocked };
+  const unlisted = listingBlocker(data, isPaid);
+  return { card: true, listed: unlisted === null, reason: unlisted };
+}
+
+/// Documentos publicos de un usuario (puro, testeable). null = se borra.
+export function publicDocsFor(
+  uid: string,
+  data: DocumentData | undefined,
+  isPaid: boolean,
+  nowMs: number = Date.now()
+): {
+  plan: PublicationPlan;
+  listing: DocumentData | null;
+  card: DocumentData | null;
+} {
+  const plan = planPublication(data, isPaid, nowMs);
+  if (!plan.card || !data) return { plan, listing: null, card: null };
+  const doc = buildDiscoveryDoc(uid, data, isPaid, nowMs);
+  const incognito =
+    asMap(data.settings)["privacy.incognito"] === true && isPaid;
+  return {
+    plan,
+    listing: plan.listed ? doc : null,
+    card: profileCardFrom(doc, { incognito }),
+  };
 }
 
 function asMap(value: unknown): DocumentData {
@@ -525,36 +584,47 @@ export function needsTier(data: DocumentData | undefined): boolean {
   return travelOf(data).active === true;
 }
 
-/// Espeja un user en discovery (o lo borra si no es descubrible). Idempotente.
-/// Lee el tier (userEntitlements) para resolver las funciones de pago que
-/// afectan a la ficha publica: modo incognito y modo viaje.
+/// Espeja un user en discovery (listado del feed) y en profileCards (ficha por
+/// uid), o borra lo que no le corresponda. Idempotente. Lee el tier
+/// (userEntitlements) para resolver las funciones de pago que afectan a la
+/// ficha publica: modo incognito y modo viaje.
+///
+/// Ocultarse del feed SOLO borra el listado: la ficha se queda para sus
+/// matches y para quien recibio su like (antes se borraba todo y pasaban a ver
+/// "Alguien"). En un solo batch para que listado y ficha no se contradigan.
 async function syncOne(uid: string, data: DocumentData | undefined): Promise<void> {
-  const ref = discovery.doc(uid);
   let isPaid = false;
   if (needsTier(data)) {
     const entSnap = await col.entitlements.doc(uid).get();
     isPaid = isPaidActive(entSnap.data());
   }
-  if (!isDiscoverable(data, isPaid)) {
-    await ref.delete().catch(() => undefined);
-    return;
-  }
+  const { listing, card } = publicDocsFor(uid, data, isPaid);
+  const batch = db.batch();
   // Reemplazo completo: al ocultar, revocar o borrar un campo no puede quedar
   // una copia antigua en el documento publico.
-  await ref.set(buildDiscoveryDoc(uid, data as DocumentData, isPaid));
+  if (listing) batch.set(discovery.doc(uid), listing);
+  else batch.delete(discovery.doc(uid));
+  if (card) batch.set(profileCards.doc(uid), card);
+  else batch.delete(profileCards.doc(uid));
+  await batch.commit();
 }
 
-/// Trigger: cada vez que cambia users/{uid}, sincroniza su espejo publico en
-/// discovery. Admin SDK => no depende de reglas ni de que el cliente escriba.
-/// Cubre login (lastLoginAt), fin de onboarding y edicion de perfil.
+/// Trigger: cada vez que cambia users/{uid}, sincroniza su espejo publico
+/// (discovery + profileCards). Admin SDK => no depende de reglas ni de que el
+/// cliente escriba. Cubre login (lastLoginAt), fin de onboarding y edicion de
+/// perfil.
 export const onUserWrittenSyncDiscovery = onDocumentWritten(
   { document: "users/{uid}", database: DATABASE, region: REGION },
   async (event) => {
     const uid = event.params.uid;
     const after = event.data?.after?.data();
-    // Borrado del user => quitar de discovery.
+    // Borrado del user => fuera del feed Y sin ficha: una cuenta borrada no
+    // puede seguir viendose por uid.
     if (!event.data?.after?.exists) {
-      await discovery.doc(uid).delete().catch(() => undefined);
+      const batch = db.batch();
+      batch.delete(discovery.doc(uid));
+      batch.delete(profileCards.doc(uid));
+      await batch.commit();
       return;
     }
     await syncOne(uid, after);
@@ -722,20 +792,48 @@ export const onEntitlementsWrittenSyncDiscovery = onDocumentWritten(
   }
 );
 
-/// Backfill puntual: recorre todos los users y publica en discovery los que
-/// sean descubribles (y limpia los que no). Pensado para rellenar perfiles
-/// existentes sin necesidad de que cada cuenta vuelva a iniciar sesion.
-/// Idempotente: se puede ejecutar las veces que haga falta.
-export const backfillDiscovery = onCall({ region: REGION }, async (request) => {
-  // Cualquier sesion valida puede dispararlo; solo copia datos publicos y es
-  // idempotente. (TODO: restringir a un uid admin si se quiere endurecer.)
-  requireAuthUid(request.auth);
+/// Resultado del backfill. `published`/`removed` son las del listado de
+/// discovery (mismos nombres que antes); `cards*` las de profileCards.
+/// `reasons` cuenta por que falta algo ([PublicationPlan.reason]): en un
+/// ensayo (`dryRun`) dice, antes de escribir nada, cuantas fichas se iran por
+/// la puerta de 18+ (`underage`, `no_birth_date`) o por ocultarse del feed.
+export interface PublicationBackfillResult {
+  dryRun: boolean;
+  processed: number;
+  published: number;
+  removed: number;
+  cardsPublished: number;
+  cardsRemoved: number;
+  reasons: Record<string, number>;
+}
 
-  let processed = 0;
-  let published = 0;
-  let removed = 0;
+/// Recorre TODOS los users y deja discovery y profileCards como los dejaria el
+/// trigger. Hace falta una vez al desplegar profileCards: la ficha de los ya
+/// ocultos no existe hasta que su usuario vuelva a escribir su documento.
+/// Idempotente. Con `dryRun` (el defecto del callable) solo lee y cuenta.
+///
+/// Se puede ensayar sin desplegar nada, con el Admin SDK y credenciales locales
+/// (`gcloud auth application-default login`), SIEMPRE primero en ensayo:
+///   cd functions; npm run build
+///   $env:GCLOUD_PROJECT="attra-database"
+///   node -e "require('./lib/discovery.js').runPublicationBackfill({dryRun:true}).then(r=>console.log(r))"
+export async function runPublicationBackfill(opts: {
+  dryRun: boolean;
+  pageSize?: number;
+  nowMs?: number;
+}): Promise<PublicationBackfillResult> {
+  const pageSize = opts.pageSize ?? 300;
+  const nowMs = opts.nowMs ?? Date.now();
+  const result: PublicationBackfillResult = {
+    dryRun: opts.dryRun,
+    processed: 0,
+    published: 0,
+    removed: 0,
+    cardsPublished: 0,
+    cardsRemoved: 0,
+    reasons: {},
+  };
   let lastId: string | null = null;
-  const pageSize = 300;
 
   // Paginacion por __name__ para no cargar toda la coleccion en memoria.
   // eslint-disable-next-line no-constant-condition
@@ -755,32 +853,66 @@ export const backfillDiscovery = onCall({ region: REGION }, async (request) => {
         ...paidFeatureIds.map((id) => col.entitlements.doc(id))
       );
       for (const es of entSnaps) {
-        paidById.set(es.id, isPaidActive(es.data()));
+        paidById.set(es.id, isPaidActive(es.data(), nowMs));
       }
     }
 
     const batch = db.batch();
     for (const doc of snap.docs) {
-      processed += 1;
+      result.processed += 1;
       lastId = doc.id;
-      const data = doc.data();
-      if (isDiscoverable(data, paidById.get(doc.id) ?? false)) {
-        batch.set(
-          discovery.doc(doc.id),
-          buildDiscoveryDoc(doc.id, data, paidById.get(doc.id) ?? false)
-        );
-        published += 1;
+      const { plan, listing, card } = publicDocsFor(
+        doc.id,
+        doc.data(),
+        paidById.get(doc.id) ?? false,
+        nowMs
+      );
+      if (plan.reason) {
+        result.reasons[plan.reason] = (result.reasons[plan.reason] ?? 0) + 1;
+      }
+      if (listing) {
+        batch.set(discovery.doc(doc.id), listing);
+        result.published += 1;
       } else {
         batch.delete(discovery.doc(doc.id));
-        removed += 1;
+        result.removed += 1;
+      }
+      if (card) {
+        batch.set(profileCards.doc(doc.id), card);
+        result.cardsPublished += 1;
+      } else {
+        batch.delete(profileCards.doc(doc.id));
+        result.cardsRemoved += 1;
       }
     }
-    await batch.commit();
+    // En ensayo el batch se descarta sin enviarse: nada se escribe.
+    if (!opts.dryRun) await batch.commit();
     if (snap.size < pageSize) break;
   }
+  return result;
+}
 
-  if (processed === 0) {
-    throw new HttpsError("not-found", "No hay usuarios que procesar.");
+/// Backfill bajo demanda de discovery + profileCards (ver
+/// [runPublicationBackfill]).
+///
+/// Antes bastaba con tener sesion: CUALQUIER usuario podia lanzar un recorrido
+/// completo de `users` con escrituras (coste + DoS trivial), y ahora escribe dos
+/// colecciones. Solo administradores (claim `admin`, que solo se pone en
+/// servidor, igual que runMonthlyAttraGrant) y en ENSAYO salvo que se pida
+/// `{dryRun: false}` de forma explicita.
+export const backfillDiscovery = onCall(
+  { region: REGION, timeoutSeconds: 540, memory: "512MiB" },
+  async (request) => {
+    const uid = requireAuthUid(request.auth);
+    if (request.auth?.token?.admin !== true) {
+      throw new HttpsError("permission-denied", "Solo administradores.");
+    }
+    const dryRun = request.data?.dryRun !== false;
+    console.log(`[backfillDiscovery] uid=${uid} dryRun=${dryRun}`);
+    const result = await runPublicationBackfill({ dryRun });
+    if (result.processed === 0) {
+      throw new HttpsError("not-found", "No hay usuarios que procesar.");
+    }
+    return result;
   }
-  return { processed, published, removed };
-});
+);

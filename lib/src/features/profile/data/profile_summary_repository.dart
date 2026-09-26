@@ -1,16 +1,80 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../domain/profile_summary.dart';
 
-/// Resuelve nombre + foto de un uid para listas. Busca en `discovery` (perfiles
-/// reales, lectura publica) y, si no, en `seed_profiles` (mocks). NO usa `users`
-/// porque es owner-read-only: leer el doc de OTRO usuario da permission-denied.
-/// Cachea en memoria para no releer.
+/// Lee un documento público: sus datos, o null si no existe.
+typedef PublicProfileDocReader = Future<Map<String, dynamic>?> Function(
+    String collection, String uid);
+
+/// Dónde se busca la ficha pública de un uid, por orden:
+///  1. `discovery`: quien sale en el feed (cualquier sesión la lee).
+///  2. `seed_profiles`: perfiles de prueba.
+///  3. `profileCards`: la ficha de quien NO sale en el feed (perfil oculto,
+///     cuenta pausada, sin recomendaciones o incógnito). Antes esas cuentas no
+///     tenían ninguna ficha legible: sus matches y a quien habían dado like
+///     veían "Alguien" sin foto y "No se pudo cargar el perfil". La escribe
+///     solo el backend y las reglas solo dejan leerla a su match activo y a
+///     las personas a las que dio like.
+///
+/// NO se usa `users`: es owner-read-only y el doc de OTRO usuario da
+/// permission-denied.
+const List<String> kPublicProfileCollections = <String>[
+  'discovery',
+  'seed_profiles',
+  'profileCards',
+];
+
+/// Lector real de Firestore para [findPublicProfileDoc].
+PublicProfileDocReader firestoreProfileDocReader(FirebaseFirestore firestore) {
+  return (String collection, String uid) async {
+    final DocumentSnapshot<Map<String, dynamic>> snap =
+        await firestore.collection(collection).doc(uid).get();
+    return snap.exists ? (snap.data() ?? <String, dynamic>{}) : null;
+  };
+}
+
+/// Primera ficha pública de [uid] según [kPublicProfileCollections]: la
+/// colección donde está y sus datos, o null si no hay ninguna para quien
+/// pregunta.
+///
+/// Un `permission-denied` en `profileCards` es la respuesta normal cuando no
+/// hay relación con esa persona (p. ej. un like que ya se canceló): equivale a
+/// "no hay ficha", no a un error. Cualquier otro fallo se propaga, como antes.
+Future<MapEntry<String, Map<String, dynamic>>?> findPublicProfileDoc(
+  String uid,
+  PublicProfileDocReader read,
+) async {
+  if (uid.isEmpty) return null;
+  for (final String collection in kPublicProfileCollections) {
+    Map<String, dynamic>? data;
+    try {
+      data = await read(collection, uid);
+    } on FirebaseException catch (error) {
+      if (collection != 'profileCards' || error.code != 'permission-denied') {
+        rethrow;
+      }
+      return null;
+    }
+    if (data != null) {
+      return MapEntry<String, Map<String, dynamic>>(collection, data);
+    }
+  }
+  return null;
+}
+
+/// Resuelve nombre + foto de un uid para listas (ver
+/// [kPublicProfileCollections]). Cachea en memoria para no releer.
 class ProfileSummaryRepository {
   ProfileSummaryRepository({required FirebaseFirestore firestore})
-      : _firestore = firestore;
+      : _read = firestoreProfileDocReader(firestore);
 
-  final FirebaseFirestore _firestore;
+  /// Con un lector propio: para probar la cadena de búsqueda sin Firestore.
+  @visibleForTesting
+  ProfileSummaryRepository.withReader(PublicProfileDocReader read)
+      : _read = read;
+
+  final PublicProfileDocReader _read;
   final Map<String, ProfileSummary> _cache = <String, ProfileSummary>{};
   // Peticiones en vuelo: cuando un grid pinta N tarjetas del mismo uid a la vez,
   // se comparte UNA sola lectura en lugar de lanzar N idénticas.
@@ -39,9 +103,11 @@ class ProfileSummaryRepository {
 
   Future<ProfileSummary> _load(String uid) async {
     try {
-      final ProfileSummary summary = await _fromCollection('discovery', uid) ??
-          await _fromCollection('seed_profiles', uid) ??
-          ProfileSummary.unknown.copyWith(uid: uid);
+      final MapEntry<String, Map<String, dynamic>>? found =
+          await findPublicProfileDoc(uid, _read);
+      final ProfileSummary summary = found == null
+          ? ProfileSummary.unknown.copyWith(uid: uid)
+          : _summaryFrom(uid, found.value);
       // Solo cachea si se resolvio (evita fijar "Alguien" si discovery aun no
       // estaba sincronizado en el momento de la primera lectura).
       if (summary.displayName != 'Alguien') {
@@ -53,11 +119,7 @@ class ProfileSummaryRepository {
     }
   }
 
-  Future<ProfileSummary?> _fromCollection(String collection, String uid) async {
-    final DocumentSnapshot<Map<String, dynamic>> snap =
-        await _firestore.collection(collection).doc(uid).get();
-    if (!snap.exists) return null;
-    final Map<String, dynamic> data = snap.data() ?? <String, dynamic>{};
+  ProfileSummary _summaryFrom(String uid, Map<String, dynamic> data) {
     return ProfileSummary(
       uid: uid,
       displayName: (data['displayName'] as String?)?.trim().isNotEmpty == true
@@ -65,9 +127,10 @@ class ProfileSummaryRepository {
           : 'Alguien',
       photoUrl: _photoFrom(data),
       age: _asInt(data['age']),
-      // discovery publica `jobTitle`; seed_profiles también lo trae.
+      // discovery/profileCards publican `jobTitle`; seed_profiles también.
       headline: (data['jobTitle'] as String?)?.trim() ?? '',
-      // discovery: currentCity/currentCountryName · seed_profiles: city/country.
+      // discovery/profileCards: currentCity/currentCountryName ·
+      // seed_profiles: city/country.
       city: ((data['currentCity'] ?? data['city']) as String?)?.trim() ?? '',
       country: ((data['currentCountryName'] ?? data['country']) as String?)
               ?.trim() ??
