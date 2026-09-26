@@ -32,10 +32,28 @@ import {
 ///  - DEPENDIENTES DE CREDENCIALES: en Android, preguntar a la Play Developer
 ///    API (la cuenta de servicio necesita acceso en Play Console, paso externo
 ///    del dueño). Van detras de `config/featureFlags.receiptValidation`:
-///      'log'     (por defecto) se intenta; si Google no contesta o no nos deja,
-///                se registra y se concede como antes. Exigirlo sin el acceso
-///                configurado dejaria sin plan a todo el que paga en Android.
-///      'enforce' sin respuesta buena de Google no se concede nada.
+///      'log'     (por defecto) se intenta; si Google NO PUEDE contestar (sin
+///                permiso, red, 5xx) se registra y se concede como antes.
+///                Exigirlo sin el acceso configurado dejaria sin plan a todo
+///                el que paga en Android.
+///      'enforce' ademas, en SUSCRIPCIONES, sin respuesta de Google no se
+///                concede nada. Los CONSUMIBLES siguen como en 'log' ante un
+///                fallo de Google: Play ya los ha consumido antes de llegar
+///                aqui (buyConsumable con autoConsume), y rechazarlos por una
+///                caida de Google perderia el pack pagado para siempre. Eso
+///                cambia cuando la app consuma DESPUES de validar.
+///    En CUALQUIER modo, si Google contesta que el token no existe o no es de
+///    ese producto (400/404/410) se rechaza: esa respuesta solo puede llegar
+///    con las credenciales ya funcionando, y es justo el recibo inventado.
+///    Antes 'log' lo concedia igual, y como la plataforma la elige quien llama,
+///    cualquier cuenta (tambien desde iOS) se regalaba un plan con
+///    `platform: 'play_store'` aunque Google ya dijese que era falso.
+///
+/// OJO, hueco que sigue abierto HASTA el paso externo 2: sin acceso a la API
+/// Google contesta 401/403 y todo token de Play, inventado o no, pasa sin
+/// verificar. Lo puede usar CUALQUIER cuenta, no solo las de Android, porque
+/// la plataforma la manda el cliente. Es bloqueante para dar la validacion por
+/// cerrada.
 ///
 /// Sandbox: la revision de Apple compra con cuentas SANDBOX sobre la build de
 /// produccion, asi que el sandbox se acepta (`receiptValidationAllowSandbox`
@@ -61,7 +79,10 @@ import {
 ///     (no hace falta clave .p8 ni issuer id: se verifica por firma).
 ///  5. Cuando en los logs de compras reales de Android salga
 ///     "[receipt] play_store verificado" (y no "SIN VERIFICAR"), poner
-///     `config/featureFlags.receiptValidation = "enforce"`.
+///     `config/featureFlags.receiptValidation = "enforce"`. Con el paso 2 hecho
+///     los tokens inventados ya se rechazan tambien en 'log'; 'enforce' solo
+///     añade no conceder SUSCRIPCIONES mientras Google no conteste (no afecta
+///     a los consumibles, ver arriba), asi que es seguro activarlo.
 
 export type StorePlatform = "app_store" | "play_store";
 export type ReceiptValidationMode = "log" | "enforce";
@@ -143,7 +164,8 @@ export interface VerifiedStorePurchase {
 
 export type StoreCheck =
   | { status: "verified"; purchase: VerifiedStorePurchase }
-  /// Solo en modo 'log' y solo para lo que depende de credenciales.
+  /// Solo Play y solo cuando Google NO PUDO contestar: en modo 'log', o un
+  /// consumible en cualquier modo.
   | { status: "unverified"; reason: string }
   | { status: "rejected"; permanent: boolean; reason: string; message: string };
 
@@ -321,22 +343,39 @@ export async function checkStorePurchase(
     };
   } catch (error) {
     const kind = error instanceof PlayApiError ? error.kind : "unavailable";
-    const reason = kind === "invalid" ? "receipt_invalid" : "store_unavailable";
-    if (input.config.mode === "enforce") {
+    if (kind === "invalid") {
+      // Google HA CONTESTADO (asi que las credenciales funcionan) y dice que el
+      // token no existe o no es de este producto: es un recibo inventado, en
+      // cualquier modo. Antes 'log' lo concedia igual y el ataque del informe
+      // (`platform: 'play_store'`, token 'x') seguia dando Pro a cualquiera
+      // aun con el acceso a la API ya configurado. Temporal a proposito, como
+      // el resto de fallos de Google (ver arriba): una compra real mal
+      // clasificada se reintenta en vez de cerrarse sin entregar.
       console.warn(
-        `[receipt] play_store rechazado (enforce): ${reason} ` +
+        `[receipt] play_store rechazado: receipt_invalid ` +
           `${(error as Error).message} (${fp})`
       );
-      return rejected(false, reason, MSG_NOT_VERIFIED);
+      return rejected(false, "receipt_invalid", MSG_NOT_VERIFIED);
     }
-    // Modo 'log': sin acceso a la Play Developer API todavia no hay forma de
-    // distinguir un token real de uno inventado. Se concede como antes y queda
-    // registrado para poder medir cuanto pasaria a rechazarse con 'enforce'.
+    // Google no pudo contestar (sin permiso en Play Console, red, 429/5xx).
+    // Eso no dice nada de si la compra es buena.
+    if (input.config.mode === "enforce" && input.kind === "subscription") {
+      console.warn(
+        `[receipt] play_store rechazado (enforce): store_unavailable ` +
+          `${(error as Error).message} (${fp})`
+      );
+      return rejected(false, "store_unavailable", MSG_NOT_VERIFIED);
+    }
+    // Modo 'log' (o un consumible): se concede como antes y queda registrado.
+    // Un consumible NO se rechaza ni en 'enforce': Play ya lo consumio antes de
+    // llegar aqui, no lo vuelve a devolver al restaurar, y la entrega
+    // pendiente solo vive en la memoria de la app. Rechazarlo por una caida de
+    // Google seria perder el pack pagado al cerrar la app.
     console.warn(
-      `[receipt] play_store SIN VERIFICAR (modo log): ${reason} ` +
-        `${(error as Error).message} (${fp})`
+      `[receipt] play_store SIN VERIFICAR (${input.config.mode}, ${input.kind}): ` +
+        `store_unavailable ${(error as Error).message} (${fp})`
     );
-    return { status: "unverified", reason };
+    return { status: "unverified", reason: "store_unavailable" };
   }
 }
 

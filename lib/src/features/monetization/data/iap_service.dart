@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'storekit_pending_transactions.dart';
 
 /// Resultado de entregar (verificar + conceder) una compra en el backend.
@@ -530,6 +532,24 @@ class IapService extends ChangeNotifier {
     }
   }
 
+  /// Compra de Google Play que sigue PENDIENTE de pago (efectivo, métodos de
+  /// pago lentos).
+  ///
+  /// Hace falta mirarlo aquí porque `restorePurchases` de Android marca como
+  /// `restored` TODO lo que Play tiene a tu nombre, también lo pendiente, y
+  /// el estado real solo queda en `billingClientPurchase`. Antes eso se
+  /// entregaba al backend como compra hecha: sin la Play Developer API el
+  /// backend no puede saber que no está pagada y concedía el plan o el pack
+  /// por adelantado. Y otra vez al pagarse, porque la pendiente no tiene
+  /// orderId (llega como `''`) y la pagada sí, así que para el backend eran
+  /// dos compras. Con la reentrega silenciosa de cada arranque, esto dejó de
+  /// depender de que alguien pulsara "Restaurar".
+  @visibleForTesting
+  static bool isUnpaidPlayPurchase(PurchaseDetails purchase) =>
+      purchase is GooglePlayPurchaseDetails &&
+      purchase.billingClientPurchase.purchaseState ==
+          PurchaseStateWrapper.pending;
+
   /// Entrada del flujo de compras para los tests.
   ///
   /// Existe porque montar el stream real exigiria falsear tambien la carga de
@@ -557,6 +577,14 @@ class IapService extends ChangeNotifier {
           await _safeComplete(purchase);
           break;
         case PurchaseStatus.restored:
+          if (isUnpaidPlayPurchase(purchase)) {
+            // Todavía sin pagar: no se entrega ni se cuenta como restaurada.
+            // Cuando se pague, Play la manda como `purchased` (o sale ya
+            // pagada en la siguiente reentrega) y entonces se entrega.
+            debugPrint('[IAP] ${purchase.productID} pendiente de pago: se '
+                'espera a que se complete');
+            break;
+          }
           if (_restoring) _restoredDuringRestore += 1;
           await _handleVerified(
             purchase,

@@ -148,6 +148,7 @@ test("iOS: restaurar una suscripcion ya caducada no abre otro periodo", async ()
 test("las renovaciones de una suscripcion ajena no se canjean en otra cuenta", async () => {
   const mem = installMemoryDb({
     docs: {
+      "users/u1": { name: "dueña" }, // la cuenta que la compro sigue viva
       [`storeSubscriptions/${storeSubscriptionKey("app_store", "orig-1")}`]: { uid: "u1" },
     },
   });
@@ -161,6 +162,75 @@ test("las renovaciones de una suscripcion ajena no se canjean en otra cuenta", a
   assert.equal(r.ok, false);
   assert.equal(r.reason, "claimed_by_other_account");
   assert.equal(mem.get("userEntitlements/u2"), undefined);
+});
+
+// Quien borra su cuenta y se crea otra seguia pagando a Apple/Google, pero el
+// enlace suscripcion -> cuenta era para siempre: "asociada a otra cuenta" en
+// cada renovacion y sin forma de recuperar el plan.
+test("cuenta borrada: su suscripcion (y la compra ya canjeada) pasa a la cuenta nueva", async () => {
+  const key = storeSubscriptionKey("app_store", "orig-1");
+  const expires = Date.now() + 20 * DIA;
+  const ledgerId = sha256("app_store|tx-1");
+  for (const vieja of [
+    {}, // `users/u-vieja` ya no existe (borrado desde Ajustes)
+    { "users/u-vieja": { isDeleted: true } },
+  ]) {
+    const mem = installMemoryDb({
+      docs: {
+        ...vieja,
+        "users/u-nueva": { name: "yo otra vez" },
+        [`storeSubscriptions/${key}`]: { uid: "u-vieja" },
+        [`subscriptionLedger/${ledgerId}`]: { uid: "u-vieja", productId: "attra_pro_monthly" },
+      },
+    });
+    const r = await call(verifyPurchase, "u-nueva", {
+      platform: "app_store",
+      productId: "attra_pro_monthly",
+      verificationData: signJws(
+        appleTransaction({
+          transactionId: "tx-1",
+          originalTransactionId: "orig-1",
+          expiresDate: expires,
+        })
+      ),
+    });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.duplicate, false);
+    const ent = mem.get("userEntitlements/u-nueva");
+    assert.equal(ent.tier, "pro");
+    assert.equal(ent.expiresAt.toMillis(), expires, "la fecha de Apple, sin periodo extra");
+    const sub = mem.get(`storeSubscriptions/${key}`);
+    assert.equal(sub.uid, "u-nueva", "las notificaciones ya van a la cuenta nueva");
+    assert.equal(sub.relinkedFrom, "u-vieja");
+    const apunte = mem.get(`subscriptionLedger/${ledgerId}`);
+    assert.equal(apunte.uid, "u-nueva");
+    assert.equal(apunte.reclaimedFrom, "u-vieja");
+  }
+});
+
+test("compra de una cuenta borrada sin verificar (Play en 'log'): pasa, pero no alarga", async () => {
+  const caduca = Date.now() + 10 * DIA;
+  const mem = installMemoryDb({
+    docs: {
+      "users/u-nueva": {},
+      "userEntitlements/u-nueva": {
+        tier: "plus",
+        productId: "attra_plus",
+        period: "monthly",
+        expiresAt: new Date(caduca).toISOString(),
+      },
+      [`subscriptionLedger/${sha256("play_store|GPA.1..0")}`]: { uid: "u-vieja" },
+    },
+  });
+  const r = await call(verifyPurchase, "u-nueva", {
+    platform: "play_store",
+    productId: "attra_plus",
+    verificationData: "token",
+    purchaseId: "GPA.1..0",
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.reason, "same_subscription_redelivered", "ya se concedio una vez");
+  assert.equal(Date.parse(r.expiresAt), caduca);
 });
 
 // ---------------------------------------------------------------------------
@@ -234,7 +304,108 @@ test("Android en modo log sin acceso a Google: abona como antes y queda marcado"
     verificationData: "token",
   });
   assert.equal(r.ok, true);
-  assert.equal(mem.get(`consumableLedger/${sha256("GPA.1")}`).verified, false);
+  // Clave: el TOKEN de Play (uno por compra), no el purchaseId del cliente.
+  assert.equal(mem.get(`consumableLedger/${sha256(sha256("token"))}`).verified, false);
+});
+
+// Pago PENDIENTE (efectivo, metodos lentos): Play no tiene orderId y la app
+// manda purchaseId ''. Al pagarse llega con 'GPA...' y el MISMO token. Con el
+// purchaseId de clave eran dos compras y el pack se abonaba dos veces.
+test("Android pendiente y luego pagado (mismo token): el pack se abona UNA vez", async () => {
+  const mem = installMemoryDb({ docs: { "users/u1": { attrasBalance: 0 } } });
+  const pedir = (purchaseId) =>
+    call(grantConsumable, "u1", {
+      productId: "attra_pack_10",
+      purchaseId,
+      platform: "play_store",
+      verificationData: "token-T",
+    });
+  const pendiente = await pedir("");
+  assert.equal(pendiente.ok, true);
+  const pagada = await pedir("GPA.1111-2222-3333-44444");
+  assert.equal(pagada.duplicate, true);
+  assert.equal(mem.get("users/u1").attrasBalance, 10, "antes: 20 por un solo pack");
+});
+
+// C01 en Play: la plataforma la elige quien llama, asi que esto lo podia hacer
+// cualquier cuenta (tambien desde iOS). En 'log' se concedia aunque Google ya
+// hubiese contestado que el token no existe.
+test("C01: token inventado con Google contestando 404 no concede nada, tampoco en 'log'", async () => {
+  const mem = installMemoryDb({ docs: { "users/u1": { attrasBalance: 0 } } });
+  const noExiste = async () => {
+    throw new PlayApiError("invalid", 404, "no existe");
+  };
+  mock.method(defaultStoreDeps, "fetchPlaySubscription", noExiste);
+  mock.method(defaultStoreDeps, "fetchPlayProduct", noExiste);
+
+  const plan = await call(verifyPurchase, "u1", {
+    platform: "play_store",
+    productId: "attra_pro_yearly",
+    verificationData: "x",
+    purchaseId: "fake1",
+  });
+  assert.equal(plan.ok, false);
+  assert.equal(plan.reason, "receipt_invalid");
+  assert.equal(mem.get("userEntitlements/u1"), undefined);
+
+  for (const purchaseId of ["r1", "r2", "r3"]) {
+    const pack = await call(grantConsumable, "u1", {
+      productId: "attra_pack_50",
+      purchaseId,
+      platform: "play_store",
+      verificationData: `token-${purchaseId}`,
+    });
+    assert.equal(pack.ok, false);
+  }
+  assert.equal(mem.get("users/u1").attrasBalance, 0);
+});
+
+// Mientras Google no pueda contestar (sin acceso a la API) el token no se puede
+// comprobar, pero encadenar ids inventados ya no suma un periodo por llamada.
+test("Play sin verificar: ids inventados en cadena no apilan periodos", async () => {
+  const mem = installMemoryDb();
+  const pedir = (purchaseId) =>
+    call(verifyPurchase, "u1", {
+      platform: "play_store",
+      productId: "attra_pro_yearly",
+      verificationData: "x",
+      purchaseId,
+    });
+  const primera = await pedir("fake1");
+  assert.equal(primera.ok, true);
+  const unAno = Date.parse(primera.expiresAt);
+  await pedir("fake2");
+  await pedir("fake3");
+  const final = mem.get("userEntitlements/u1").expiresAt.toMillis();
+  assert.ok(
+    final <= unAno + 8 * DIA,
+    `antes: un año mas por llamada (${new Date(final).toISOString()})`
+  );
+});
+
+// 'enforce' no puede perder packs pagados: Play ya los consumio antes de
+// llegar al backend, asi que una caida de Google no puede rechazarlos.
+test("'enforce' con Google caido: la suscripcion espera, el consumible se abona", async () => {
+  const mem = installMemoryDb({
+    docs: { "users/u1": { attrasBalance: 0 } },
+    flags: { receiptValidation: "enforce" },
+  });
+  const plan = await call(verifyPurchase, "u1", {
+    platform: "play_store",
+    productId: "attra_plus",
+    verificationData: "token-plan",
+    purchaseId: "GPA.5",
+  });
+  assert.equal(plan.ok, false);
+  assert.equal(plan.permanent, false, "se reintenta: no se ha consumido nada");
+  const pack = await call(grantConsumable, "u1", {
+    productId: "attra_pack_10",
+    purchaseId: "GPA.6",
+    platform: "play_store",
+    verificationData: "token-pack",
+  });
+  assert.equal(pack.ok, true);
+  assert.equal(mem.get("users/u1").attrasBalance, 10);
 });
 
 test("Android verificado por Google: la clave es el orderId de Google, no el purchaseId", async () => {
@@ -300,7 +471,6 @@ test("resolveConsumableGrant: un recibo de suscripcion no abona un pack", () => 
       },
     },
     requested: { productId: "attra_pack_50", kind: "attra", amount: 50 },
-    rawPurchaseId: "x",
     verificationData: "jws",
   });
   assert.equal(out.ok, false);

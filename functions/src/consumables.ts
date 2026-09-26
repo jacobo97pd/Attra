@@ -83,14 +83,11 @@ function resolveProduct(data: DocumentData | undefined): ResolvedProduct {
   );
 }
 
-/// Identificador estable del canje. Preferimos el id de transacción de la
-/// tienda; si no llega, lo derivamos del recibo (sha256) para que el mismo
-/// recibo produzca siempre la misma clave.
-function purchaseKeyFor(
-  purchaseId: string,
-  verificationData: string | null
-): string {
-  if (purchaseId.length > 0) return purchaseId;
+/// Identificador estable del canje SIN verificar: el hash del recibo (en Play,
+/// el token de la compra), para que el mismo recibo produzca siempre la misma
+/// clave. Con la compra verificada la clave es el id de la tienda (ver
+/// resolveConsumableGrant).
+function purchaseKeyFor(verificationData: string | null): string {
   if (verificationData) return createHash("sha256").update(verificationData).digest("hex");
   // Sin identificador no hay idempotencia posible: la misma compra podría
   // abonarse infinitas veces. Antes esto se permitía (ledger con id aleatorio).
@@ -120,12 +117,17 @@ function walletField(kind: ConsumableKind): "boosts" | "swipes" {
 ///  - verificada: producto, cantidad e id de canje salen de la TIENDA. Un
 ///    recibo real de OTRO producto (una suscripcion, un pack mas barato) no
 ///    puede abonar el pack que pida el cliente.
-///  - sin verificar (solo Android en modo 'log'): como antes, con el producto
-///    del cliente y su purchaseId o el hash del recibo como clave.
+///  - sin verificar (solo Android cuando Google no puede contestar): con el
+///    producto del cliente y, como clave, el hash del TOKEN de Play, no el
+///    purchaseId. El token es uno por compra y no cambia al pagarse; el
+///    orderId que manda la app como purchaseId, si: mientras la compra esta
+///    PENDIENTE de pago (efectivo, metodos lentos) Play no tiene orderId y la
+///    app manda '', y al pagarse llega con 'GPA...'. Con el purchaseId de clave
+///    eran dos compras distintas y el mismo pack se abonaba dos veces (una de
+///    ellas antes de estar pagado).
 export function resolveConsumableGrant(input: {
   check: StoreCheck;
   requested: ResolvedProduct;
-  rawPurchaseId: string;
   verificationData: string;
 }):
   | {
@@ -151,7 +153,7 @@ export function resolveConsumableGrant(input: {
       ok: true,
       product: requested,
       amount: requested.amount,
-      purchaseKey: purchaseKeyFor(input.rawPurchaseId, input.verificationData),
+      purchaseKey: purchaseKeyFor(input.verificationData),
       verified: false,
       sandbox: null,
     };
@@ -226,7 +228,6 @@ export const grantConsumable = onCall({ region: REGION }, async (request) => {
   const decision = resolveConsumableGrant({
     check,
     requested,
-    rawPurchaseId,
     verificationData,
   });
   if (!decision.ok) {

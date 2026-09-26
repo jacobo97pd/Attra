@@ -5,6 +5,7 @@ const {
   resolveGrant,
   resolveStoreSync,
   periodFor,
+  UNVERIFIED_RENEWAL_SLACK_MS,
 } = require("../lib/subscriptions.js");
 
 const DIA = 24 * 60 * 60 * 1000;
@@ -206,6 +207,38 @@ test("renovacion sin verificar: id de tienda NUEVO extiende desde la caducidad",
   // Un mes desde la caducidad, no desde hoy: no se come los 3 dias.
   assert.ok(r.expiresAtMs > caduca + 27 * DIA);
   assert.ok(r.expiresAtMs < caduca + 32 * DIA);
+});
+
+// Sin verificar, el id "nuevo" lo pone el cliente: sin tope, cada id inventado
+// sumaba otro periodo (dos llamadas = dos años de Pro por el precio de nada).
+test("renovacion sin verificar: como mucho un periodo desde hoy + margen", () => {
+  const caduca = AHORA + 360 * DIA; // ya tenia casi un año por delante
+  const r = resolveGrant(
+    caso({
+      productId: "attra_pro_yearly",
+      period: "yearly",
+      currentTier: "pro",
+      currentProductId: "attra_pro_yearly",
+      currentExpiresAtMs: caduca,
+      newTransaction: true,
+    })
+  );
+  assert.ok(r.expiresAtMs <= AHORA + 365 * DIA + UNVERIFIED_RENEWAL_SLACK_MS);
+  assert.ok(r.expiresAtMs >= caduca, "nunca acorta");
+  // Ya en el tope: otro id inventado no mueve nada.
+  const otra = resolveGrant(
+    caso({
+      productId: "attra_pro_yearly",
+      period: "yearly",
+      currentTier: "pro",
+      currentProductId: "attra_pro_yearly",
+      currentExpiresAtMs: r.expiresAtMs,
+      newTransaction: true,
+    })
+  );
+  assert.strictEqual(otra.expiresAtMs, r.expiresAtMs);
+  assert.strictEqual(otra.extended, false);
+  assert.strictEqual(otra.reason, "same_subscription_redelivered");
 });
 
 test("el hash del recibo (sin id de tienda) sigue sin alargar la vigente", () => {

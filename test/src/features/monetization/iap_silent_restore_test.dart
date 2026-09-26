@@ -6,6 +6,8 @@ import 'package:attra/src/features/monetization/data/purchase_delivery_router.da
 import 'package:attra/src/features/monetization/data/storekit_pending_transactions.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 /// Google Play NO manda las renovaciones al `purchaseStream`. Sin reentregar lo
 /// que la tienda tiene a tu nombre al empezar la sesión, el backend no se
@@ -87,6 +89,38 @@ PurchaseDetails _restored(String orderId) => PurchaseDetails(
       transactionDate: '1754524800000',
       status: PurchaseStatus.restored,
     );
+
+/// Compra tal y como la construye el plugin de Android 0.5.0. Mientras está
+/// PENDIENTE de pago Play no tiene orderId (el plugin lo convierte en '').
+GooglePlayPurchaseDetails _play({
+  required PurchaseStateWrapper state,
+  String orderId = '',
+  String productId = 'attra_pack_10',
+}) =>
+    GooglePlayPurchaseDetails.fromPurchase(
+      PurchaseWrapper(
+        orderId: orderId,
+        packageName: 'com.jpedrero.attra',
+        purchaseTime: 1754524800000,
+        purchaseToken: 'token-T',
+        signature: 'firma',
+        products: <String>[productId],
+        isAutoRenewing: false,
+        originalJson: '{}',
+        isAcknowledged: false,
+        purchaseState: state,
+      ),
+    ).single;
+
+/// Lo que hace `restorePurchases` de Android con TODO lo que devuelve Play,
+/// pagado o no (in_app_purchase_android_platform.dart).
+GooglePlayPurchaseDetails _restoredPlay({
+  required PurchaseStateWrapper state,
+  String orderId = '',
+  String productId = 'attra_pack_10',
+}) =>
+    _play(state: state, orderId: orderId, productId: productId)
+      ..status = PurchaseStatus.restored;
 
 void main() {
   late _FakeStore store;
@@ -170,6 +204,84 @@ void main() {
 
     expect(service.error, isNull);
     service.dispose();
+  });
+
+  // Pago pendiente (efectivo, métodos lentos): la reentrega de cada arranque
+  // lo mandaba al backend como compra hecha, que lo abonaba sin cobrar y otra
+  // vez al pagarse (sin orderId primero, con orderId después).
+  test('Android: lo PENDIENTE de pago no se entrega; al pagarse, una vez',
+      () async {
+    store.owned = <PurchaseDetails>[
+      _restoredPlay(state: PurchaseStateWrapper.pending),
+      _restoredPlay(
+        state: PurchaseStateWrapper.purchased,
+        orderId: 'GPA.1234-5678..1',
+        productId: 'attra_plus',
+      ),
+    ];
+    final IapService service = build(android: true);
+    service.deliver = (PurchaseDetails p) async {
+      entregadas.add(p);
+      return const IapDeliveryResult(delivered: true);
+    };
+
+    await service.init(productIds: <String>{'attra_plus', 'attra_pack_10'});
+    await service.refreshSubscriptionsSilently();
+
+    expect(
+      entregadas.map((PurchaseDetails p) => p.productID),
+      <String>['attra_plus'],
+      reason: 'el pack sin pagar no llega al backend',
+    );
+
+    // Play la confirma pagada: llega como `purchased`, ya con orderId.
+    await service.handlePurchases(<PurchaseDetails>[
+      _play(
+        state: PurchaseStateWrapper.purchased,
+        orderId: 'GPA.1111-2222-3333-44444',
+      ),
+    ]);
+    expect(entregadas.last.productID, 'attra_pack_10');
+    expect(entregadas.last.purchaseID, 'GPA.1111-2222-3333-44444');
+    expect(entregadas.length, 2, reason: 'el pack se entrega UNA vez');
+    service.dispose();
+  });
+
+  test('el "Restaurar" del usuario tampoco entrega lo pendiente de pago',
+      () async {
+    store.owned = <PurchaseDetails>[
+      _restoredPlay(
+          state: PurchaseStateWrapper.pending, productId: 'attra_plus'),
+    ];
+    final IapService service = build(android: true);
+    service.deliver = (PurchaseDetails p) async {
+      entregadas.add(p);
+      return const IapDeliveryResult(delivered: true);
+    };
+
+    await service.init(productIds: <String>{'attra_plus'});
+    unawaited(service.restore());
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(entregadas, isEmpty);
+    service.dispose();
+  });
+
+  test('isUnpaidPlayPurchase: solo lo pendiente de Play', () {
+    expect(
+      IapService.isUnpaidPlayPurchase(
+        _restoredPlay(state: PurchaseStateWrapper.pending),
+      ),
+      isTrue,
+    );
+    expect(
+      IapService.isUnpaidPlayPurchase(
+        _restoredPlay(state: PurchaseStateWrapper.purchased, orderId: 'GPA.1'),
+      ),
+      isFalse,
+    );
+    expect(IapService.isUnpaidPlayPurchase(_restored('GPA.2')), isFalse,
+        reason: 'las de iOS / genéricas no se tocan');
   });
 
   test('iOS: no se restaura en silencio (puede pedir el Apple ID)', () async {

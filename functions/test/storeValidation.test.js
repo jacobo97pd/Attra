@@ -159,17 +159,44 @@ test("Android sin acceso a la API: 'log' registra y deja pasar, 'enforce' rechaz
   assert.equal(enforce.permanent, false);
 });
 
-test("Android con token inventado (404 de Google): 'enforce' lo rechaza", async () => {
-  const r = await check(
-    { platform: "play_store", productId: "attra_plus", verificationData: "fake", config: ENFORCE },
-    {
-      fetchPlaySubscription: async () => {
-        throw new PlayApiError(classifyPlayHttpStatus(404), 404, "no existe");
-      },
+// Antes 'log' concedia igual aunque Google contestase que el token no existe:
+// el ataque de C01 con `platform: 'play_store'` seguia abierto a cualquier
+// cuenta con el acceso a la API ya configurado.
+test("Android con token inventado (404 de Google): se rechaza en 'log' y en 'enforce'", async () => {
+  const noExiste = async () => {
+    throw new PlayApiError(classifyPlayHttpStatus(404), 404, "no existe");
+  };
+  for (const config of [LOG, ENFORCE]) {
+    for (const kind of ["subscription", "consumable"]) {
+      const r = await check(
+        {
+          platform: "play_store",
+          kind,
+          productId: kind === "subscription" ? "attra_plus" : "attra_pack_10",
+          verificationData: "fake",
+          config,
+        },
+        { fetchPlaySubscription: noExiste, fetchPlayProduct: noExiste }
+      );
+      assert.equal(r.status, "rejected", `${config.mode}/${kind}`);
+      assert.equal(r.reason, "receipt_invalid");
+      assert.equal(r.permanent, false);
     }
-  );
-  assert.equal(r.status, "rejected");
-  assert.equal(r.reason, "receipt_invalid");
+  }
+});
+
+// Play ya consumio el pack antes de llegar al backend (autoConsume) y no lo
+// devuelve al restaurar: rechazarlo por una caida de Google lo perderia.
+test("Android consumible con Google caido: tampoco 'enforce' lo rechaza", async () => {
+  const r = await check({
+    platform: "play_store",
+    kind: "consumable",
+    productId: "attra_pack_10",
+    verificationData: "tok",
+    config: ENFORCE,
+  });
+  assert.equal(r.status, "unverified");
+  assert.equal(r.reason, "store_unavailable");
 });
 
 test("Android verificado: caducidad y producto de Google (anual real, no el mes)", async () => {

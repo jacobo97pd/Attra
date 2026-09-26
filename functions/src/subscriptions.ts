@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { DocumentSnapshot, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { createHash } from "node:crypto";
 import { REGION, db } from "./firebase";
 import { col, requireAuthUid, activeEntitlementTier } from "./common";
@@ -126,6 +126,11 @@ function expiryFor(period: Period, from: Date): Date {
   return addMonths(from, period === "yearly" ? 12 : 1);
 }
 
+/// Margen de una renovacion SIN verificar sobre "un periodo desde hoy" (ver
+/// [resolveGrant]). Una semana: de sobra para una primera entrega que se
+/// retrasa unos dias, y lo maximo que gana quien encadena ids inventados.
+export const UNVERIFIED_RENEWAL_SLACK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /// QUE CONCEDER ante un recibo. Funcion PURA para poder probarla: aqui es donde
 /// se decidia mal quien tiene plan y quien no, y no habia un solo test.
 ///
@@ -153,6 +158,14 @@ function expiryFor(period: Period, from: Date): Date {
 /// trataba como reentrega y la renovacion de Android se perdia (el plan caducaba
 /// con el usuario pagando). Se extiende un periodo desde max(ahora, caducidad),
 /// no desde ahora, para no comerse los dias que quedaban.
+///
+/// Pero con TOPE: como mucho un periodo desde hoy + [UNVERIFIED_RENEWAL_SLACK_MS].
+/// Sin verificar, el id "nuevo" lo pone el cliente, y sin tope cada id
+/// inventado sumaba otro periodo encima del anterior (dos llamadas = dos años
+/// de Pro). Una renovacion real llega cuando el periodo pagado se acaba, asi
+/// que nunca necesita mas que eso; el margen cubre el retraso entre la compra
+/// y su primera entrega, que es lo que separa nuestra caducidad provisional
+/// del ciclo real de Google.
 export function resolveGrant(input: {
   tier: Tier;
   productId: string;
@@ -202,14 +215,24 @@ export function resolveGrant(input: {
         };
       }
       if (input.newTransaction === true) {
+        const renovada = expiryFor(
+          period,
+          new Date(Math.max(nowMs, currentExpiresAtMs))
+        ).getTime();
+        const tope =
+          expiryFor(period, new Date(nowMs)).getTime() +
+          UNVERIFIED_RENEWAL_SLACK_MS;
+        // Nunca acorta: si ya estaba en el tope, es una reentrega mas.
+        const expiresAtMs = Math.max(
+          currentExpiresAtMs,
+          Math.min(renovada, tope)
+        );
+        const extended = expiresAtMs > currentExpiresAtMs;
         return {
           tier,
-          expiresAtMs: expiryFor(
-            period,
-            new Date(Math.max(nowMs, currentExpiresAtMs))
-          ).getTime(),
-          extended: true,
-          reason: "renewal",
+          expiresAtMs,
+          extended,
+          reason: extended ? "renewal" : "same_subscription_redelivered",
         };
       }
     }
@@ -239,6 +262,18 @@ export function resolveGrant(input: {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+/// La cuenta de Attra ya no existe: borrarla desde Ajustes elimina
+/// `users/{uid}` (y luego la cuenta de Auth), o quedo marcada `isDeleted`.
+///
+/// Hace falta porque el enlace suscripcion -> cuenta (`storeSubscriptions`) es
+/// para toda la vida de la suscripcion: si quien borra su cuenta y se crea otra
+/// no pudiese reclamarla, Apple/Google le seguirian cobrando y la app le diria
+/// "asociada a otra cuenta" en cada renovacion, sin salida. Una cuenta VIVA
+/// sigue bloqueando: eso es lo que impide canjear la suscripcion de otro.
+function isDeletedAccount(snap: DocumentSnapshot): boolean {
+  return !snap.exists || snap.get("isDeleted") === true;
 }
 
 function millisFromDateLike(value: unknown): number | null {
@@ -354,7 +389,17 @@ export async function applyStoreSubscriptionUpdate(input: {
     if (!uid) return { applied: false, reason: "unknown_subscription" };
 
     const entRef = col.entitlements.doc(uid);
-    const entSnap = await tx.get(entRef);
+    const [entSnap, ownerSnap] = await Promise.all([
+      tx.get(entRef),
+      tx.get(col.users.doc(uid)),
+    ]);
+    // La cuenta se borro: no se escribe nada a su nombre (seria recrear datos
+    // de alguien que pidio borrarlos). Si se crea otra cuenta y restaura,
+    // verifyPurchase le pasa la suscripcion y las siguientes notificaciones ya
+    // van a la nueva.
+    if (isDeletedAccount(ownerSnap)) {
+      return { applied: false, reason: "owner_deleted", uid };
+    }
     const entData = entSnap.exists ? entSnap.data() : undefined;
     const currentProductId = (entData?.productId ?? "").toString();
     const nowMs = Date.now();
@@ -543,6 +588,23 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
       subRef ? tx.get(subRef) : Promise.resolve(null),
     ]);
     const now = new Date();
+    const ledgerOwner = ledgerSnap.exists
+      ? (ledgerSnap.get("uid") ?? "").toString()
+      : "";
+    const subOwner = (subSnap?.get("uid") ?? "").toString();
+
+    // Dueños AJENOS de la compra o de la suscripcion: solo bloquean si su
+    // cuenta sigue existiendo (ver isDeletedAccount). Se leen aqui, antes de
+    // cualquier escritura, como exige la transaccion.
+    const ajenos = [...new Set([ledgerOwner, subOwner])].filter(
+      (owner) => owner.length > 0 && owner !== uid
+    );
+    const ajenosSnaps = await Promise.all(
+      ajenos.map((owner) => tx.get(col.users.doc(owner)))
+    );
+    const borrados = new Set(
+      ajenos.filter((_, i) => isDeletedAccount(ajenosSnaps[i]))
+    );
 
     // ¿Este recibo ya se había procesado? Antes esto devolvía aquí mismo, sin
     // tocar el entitlement: "idempotente" se implementó como "no hacer NADA".
@@ -553,10 +615,15 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
     // pagado y sin acceso, sin ningún error que lo delatara. Ahora un duplicado
     // RECONCILIA el entitlement y solo se salta el apunte del ledger.
     const yaProcesada =
-      legacySnap.exists ||
-      (ledgerSnap.exists && (ledgerSnap.get("uid") ?? "").toString() === uid);
+      legacySnap.exists || (ledgerSnap.exists && ledgerOwner === uid);
+    // La compra la canjeo una cuenta que ya se borro: pasa a esta. No es una
+    // transaccion NUEVA (ya se concedio una vez), asi que no alarga nada.
+    const reclamadaDe =
+      ledgerSnap.exists && !yaProcesada && borrados.has(ledgerOwner)
+        ? ledgerOwner
+        : null;
 
-    if (ledgerSnap.exists && !yaProcesada) {
+    if (ledgerSnap.exists && !yaProcesada && reclamadaDe === null) {
       // Otra cuenta ya canjeó este recibo. NO se lanza excepcion: el cliente
       // solo finaliza la transaccion cuando la entrega va bien, asi que un
       // error aqui la dejaria reencolada en StoreKit para siempre, reintentando
@@ -577,9 +644,12 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
     // La SUSCRIPCION ya es de otra cuenta. Cada renovacion trae un id de
     // transaccion nuevo, asi que el ledger por transaccion no lo veria y la
     // segunda cuenta se llevaria el plan en cada renovacion. Mismo trato que
-    // arriba: fallo permanente, no excepcion.
-    const subOwner = (subSnap?.get("uid") ?? "").toString();
-    if (subOwner && subOwner !== uid) {
+    // arriba: fallo permanente, no excepcion. Salvo que esa cuenta ya no
+    // exista: entonces la suscripcion pasa a quien la presenta (se reescribe
+    // `storeSubscriptions` mas abajo con su uid).
+    const suscripcionDe =
+      subOwner && subOwner !== uid && borrados.has(subOwner) ? subOwner : null;
+    if (subOwner && subOwner !== uid && suscripcionDe === null) {
       return {
         ok: false,
         permanent: true,
@@ -638,8 +708,14 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
       currentExpiresAtMs,
       currentIsLifetime,
       storeExpiresAtMs: verified?.expiresAtMs ?? null,
-      newTransaction: !yaProcesada && stableKey,
+      newTransaction: !ledgerSnap.exists && !legacySnap.exists && stableKey,
     });
+    if (reclamadaDe !== null || suscripcionDe !== null) {
+      console.log(
+        `[receipt] ${platform} de una cuenta borrada ` +
+          `(${reclamadaDe ?? suscripcionDe}) pasa a ${uid}`
+      );
+    }
     const grantedTier = grant.tier;
     const grantedExpiresAt = new Date(grant.expiresAtMs);
     const isUpgradeOrSame = TIER_RANK[tier] >= TIER_RANK[currentTier];
@@ -684,6 +760,8 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
         hasReceipt: true,
         verified: verified !== null,
         sandbox: verified?.sandbox ?? null,
+        // Rastro de auditoria cuando la compra venia de una cuenta borrada.
+        ...(reclamadaDe !== null ? { reclaimedFrom: reclamadaDe } : {}),
         createdAt: FieldValue.serverTimestamp(),
       });
     }
@@ -700,6 +778,7 @@ export const verifyPurchase = onCall({ region: REGION }, async (request) => {
               ? Timestamp.fromMillis(verified.expiresAtMs)
               : null,
           revoked: verified.revoked,
+          ...(suscripcionDe !== null ? { relinkedFrom: suscripcionDe } : {}),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }

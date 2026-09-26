@@ -189,6 +189,7 @@ test("applyStoreSubscriptionUpdate: renovacion por notificacion alarga el plan",
   const renovada = Date.now() + 31 * DIA;
   const mem = installMemoryDb({
     docs: {
+      "users/u1": {},
       [`storeSubscriptions/${key}`]: { uid: "u1" },
       "userEntitlements/u1": {
         tier: "pro",
@@ -223,6 +224,7 @@ test("applyStoreSubscriptionUpdate: renovacion por notificacion alarga el plan",
 test("applyStoreSubscriptionUpdate: reembolso de otra suscripcion no quita el plan", async () => {
   const mem = installMemoryDb({
     docs: {
+      "users/u1": {},
       [`storeSubscriptions/${storeSubscriptionKey("app_store", "vieja")}`]: { uid: "u1" },
       "userEntitlements/u1": {
         tier: "pro",
@@ -252,4 +254,34 @@ test("applyStoreSubscriptionUpdate: reembolso de otra suscripcion no quita el pl
   assert.equal(r.applied, false);
   assert.equal(r.reason, "revoked_other_subscription");
   assert.equal(typeof mem.get("userEntitlements/u1").expiresAt, "string", "sin tocar");
+});
+
+// La cuenta se borro (Ajustes borra `users/{uid}`) pero Apple sigue mandando
+// renovaciones: no se recrean datos a nombre de quien pidio borrarlos.
+test("applyStoreSubscriptionUpdate: a una cuenta borrada no se le escribe nada", async () => {
+  const key = storeSubscriptionKey("app_store", "orig-1");
+  const mem = installMemoryDb({
+    docs: { [`storeSubscriptions/${key}`]: { uid: "u-borrada" } },
+  });
+  const r = await applyStoreSubscriptionUpdate({
+    purchase: {
+      platform: "app_store",
+      productId: "attra_pro_monthly",
+      transactionId: "tx-3",
+      originalTransactionId: "orig-1",
+      linkedOriginalTransactionId: null,
+      expiresAtMs: Date.now() + 30 * DIA,
+      entitled: true,
+      revoked: false,
+      sandbox: false,
+      quantity: 1,
+      period: null,
+    },
+    source: "test",
+    allowRevocation: true,
+  });
+  assert.equal(r.applied, false);
+  assert.equal(r.reason, "owner_deleted");
+  assert.equal(mem.get("userEntitlements/u-borrada"), undefined);
+  assert.deepEqual(mem.get(`storeSubscriptions/${key}`), { uid: "u-borrada" });
 });
