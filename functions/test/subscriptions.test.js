@@ -1,7 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { resolveGrant } = require("../lib/subscriptions.js");
+const {
+  resolveGrant,
+  resolveStoreSync,
+  periodFor,
+} = require("../lib/subscriptions.js");
 
 const DIA = 24 * 60 * 60 * 1000;
 const AHORA = Date.UTC(2026, 8, 18, 12, 0, 0); // 18-sep-2026
@@ -182,4 +186,115 @@ test("nunca se devuelve una caducidad anterior a la vigente", () => {
       );
     }
   }
+});
+
+// C12: la renovacion de Android llega SIN verificar (modo 'log') con un
+// orderId nuevo (`GPA...N`) y el plan aun vigente. Antes se trataba como
+// reentrega y el plan caducaba con el usuario pagando.
+test("renovacion sin verificar: id de tienda NUEVO extiende desde la caducidad", () => {
+  const caduca = AHORA + 3 * DIA;
+  const r = resolveGrant(
+    caso({
+      currentTier: "pro",
+      currentProductId: "attra_pro_monthly",
+      currentExpiresAtMs: caduca,
+      newTransaction: true,
+    })
+  );
+  assert.strictEqual(r.reason, "renewal");
+  assert.strictEqual(r.extended, true);
+  // Un mes desde la caducidad, no desde hoy: no se come los 3 dias.
+  assert.ok(r.expiresAtMs > caduca + 27 * DIA);
+  assert.ok(r.expiresAtMs < caduca + 32 * DIA);
+});
+
+test("el hash del recibo (sin id de tienda) sigue sin alargar la vigente", () => {
+  const caduca = AHORA + 12 * DIA;
+  const r = resolveGrant(
+    caso({
+      currentTier: "pro",
+      currentProductId: "attra_pro_monthly",
+      currentExpiresAtMs: caduca,
+      newTransaction: false,
+    })
+  );
+  assert.strictEqual(r.expiresAtMs, caduca);
+  assert.strictEqual(r.reason, "same_subscription_redelivered");
+});
+
+test("con caducidad de la tienda: manda la tienda y nunca acorta", () => {
+  const caduca = AHORA + 12 * DIA;
+  const base = {
+    currentTier: "pro",
+    currentProductId: "attra_pro_monthly",
+    currentExpiresAtMs: caduca,
+  };
+  const renovada = resolveGrant(caso({ ...base, storeExpiresAtMs: caduca + 30 * DIA }));
+  assert.strictEqual(renovada.expiresAtMs, caduca + 30 * DIA);
+  assert.strictEqual(renovada.reason, "renewal");
+  const vieja = resolveGrant(caso({ ...base, storeExpiresAtMs: caduca - 5 * DIA }));
+  assert.strictEqual(vieja.expiresAtMs, caduca);
+  assert.strictEqual(vieja.extended, false);
+  const subida = resolveGrant(
+    caso({
+      currentTier: "plus",
+      currentProductId: "attra_plus_yearly",
+      currentExpiresAtMs: AHORA + 300 * DIA,
+      storeExpiresAtMs: AHORA + 30 * DIA,
+    })
+  );
+  assert.strictEqual(subida.tier, "pro");
+  assert.strictEqual(subida.expiresAtMs, AHORA + 30 * DIA);
+});
+
+test("periodo: el guardado al comprar sirve al restaurar un plan basico de Play", () => {
+  assert.strictEqual(periodFor("attra_plus", undefined, "yearly"), "yearly");
+  assert.strictEqual(periodFor("attra_plus", undefined, null), "monthly");
+  assert.strictEqual(periodFor("attra_plus", "monthly", "yearly"), "monthly");
+  assert.strictEqual(periodFor("attra_plus_monthly", "yearly", "yearly"), "monthly");
+});
+
+function sync(extra) {
+  return resolveStoreSync(
+    Object.assign(
+      {
+        tier: "pro",
+        productId: "attra_pro_monthly",
+        period: "monthly",
+        nowMs: AHORA,
+        currentTier: "pro",
+        currentProductId: "attra_pro_monthly",
+        currentExpiresAtMs: AHORA + 2 * DIA,
+        currentIsLifetime: false,
+        currentSubscriptionKey: "k1",
+        subscriptionKey: "k1",
+        storeExpiresAtMs: AHORA + 32 * DIA,
+        entitled: true,
+        revoked: false,
+        allowRevocation: true,
+      },
+      extra
+    )
+  );
+}
+
+test("notificacion de renovacion: extiende a la fecha de la tienda", () => {
+  const r = sync();
+  assert.strictEqual(r.action, "grant");
+  assert.strictEqual(r.expiresAtMs, AHORA + 32 * DIA);
+  assert.strictEqual(sync({ storeExpiresAtMs: AHORA + DIA }).action, "ignore");
+  assert.strictEqual(sync({ entitled: false }).action, "ignore");
+});
+
+test("reembolso: solo quita el plan si viene de ESA suscripcion", () => {
+  const r = sync({ revoked: true, entitled: false });
+  assert.strictEqual(r.action, "revoke");
+  assert.strictEqual(r.expiresAtMs, AHORA);
+  assert.strictEqual(
+    sync({ revoked: true, currentSubscriptionKey: "otra" }).action,
+    "ignore"
+  );
+  assert.strictEqual(sync({ revoked: true, currentIsLifetime: true }).action, "ignore");
+  // Play en modo 'log': se registra pero no se quita.
+  assert.strictEqual(sync({ revoked: true, allowRevocation: false }).action, "ignore");
 });

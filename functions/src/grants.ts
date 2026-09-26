@@ -132,16 +132,52 @@ function monthlyBoostsForTier(tier: string, flags: DocumentData): number {
 /// True si al wallet le toca pack (no hay concesion previa o ya paso la
 /// ventana). Se usa como PREFILTRO fuera de transaccion para no abrir una
 /// transaccion (2 lecturas + bloqueo) por cada usuario que no toca.
-function isGrantDue(
+///
+/// Con [tier] tambien toca cuando el plan ACTIVO es superior al que ya cobro
+/// pack en esta ventana (ver [monthlyGrantDecision]).
+export function isGrantDue(
   walletData: DocumentData | undefined,
   period: string,
-  now: number
+  now: number,
+  tier = "free"
 ): boolean {
   const lastGrantMs = millisFromDateLike(walletData?.lastMonthlyGrantAt);
-  if (lastGrantMs !== null) return now - lastGrantMs >= GRANT_WINDOW_MS;
+  if (lastGrantMs !== null) {
+    if (now - lastGrantMs >= GRANT_WINDOW_MS) return true;
+    return isUpgradeWithinWindow(walletData, tier);
+  }
   // Wallets anteriores a la ventana solo tienen `monthlyGrantPeriod`: se
   // respeta una vez para no regalar un pack extra en la migracion.
   return (walletData?.monthlyGrantPeriod ?? "") !== period;
+}
+
+/// Orden de los planes para saber si hubo SUBIDA dentro de la ventana.
+const TIER_RANK: Record<string, number> = {
+  free: 0,
+  plus: 1,
+  premium: 2,
+  pro: 3,
+};
+
+function tierRank(value: unknown): number | null {
+  const raw = typeof value === "string" ? value : "";
+  return raw in TIER_RANK ? TIER_RANK[raw] : null;
+}
+
+/// ¿El plan activo supera al MAS ALTO que ya cobro pack en esta ventana?
+///
+/// Wallets anteriores a este cambio no tienen `monthlyGrantTier`: se leen como
+/// "sin subida". Leerlos como 'free' regalaria un pack extra a TODOS los de
+/// pago el dia del despliegue; a cambio, quien suba de plan en la ventana que
+/// ya estaba abierta espera como mucho a que cierre (lo de antes), y desde el
+/// primer pack con este codigo ya queda anotado.
+function isUpgradeWithinWindow(
+  walletData: DocumentData | undefined,
+  tier: string
+): boolean {
+  const granted = tierRank(walletData?.monthlyGrantTier);
+  const current = tierRank(tier);
+  return granted !== null && current !== null && current > granted;
 }
 
 interface GrantResult {
@@ -150,6 +186,78 @@ interface GrantResult {
 }
 
 const NO_GRANT: GrantResult = { attras: 0, boosts: 0 };
+
+/// QUE pack dar y como queda la ventana. Pura para poder probarla.
+///
+/// QUE FALLABA: la ventana de 31 dias era por wallet e ignoraba el tier. Todo
+/// Free activo cobra su Attra al mes, asi que quien se pasaba a Plus/Pro al dia
+/// siguiente no veia sus 5/15 Attras ni sus Boosts hasta un mes despues (o
+/// nunca, si el plan mensual caducaba antes). Lo mismo al subir de Plus a Pro.
+///
+/// Ahora:
+///  - ventana cumplida (o primera vez): pack COMPLETO del tier y ventana nueva.
+///  - SUBIDA dentro de la ventana: solo la DIFERENCIA con lo ya cobrado en esta
+///    ventana (Plus->Pro no cobra dos packs) y la ventana conserva su inicio: el
+///    siguiente pack completo llega cuando toque, como a todos.
+///  - mismo tier o bajada dentro de la ventana: nada. Como se guarda el tier
+///    MAS ALTO de la ventana, bajar y volver a subir no cobra otra vez.
+export function monthlyGrantDecision(input: {
+  walletData: DocumentData | undefined;
+  tier: string;
+  attras: number;
+  boosts: number;
+  period: string;
+  nowMs: number;
+}):
+  | {
+      grant: true;
+      attras: number;
+      boosts: number;
+      restartWindow: boolean;
+      windowTier: string;
+      windowAttras: number;
+      windowBoosts: number;
+    }
+  | { grant: false } {
+  const { walletData, tier, attras, boosts, period, nowMs } = input;
+  const lastGrantMs = millisFromDateLike(walletData?.lastMonthlyGrantAt);
+  const windowOpen =
+    lastGrantMs !== null
+      ? nowMs - lastGrantMs < GRANT_WINDOW_MS
+      : (walletData?.monthlyGrantPeriod ?? "") === period;
+
+  if (!windowOpen) {
+    if (attras <= 0 && boosts <= 0) return { grant: false };
+    return {
+      grant: true,
+      attras,
+      boosts,
+      restartWindow: true,
+      windowTier: tier,
+      windowAttras: attras,
+      windowBoosts: boosts,
+    };
+  }
+  // El esquema de `monthlyGrantPeriod` (sin fecha) no tiene tier: esa ventana
+  // se respeta entera, como antes.
+  if (lastGrantMs === null || !isUpgradeWithinWindow(walletData, tier)) {
+    return { grant: false };
+  }
+  const paidAttras = Math.max(0, Number(walletData?.monthlyGrantAttras ?? 0) || 0);
+  const paidBoosts = Math.max(0, Number(walletData?.monthlyGrantBoosts ?? 0) || 0);
+  const extraAttras = Math.max(0, attras - paidAttras);
+  const extraBoosts = Math.max(0, boosts - paidBoosts);
+  if (extraAttras <= 0 && extraBoosts <= 0) return { grant: false };
+  return {
+    grant: true,
+    attras: extraAttras,
+    boosts: extraBoosts,
+    restartWindow: false,
+    windowTier: tier,
+    windowAttras: paidAttras + extraAttras,
+    windowBoosts: paidBoosts + extraBoosts,
+  };
+}
 
 /// Concede (idempotente) el pack mensual a un usuario ya resuelto a un tier
 /// ACTIVO. Devuelve lo acreditado (ceros si aun no toca o el tier no incluye
@@ -176,8 +284,19 @@ async function grantOne(
     const now = Date.now();
 
     // Idempotencia por ventana (revalidada DENTRO de la transaccion: el
-    // prefiltro de fuera puede estar desfasado si dos ejecuciones se solapan).
-    if (!isGrantDue(walletData, period, now)) return NO_GRANT;
+    // prefiltro de fuera puede estar desfasado si dos ejecuciones se solapan),
+    // ahora consciente del tier: una subida de plan cobra la diferencia.
+    const decision = monthlyGrantDecision({
+      walletData,
+      tier,
+      attras,
+      boosts,
+      period,
+      nowMs: now,
+    });
+    if (!decision.grant) return NO_GRANT;
+    const grantedAttras = decision.attras;
+    const grantedBoosts = decision.boosts;
 
     // La app lee el saldo de `users/{uid}.attrasBalance` y sendAttra lo gasta
     // desde `attraWallets/{uid}.balance`: el pack se acreditaba solo en el
@@ -187,14 +306,20 @@ async function grantOne(
     const base = wallet.exists
       ? Number(walletData?.balance ?? 0)
       : Number(userSnap.data()?.attrasBalance ?? 0);
-    const newBalance = base + attras;
+    const newBalance = base + grantedAttras;
     const serverNow = FieldValue.serverTimestamp();
     tx.set(
       walletRef,
       {
         balance: newBalance,
-        monthlyGrantPeriod: period,
-        lastMonthlyGrantAt: serverNow,
+        // La ventana solo se reinicia con un pack completo: una subida a mitad
+        // de ventana no retrasa el siguiente.
+        ...(decision.restartWindow
+          ? { monthlyGrantPeriod: period, lastMonthlyGrantAt: serverNow }
+          : {}),
+        monthlyGrantTier: decision.windowTier,
+        monthlyGrantAttras: decision.windowAttras,
+        monthlyGrantBoosts: decision.windowBoosts,
         updatedAt: serverNow,
       },
       { merge: true }
@@ -210,10 +335,10 @@ async function grantOne(
           attrasBalance: newBalance,
           // Los Boosts se acreditan con increment para respetar el saldo previo
           // (comprado o sobrante del mes anterior): NUNCA se pisa.
-          ...(boosts > 0
+          ...(grantedBoosts > 0
             ? {
                 wallet: {
-                  boosts: FieldValue.increment(boosts),
+                  boosts: FieldValue.increment(grantedBoosts),
                   boostsUpdatedAt: serverNow,
                 },
               }
@@ -227,13 +352,15 @@ async function grantOne(
       uid,
       type: "monthly_grant",
       tier,
-      amount: attras,
-      boosts,
+      amount: grantedAttras,
+      boosts: grantedBoosts,
       balanceAfter: newBalance,
       period,
+      // Diferencia por subida de plan dentro de la ventana, no pack completo.
+      upgradeTopUp: !decision.restartWindow,
       createdAt: serverNow,
     });
-    return { attras, boosts };
+    return { attras: grantedAttras, boosts: grantedBoosts };
   });
 }
 

@@ -174,3 +174,8 @@ export {
   registerPushToken,
   unregisterPushToken,
 } from "./notifications";
+// --- monetization ---
+// Notificaciones de servidor de las tiendas (renovaciones y reembolsos sin que
+// el usuario abra la app). Sin exportarlas no se despliegan y las renovaciones
+// dependen de que la app reenvie el recibo, que Android no hace solo.
+export { appStoreNotifications, playRtdn } from "./storeNotifications";

@@ -333,7 +333,8 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
   List<Widget> _badgesFor(SettingDefinition def) {
     final List<Widget> badges = <Widget>[];
     if (def.requiresSubscription) {
-      badges.add(const _Badge(label: 'Premium', color: Color(0xFFB8860B)));
+      badges.add(_Badge(
+          label: _c.requiredPlanLabel(def), color: const Color(0xFFB8860B)));
     }
     if (def.requiresRegion != null) {
       badges.add(

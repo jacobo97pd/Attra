@@ -274,6 +274,16 @@ class MonetizationFeatureFlags {
   /// deben comprobar esto antes de mostrar/generar planes.
   bool get datePlansActive => datePlansEnabled && !datePlansKillSwitch;
 
+  /// Si el tier da sus ventajas en la app.
+  ///
+  /// Pro YA NO depende de `premiumEnabled`, `proAiEnabled` ni `aiKillSwitch`.
+  /// Antes sí, y el interruptor de emergencia de la IA (el que SafeDate, el
+  /// perfil por voz y las sugerencias usan para apagar SOLO la IA) degradaba a
+  /// todo suscriptor Pro a Free en la app: sin rewind, sin viaje, sin ver
+  /// quién le gusta, con anuncios... mientras el backend le seguía tratando
+  /// como Pro y la tienda le seguía cobrando. La IA se apaga donde toca, en
+  /// [isFeatureEnabled]: la visual por `isAiVisual` y las sugerencias de
+  /// respuesta aparte (no son `isAiVisual` por su consentimiento propio).
   bool isTierEnabled(SubscriptionTier tier) {
     if (!monetizationEnabled && tier.isPaid) {
       return false;
@@ -286,7 +296,7 @@ class MonetizationFeatureFlags {
       case SubscriptionTier.premium:
         return premiumEnabled;
       case SubscriptionTier.pro:
-        return premiumEnabled && proAiEnabled && !aiKillSwitch;
+        return true;
     }
   }
 
@@ -296,6 +306,12 @@ class MonetizationFeatureFlags {
     }
     if (feature == PremiumFeature.attrasMonthlyGrant) {
       return attrasEnabled;
+    }
+    if (feature == PremiumFeature.aiReplySuggestions) {
+      // Antes el interruptor de la IA apagaba estas sugerencias porque tumbaba
+      // el tier Pro entero. Ahora que Pro no depende de él, se apagan aquí,
+      // igual que las corta el backend (`requireChatAiAccess`).
+      return !aiKillSwitch && proAiEnabled && aiProcessingEnabled;
     }
     if (!feature.isAiVisual) {
       return true;

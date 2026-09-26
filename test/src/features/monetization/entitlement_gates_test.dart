@@ -152,6 +152,82 @@ void main() {
     });
   });
 
+  // El interruptor de emergencia de la IA (y `proAiEnabled` / `premiumEnabled`)
+  // tumbaba el tier Pro ENTERO en la app: el suscriptor Pro perdía rewind,
+  // viaje, ver quién le gusta, filtros e incógnito y empezaba a ver anuncios,
+  // mientras el backend le seguía tratando como Pro y la tienda le cobraba.
+  group('Pro no depende de los flags de IA (solo la IA se apaga)', () {
+    for (final MapEntry<String, MonetizationFeatureFlags> caso
+        in <String, MonetizationFeatureFlags>{
+      'aiKillSwitch=true': const MonetizationFeatureFlags(aiKillSwitch: true),
+      'proAiEnabled=false': const MonetizationFeatureFlags(proAiEnabled: false),
+      'premiumEnabled=false':
+          const MonetizationFeatureFlags(premiumEnabled: false),
+    }.entries) {
+      test('${caso.key}: Pro conserva todo lo que no es IA', () async {
+        final c = await _controller(
+          UserEntitlements.forTier(uid: 'u', tier: SubscriptionTier.pro),
+          aiConsent: true,
+          flags: caso.value,
+        );
+        expect(c.isPlusActive, isTrue);
+        expect(c.isProActive, isTrue);
+        expect(c.hasFeature(PremiumFeature.rewind), isTrue);
+        expect(c.canUseTravelMode, isTrue);
+        expect(c.canSeeAllLikes, isTrue);
+        expect(c.canUseIncognito, isTrue);
+        expect(c.canCommentOnLike, isTrue);
+        expect(c.dailyLikeLimit, -1);
+      });
+    }
+
+    test('aiKillSwitch=true: la IA de Pro SÍ se apaga (visual y respuestas)',
+        () async {
+      final c = await _controller(
+        UserEntitlements.forTier(uid: 'u', tier: SubscriptionTier.pro),
+        aiConsent: true,
+        flags: const MonetizationFeatureFlags(aiKillSwitch: true),
+      );
+      expect(c.canUseAiVisualMatching, isFalse);
+      expect(c.hasFeature(PremiumFeature.aiVisualEngine), isFalse);
+      expect(c.hasFeature(PremiumFeature.aiReplySuggestions), isFalse);
+    });
+
+    test('sin flags de corte, las sugerencias de respuesta siguen siendo Pro',
+        () async {
+      final c = await _controller(
+        UserEntitlements.forTier(uid: 'u', tier: SubscriptionTier.pro),
+      );
+      expect(c.hasFeature(PremiumFeature.aiReplySuggestions), isTrue);
+    });
+
+    test('monetización apagada sigue cortando también a Pro', () async {
+      final c = await _controller(
+        UserEntitlements.forTier(uid: 'u', tier: SubscriptionTier.pro),
+        flags: const MonetizationFeatureFlags(monetizationEnabled: false),
+      );
+      expect(c.isProActive, isFalse);
+      expect(c.hasFeature(PremiumFeature.rewind), isFalse);
+    });
+  });
+
+  group('Ajustes de pago: cada uno lo desbloquea su función', () {
+    test('Plus desbloquea el incógnito (antes pedía el Premium retirado)',
+        () async {
+      final c = await _controller(
+          UserEntitlements.forTier(uid: 'u', tier: SubscriptionTier.plus));
+      expect(c.isPremiumActive, isFalse);
+      expect(c.unlocksSetting(PremiumFeature.incognitoMode), isTrue);
+      expect(c.unlocksSetting(null), isTrue, reason: 'cualquier plan de pago');
+    });
+
+    test('Free no desbloquea nada de pago', () async {
+      final c = await _controller(UserEntitlements.free(uid: 'u'));
+      expect(c.unlocksSetting(PremiumFeature.incognitoMode), isFalse);
+      expect(c.unlocksSetting(null), isFalse);
+    });
+  });
+
   // Estos tests FIJAN el contrato Free/Plus/Pro acordado. Si alguien cambia un
   // número de sitio (paywall, backend, controlador) y no lo cambia aquí, se
   // rompe a propósito: los tres tienen que decir lo mismo.
