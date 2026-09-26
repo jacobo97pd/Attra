@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../onboarding/domain/interested_in.dart';
+import '../../social/domain/intent_mode.dart';
 import '../domain/profile_trait.dart';
 import '../domain/profile_traits_catalog.dart';
 import '../domain/profile_visibility.dart';
+import 'interested_in_sheet.dart';
 
 /// Editor de perfil enriquecido dirigido por [ProfileTraitsCatalog]. Cada rasgo
 /// se puede completar/editar/borrar; los sensibles muestran consentimiento
@@ -266,11 +269,70 @@ class _EditTraitsScreenState extends State<EditTraitsScreen> {
       appBar: AppBar(title: const Text('Completar perfil')),
       body: ListView(
         children: <Widget>[
+          _interestedInTile(),
+          const Divider(height: 1),
           for (final ProfileSection section in ProfileTraitsCatalog.sections)
             _sectionTile(section),
         ],
       ),
     );
+  }
+
+  List<String> _interestedIn() {
+    final Object? v = _value(InterestedIn.trait);
+    return v is List
+        ? v.whereType<String>().toList(growable: false)
+        : const <String>[];
+  }
+
+  /// "Me interesan": junto al selector de modo, el único sitio donde se puede
+  /// cambiar `preferences.interestedIn` después del onboarding. Sin él, quien
+  /// lo dejó vacío (se registró en amistad/grupos) o eligió una sola casilla no
+  /// tenía cómo corregirlo: el filtro "Mostrarme" solo estrecha, nunca amplía.
+  Widget _interestedInTile() {
+    final ThemeData theme = Theme.of(context);
+    final List<String> current = _interestedIn();
+    final String summary = InterestedIn.describe(current);
+    // En citas, vacío no es "sin preferencia": es emparejar con todos los
+    // géneros en los dos sentidos. Se avisa para que no pase desapercibido.
+    final bool missing = InterestedIn.requiredFor(
+        IntentMode.fromValue(_group('profile')['intentMode']), current);
+    return ListTile(
+      key: const ValueKey<String>('edit-interested-in'),
+      leading: Icon(Icons.favorite_border, color: theme.colorScheme.primary),
+      title: const Text('Me interesan'),
+      subtitle: Text(
+        summary.isNotEmpty
+            ? summary
+            : missing
+                ? 'Sin elegir: en citas te emparejamos con todos los géneros'
+                : 'Añadir',
+        style: TextStyle(
+          color: missing
+              ? theme.colorScheme.error
+              : summary.isNotEmpty
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outline,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: _editInterestedIn,
+    );
+  }
+
+  Future<void> _editInterestedIn() async {
+    final List<String>? picked =
+        await InterestedInSheet.show(context, initial: _interestedIn());
+    if (picked == null || !mounted) return;
+    try {
+      await _save(InterestedIn.trait, picked);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No se pudo guardar. Inténtalo otra vez.')),
+      );
+    }
   }
 
   Widget _sectionTile(ProfileSection section) {

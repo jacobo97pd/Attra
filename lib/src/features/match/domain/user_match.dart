@@ -1,11 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'like.dart';
+import 'match_journey.dart';
 import 'pair_id.dart';
 
 /// Estado de una relacion de match (bilateral confirmada).
 enum MatchStatus {
   active('active'),
+
+  /// Conversación cerrada con elegancia. Hay que reconocerlo: [fromValue] cae
+  /// en `active` con cualquier valor desconocido, y un match cerrado leído
+  /// como activo vuelve a ofrecer "Enviar mensaje" hacia un chat muerto.
+  closed('closed'),
   unmatched('unmatched'),
   blocked('blocked'),
   reported('reported'),
@@ -81,6 +87,26 @@ class UserMatch {
   bool get bornFromPhotoComment =>
       originTargetType == LikeTargetType.photo &&
       (originCommentText ?? '').trim().isNotEmpty;
+
+  /// ¿Sale en la pestaña Matches (y en su contador)?
+  ///
+  /// Solo los matches vivos. `closed`/`unmatched`/`blocked` no, y tampoco los
+  /// que tienen el recorrido `archived`: "Cerrar con elegancia" dejaba el match
+  /// en `active` y solo archivaba el recorrido, así que la pestaña seguía
+  /// ofreciendo "Enviar mensaje" hacia un chat donde ya no se puede escribir.
+  /// Aunque el backend marque el match como no activo al cerrar, los cerrados
+  /// antes de ese cambio siguen en `active` + `archived` (y `archived` es el
+  /// rango más alto del recorrido, así que nunca retrocede).
+  bool get isOpen =>
+      status.isActive && journeyStatus != MatchJourneyStatus.archived.wireName;
+
+  /// El par ya no existe: match deshecho, bloqueado o retirado (cuenta
+  /// borrada). A diferencia de `closed` (cierre con elegancia, que deja la
+  /// conversación como archivo), aquí no queda nada que enseñar del otro.
+  bool get isUndone =>
+      status == MatchStatus.unmatched ||
+      status == MatchStatus.blocked ||
+      status == MatchStatus.deleted;
 
   /// ID determinista del match/chat para el par (a, b).
   static String idFor(String a, String b) => pairId(a, b);

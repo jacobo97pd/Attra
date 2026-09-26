@@ -163,7 +163,10 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
       (List<UserMatch> matches) {
         if (!mounted) return;
         setState(() {
-          _matches = matches;
+          // Solo matches vivos, también en el contador de la pestaña (ver
+          // UserMatch.isOpen). El repositorio ya los filtra; se repite para no
+          // depender de qué stream llegue.
+          _matches = matches.where((UserMatch m) => m.isOpen).toList();
           _matchesError = null;
         });
       },

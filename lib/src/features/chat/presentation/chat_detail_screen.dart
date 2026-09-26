@@ -27,6 +27,7 @@ import '../../profile/presentation/profile_view_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../match/domain/date_builder.dart';
 import '../../match/domain/match_journey.dart';
+import '../../match/domain/user_match.dart';
 import '../../match/presentation/date_builder_sheet.dart';
 import '../../match/presentation/icebreaker_sheet.dart';
 import '../../match/presentation/match_journey_card.dart';
@@ -213,6 +214,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   /// Sugerencia de Attra Spark ocultada esta sesión.
   bool _sparkDismissed = false;
+
+  /// Último estado del chat que ha traído el stream del cuerpo. Decide si la
+  /// cabecera deja abrir el perfil del otro: tras un bloqueo, quien fue
+  /// bloqueado seguía pudiendo ver el perfil completo de quien le bloqueó.
+  Chat? _chat;
+  bool _chatLoaded = false;
+
+  /// Sin chat cargado todavía se deja el gesto (se comprueba al tocar, ver
+  /// [_openProfile]) para no hacer parpadear la cabecera en cada apertura.
+  bool get _canOpenProfile =>
+      widget.loadProfile != null &&
+      (!_chatLoaded || (_chat?.allowsProfileAccess ?? false));
+
+  /// Guarda el estado que trae el stream del cuerpo. La cabecera vive fuera de
+  /// ese StreamBuilder, así que si cambia el permiso se repinta en el frame
+  /// siguiente (no se puede llamar a setState en mitad de un build).
+  void _trackChat(AsyncSnapshot<Chat?> snap) {
+    final bool loaded = snap.hasData ||
+        snap.connectionState == ConnectionState.active ||
+        snap.connectionState == ConnectionState.done;
+    if (!loaded) return;
+    final bool before = _canOpenProfile;
+    _chat = snap.data;
+    _chatLoaded = true;
+    if (before != _canOpenProfile) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
 
   AntiGhostingAnalytics get _antiGhostingAnalytics =>
       AntiGhostingAnalytics(uid: widget.currentUid, metrics: widget.metrics);
@@ -959,6 +990,39 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         widget.loadProfile;
     if (loader == null) return;
     final NavigatorState nav = Navigator.of(context);
+    // Si el chat aún no ha llegado (se entró por un push o un enlace y se tocó
+    // la cabecera enseguida) se consulta antes de enseñar nada. Sin chat o con
+    // error, no: es una puerta de seguridad y se cierra ante la duda.
+    Chat? chat = _chat;
+    if (!_chatLoaded) {
+      try {
+        chat = await widget.chatService.observeChatById(widget.chatId).first;
+      } catch (_) {
+        chat = null;
+      }
+      if (!mounted) return;
+    }
+    if (!(chat?.allowsProfileAccess ?? false)) {
+      _snack('Este perfil ya no está disponible.');
+      return;
+    }
+    // El chat no basta: tras "Cerrar con elegancia", "Deshacer match" deja el
+    // chat `closed` y firmado, igual que un archivo; solo el match sabe que el
+    // par terminó. Sin doc de match manda el chat; si no se puede leer, no.
+    UserMatch? match;
+    bool matchUnknown = false;
+    try {
+      match = await widget.matchService
+          .observeMatchById(chat?.matchId ?? widget.chatId)
+          .first;
+    } catch (_) {
+      matchUnknown = true;
+    }
+    if (!mounted) return;
+    if (matchUnknown || (match?.isUndone ?? false)) {
+      _snack('Este perfil ya no está disponible.');
+      return;
+    }
     SeedProfile? profile;
     try {
       profile = await loader(widget.other.uid);
@@ -1521,7 +1585,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       appBar: AppBar(
         titleSpacing: 0,
         title: InkWell(
-          onTap: widget.loadProfile == null ? null : _openProfile,
+          onTap: _canOpenProfile ? _openProfile : null,
           child: Row(
             children: <Widget>[
               CircleAvatar(
@@ -1541,8 +1605,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 child: Text(widget.other.displayName,
                     overflow: TextOverflow.ellipsis),
               ),
-              if (widget.loadProfile != null)
-                const Icon(Icons.chevron_right, size: 20),
+              if (_canOpenProfile) const Icon(Icons.chevron_right, size: 20),
             ],
           ),
         ),
@@ -1587,6 +1650,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         stream: widget.chatService.observeChatById(widget.chatId),
         builder: (BuildContext context, AsyncSnapshot<Chat?> chatSnap) {
           final Chat? chat = chatSnap.data;
+          _trackChat(chatSnap);
           final bool canSend = chat?.status.canSendMessages ?? true;
           return Column(
             children: <Widget>[
