@@ -786,6 +786,49 @@ class UserRepository {
     );
   }
 
+  /// Guarda los filtros del feed en `users/{uid}.preferences`: el radio y el
+  /// rango de edad en sus claves de siempre (las que escribe el onboarding y
+  /// lee el directo) y el resto en `preferences.feedFilters`.
+  ///
+  /// `update` con rutas punteadas y no `set(merge)`: con merge, un mapa
+  /// anidado se FUSIONA clave a clave, así que quitar un filtro no borraba el
+  /// valor guardado; y el resto de `preferences` (`interestedIn`...) no se
+  /// toca. El trigger de backend republica la ficha pública (el rango de edad
+  /// va en discovery para la reciprocidad).
+  Future<void> saveFeedPreferences({
+    required String uid,
+    int? maxDistanceKm,
+    required int preferredAgeMin,
+    required int preferredAgeMax,
+    required Map<String, dynamic> feedFilters,
+  }) async {
+    await _usersCollection.doc(uid).update(buildFeedPreferencesPatch(
+          maxDistanceKm: maxDistanceKm,
+          preferredAgeMin: preferredAgeMin,
+          preferredAgeMax: preferredAgeMax,
+          feedFilters: feedFilters,
+        ));
+  }
+
+  /// Lo que escribe [saveFeedPreferences] (puro, para poder probarlo).
+  ///
+  /// Sin radio NO se borra `preferences.maxDistanceKm`: la completitud del
+  /// perfil lo exige y "sin radio" ya es el radio por defecto del feed.
+  static Map<String, Object?> buildFeedPreferencesPatch({
+    int? maxDistanceKm,
+    required int preferredAgeMin,
+    required int preferredAgeMax,
+    required Map<String, dynamic> feedFilters,
+  }) {
+    return <String, Object?>{
+      if (maxDistanceKm != null) 'preferences.maxDistanceKm': maxDistanceKm,
+      'preferences.preferredAgeMin': preferredAgeMin,
+      'preferences.preferredAgeMax': preferredAgeMax,
+      'preferences.feedFilters': feedFilters,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
   /// Modo Amigos: guarda la intención en `users/{uid}.profile.intentMode`
   /// (misma vía que los rasgos, con los campos requeridos por las reglas). El
   /// re-sync a discovery lo hace la Cloud Function al escribir el user.

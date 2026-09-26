@@ -27,6 +27,7 @@ import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
 import '../../feed/domain/feed_filter.dart';
+import '../../feed/domain/feed_filters.dart';
 import '../../geo/data/travel_destination_resolvers.dart';
 import '../../geo/domain/travel_destination_resolver.dart';
 import '../../profile/data/profile_summary_repository.dart';
@@ -949,6 +950,23 @@ class SessionController extends ChangeNotifier {
       place: place,
       permissionStatus: permissionStatus,
       permissionGranted: permissionGranted,
+    );
+    await _refreshAuthenticatedUser(uid);
+  }
+
+  /// Guarda los filtros del feed (radio, rango de edad y el resto) para que
+  /// sobrevivan a un reinicio. Recarga el usuario: el radio y la edad son las
+  /// mismas claves que usan el onboarding, la completitud y el directo, y un
+  /// `AppUser` con los de antes volvería a mentir en cuanto alguien los leyera.
+  Future<void> saveFeedFilters(FeedFilters filters) async {
+    final String? uid = _state.user?.uid;
+    if (uid == null) return;
+    await _userRepository.saveFeedPreferences(
+      uid: uid,
+      maxDistanceKm: filters.maxDistanceKm,
+      preferredAgeMin: filters.minAge,
+      preferredAgeMax: filters.maxAge,
+      feedFilters: filters.toSavedMap(),
     );
     await _refreshAuthenticatedUser(uid);
   }

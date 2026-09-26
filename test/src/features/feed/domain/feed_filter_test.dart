@@ -127,17 +127,122 @@ void main() {
     test('filtro BLANDO (no deal-breaker) NO excluye', () {
       final result = FeedFilter.apply(
         profiles: <SeedProfile>[
-          _p(id: 'joven', age: 20),
-          _p(id: 'mayor', age: 50)
+          _p(id: 'bajo', heightCm: 150),
+          _p(id: 'alto', heightCm: 200),
         ],
         myUid: 'me',
         myGender: '',
         myInterestedIn: const <String>[],
         excludedUids: const <String>{},
-        // edad puesta pero NO marcada "no negociable" => no excluye a nadie.
-        filters: const FeedFilters(minAge: 25, maxAge: 40),
+        // altura puesta pero NO marcada "no negociable" => no excluye a nadie.
+        // (La edad ya no sirve de ejemplo: es siempre dura y recíproca.)
+        filters: const FeedFilters(minHeight: 170, maxHeight: 190),
       );
-      expect(result.map((p) => p.id).toSet(), <String>{'joven', 'mayor'});
+      expect(result.map((p) => p.id).toSet(), <String>{'bajo', 'alto'});
+    });
+
+    // C09: el rango de edad del onboarding no se usaba en ninguna parte. Ahora
+    // es duro y RECÍPROCO, como en el directo (`isLiveCompatible`).
+    group('edad recíproca', () {
+      List<String> run({
+        required List<SeedProfile> profiles,
+        int minAge = FeedFilters.ageFloor,
+        int maxAge = FeedFilters.ageCeil,
+        int? myAge,
+      }) =>
+          FeedFilter.apply(
+            profiles: profiles,
+            myUid: 'me',
+            myGender: '',
+            myInterestedIn: const <String>[],
+            excludedUids: const <String>{},
+            filters: FeedFilters(minAge: minAge, maxAge: maxAge),
+            myAge: myAge,
+          ).map((SeedProfile p) => p.id).toList();
+
+      test('mi rango excluye aunque no esté marcado "no negociable"', () {
+        expect(
+          run(
+            profiles: <SeedProfile>[
+              _p(id: 'joven', age: 20),
+              _p(id: 'dentro', age: 30),
+              _p(id: 'mayor', age: 50),
+              _p(id: 'sinedad'),
+            ],
+            minAge: 25,
+            maxAge: 40,
+          ),
+          <String>['dentro', 'sinedad'],
+        );
+      });
+
+      test('Lucía (22, busca 22-30) no le sale a Pedro (58), ni al revés', () {
+        final SeedProfile lucia =
+            SeedProfile.fromMap('lucia', <String, dynamic>{
+          'displayName': 'Lucía',
+          'age': 22,
+          'preferredAgeMin': 22,
+          'preferredAgeMax': 30,
+        });
+        // Pedro, con rango abierto (18-80): Lucía cabe en el suyo, pero él no
+        // cabe en el de ella.
+        expect(run(profiles: <SeedProfile>[lucia], myAge: 58), isEmpty);
+        // Alguien de 27 sí.
+        expect(
+            run(profiles: <SeedProfile>[lucia], myAge: 27), <String>['lucia']);
+      });
+
+      test('sin dato del otro lado es permisivo', () {
+        final SeedProfile sinRango =
+            SeedProfile.fromMap('x', <String, dynamic>{'age': 30});
+        expect(
+            run(profiles: <SeedProfile>[sinRango], myAge: 58), <String>['x']);
+        // Sin mi edad tampoco se puede comprobar su rango.
+        final SeedProfile conRango = SeedProfile.fromMap('y', <String, dynamic>{
+          'age': 30,
+          'preferredAgeMin': 25,
+          'preferredAgeMax': 35,
+        });
+        expect(run(profiles: <SeedProfile>[conRango]), <String>['y']);
+      });
+
+      test('nunca por debajo de 18, pida lo que pida el rango', () {
+        expect(
+          run(
+            profiles: <SeedProfile>[
+              _p(id: 'menor', age: 16),
+              _p(id: 'adulto', age: 18),
+            ],
+            minAge: 10,
+          ),
+          <String>['adulto'],
+        );
+      });
+
+      test('80 es "80 o más": el rango por defecto no deja fuera a nadie', () {
+        expect(
+          run(profiles: <SeedProfile>[_p(id: 'senior', age: 85)]),
+          <String>['senior'],
+        );
+      });
+    });
+
+    // D05: "Solo verificados" solo filtraba si además se marcaba "no
+    // negociable" (apagado por defecto).
+    test('"solo verificados" es duro, como "solo con foto"', () {
+      final SeedProfile verificado = SeedProfile.fromMap(
+          'v', <String, dynamic>{'displayName': 'V', 'verified': true});
+      final SeedProfile sinVerificar =
+          SeedProfile.fromMap('n', <String, dynamic>{'displayName': 'N'});
+      final result = FeedFilter.apply(
+        profiles: <SeedProfile>[verificado, sinVerificar],
+        myUid: 'me',
+        myGender: '',
+        myInterestedIn: const <String>[],
+        excludedUids: const <String>{},
+        filters: const FeedFilters(verifiedOnly: true),
+      );
+      expect(result.map((SeedProfile p) => p.id), <String>['v']);
     });
 
     test('distancia "no negociable" excluye lejanos (haversine)', () {

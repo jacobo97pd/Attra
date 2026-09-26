@@ -105,6 +105,7 @@ class SessionGate extends StatelessWidget {
               safeDateService: controller.safeDateService,
               onSetIntentMode: controller.setIntentMode,
               onSaveDeviceLocation: controller.saveDeviceLocation,
+              onSaveFeedFilters: controller.saveFeedFilters,
               boostService: controller.boostService,
               sparkService: controller.sparkService,
               feedMetricsService: controller.feedMetricsService,

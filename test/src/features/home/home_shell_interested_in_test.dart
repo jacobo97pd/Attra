@@ -8,6 +8,7 @@ import 'package:attra/src/features/chat/data/chat_service.dart';
 import 'package:attra/src/features/chat/data/reply_suggestion_service.dart';
 import 'package:attra/src/features/chat/domain/chat.dart';
 import 'package:attra/src/features/feed/data/ranking_signals_repository.dart';
+import 'package:attra/src/features/feed/domain/feed_exclusions.dart';
 import 'package:attra/src/features/feed/presentation/feed_screen.dart';
 import 'package:attra/src/features/home/presentation/home_shell.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
@@ -420,10 +421,8 @@ class _MatchService implements MatchService {
       Stream<List<UserMatch>>.value(const <UserMatch>[]);
 
   @override
-  Future<Set<String>> fetchExcludedUids(String uid) async => <String>{};
-
-  @override
-  Future<Set<String>> fetchDislikedUids(String uid) async => <String>{};
+  Future<FeedExclusions> fetchExcludedUids(String uid) async =>
+      const FeedExclusions();
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

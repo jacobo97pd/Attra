@@ -30,6 +30,7 @@ import '../../chat/data/reply_suggestion_service.dart';
 import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
+import '../../feed/domain/feed_filters.dart';
 import '../../feed/domain/ranking_config.dart';
 import '../../feed/domain/travel_scope.dart';
 import '../../feed/presentation/feed_screen.dart';
@@ -105,6 +106,7 @@ class HomeShell extends StatefulWidget {
     this.safeDateService,
     this.onSetIntentMode,
     this.onSaveDeviceLocation,
+    this.onSaveFeedFilters,
     this.boostService,
     this.sparkService,
     this.feedMetricsService,
@@ -202,6 +204,10 @@ class HomeShell extends StatefulWidget {
   /// obtiene o la refresca: escribe `users/{uid}.location` (con la marca de
   /// frescura) y republica `discovery/{uid}`.
   final PersistDeviceLocation? onSaveDeviceLocation;
+
+  /// Guarda los filtros del feed en `users/{uid}.preferences` (radio y edad en
+  /// sus claves de siempre, el resto en `feedFilters`). Null = no se guardan.
+  final Future<void> Function(FeedFilters filters)? onSaveFeedFilters;
   final BoostService? boostService;
   final SparkService? sparkService;
   final FeedMetricsService? feedMetricsService;
@@ -613,6 +619,8 @@ class _HomeShellState extends State<HomeShell> {
               : _openGroups,
           // Persiste la ubicación del dispositivo (completitud del perfil + feed).
           onDeviceLocation: widget.onSaveDeviceLocation,
+          // Los filtros sobreviven a un reinicio (antes solo vivían en memoria).
+          onSaveFilters: widget.onSaveFeedFilters,
         ),
       ),
     );

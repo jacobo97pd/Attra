@@ -50,6 +50,7 @@ import '../data/feed_metrics_service.dart';
 import '../data/ranking_signals_repository.dart';
 import '../domain/boost_ranker.dart';
 import '../domain/feed_chrome.dart';
+import '../domain/feed_exclusions.dart';
 import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
 import '../domain/liked_me_ranker.dart';
@@ -109,7 +110,14 @@ class FeedScreen extends StatefulWidget {
     this.placeResolver,
     this.onChromeHiddenChanged,
     this.headerActions = const <Widget>[],
+    this.onSaveFilters,
   });
+
+  /// Guarda los filtros cada vez que el usuario los aplica (radio y edad en
+  /// `preferences`, el resto en `preferences.feedFilters`). Antes vivían solo
+  /// en memoria: el radio elegido y los "no negociables" se perdían al cerrar
+  /// la app. null = no se guardan (tests, previsualizaciones).
+  final Future<void> Function(FeedFilters filters)? onSaveFilters;
 
   /// Avisa cuando el usuario baja por una ficha (true) o vuelve a subir
   /// (false). El feed esconde su propia fila de filtros; el shell usa esto para
@@ -269,6 +277,16 @@ enum _AiSearchStatus {
   notEntitled,
 }
 
+/// No se ha podido saber a quién excluir (y no hay una lectura anterior con
+/// la que cubrirlo): el feed no se pinta. Ver `_load`.
+class _ExclusionsUnavailable implements Exception {
+  const _ExclusionsUnavailable();
+
+  String get message => 'No hemos podido comprobar a quién ya has visto o '
+      'bloqueado, así que no te enseñamos a nadie por si acaso. Reinténtalo en '
+      'un momento.';
+}
+
 /// Estado de la búsqueda IA de la última carga (null = ninguna pedida).
 class _AiSearchState {
   const _AiSearchState({
@@ -316,9 +334,21 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
 
   /// "Segunda vuelta": cuando se acaba el feed, re-ver los perfiles que pasaste
   /// (dislikes). Se activa desde el estado vacío. `_dislikedUids` se refresca en
-  /// cada carga para saber si hay pases que reconsiderar.
+  /// cada carga y son SOLO los pases que se pueden reconsiderar
+  /// ([FeedExclusions.secondRoundCandidates]): nunca un bloqueo, un match, un
+  /// like/Attra ni un reporte del directo.
   bool _secondRound = false;
   Set<String> _dislikedUids = const <String>{};
+
+  /// Última lectura BUENA de las exclusiones (de [_exclusionsUid]). Si una
+  /// lectura posterior falla, se cubre con esta en vez de seguir con nadie
+  /// excluido: fallar "abierto" enseñaba matches y bloqueados por un bache.
+  FeedExclusions? _exclusions;
+  String _exclusionsUid = '';
+
+  /// El paywall por el tope diario de likes se ofrece una vez por sesión: no
+  /// puede saltar en cada toque.
+  bool _likeLimitPaywallShown = false;
   Map<String, ActiveBoost> _activeBoostsByUid = const <String, ActiveBoost>{};
   bool _storiesEnabled = false;
 
@@ -396,7 +426,35 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// o caduca una suscripción con la app abierta) y un tramo congelado en el
   /// `initState` seguiría mandando al paywall a quien acaba de pagar.
   RewindState _rewind = const RewindState();
+
+  /// Filtros que ha ELEGIDO el usuario (arrancan de lo que tiene guardado).
+  /// Lo que se aplica es [_appliedFilters]: sin Plus, sin los de Plus.
   FeedFilters _filters = const FeedFilters();
+
+  /// Los filtros tal y como se aplican: sin Plus no cuentan los avanzados.
+  /// Se calcula en cada lectura porque el plan cambia en caliente (caduca con
+  /// la app abierta, o se compra desde el paywall).
+  FeedFilters get _appliedFilters =>
+      widget.isPlus ? _filters : _filters.withoutPlus();
+
+  /// Filtros de arranque de [user]: lo guardado en `preferences`. Conserva la
+  /// búsqueda IA en curso ([keepAiFrom]): no se guarda y no es del usuario
+  /// nuevo ni del viejo, es de esta pantalla.
+  static FeedFilters _seedFilters(AppUser? user, {FeedFilters? keepAiFrom}) {
+    final FeedFilters seeded = user == null
+        ? const FeedFilters()
+        : FeedFilters.fromPreferences(
+            saved: user.savedFeedFilters,
+            maxDistanceKm: user.maxDistanceKm,
+            preferredAgeMin: user.preferredAgeMin,
+            preferredAgeMax: user.preferredAgeMax,
+          );
+    if (keepAiFrom == null) return seeded;
+    return seeded.copyWith(
+      sortByVisualReference: keepAiFrom.sortByVisualReference,
+      promptQuery: keepAiFrom.promptQuery,
+    );
+  }
 
   /// Plegado de la cabecera al bajar por una ficha (ver [FeedChromeTracker]).
   ///
@@ -528,6 +586,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     // dentro de un IndexedStack: sigue montado con cualquier pestaña delante, así
     // que recibe `resumed` aunque el usuario vuelva a la app en Chats.
     WidgetsBinding.instance.addObserver(this);
+    // Los filtros arrancan de lo guardado (radio y edad del onboarding o del
+    // último cambio): antes arrancaban siempre vacíos y el feed aplicaba un
+    // radio que la pantalla de filtros no enseñaba.
+    _filters = _seedFilters(widget.user);
     _load();
     _loadStoriesFlag();
     // Un viaje que caducó con la app cerrada: el feed ya vuelve a casa (el
@@ -1272,6 +1334,18 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       _refreshLocation(LocationRefreshTrigger.travelEnded);
       reload = true;
     }
+    // Otra persona (o la primera vez que llega el usuario): sus filtros
+    // guardados, no los de la anterior.
+    if (oldWidget.user?.uid != widget.user?.uid) {
+      _filters = _seedFilters(widget.user, keepAiFrom: _filters);
+      reload = true;
+    }
+    // El plan cambia con la app abierta: al caducar Plus, sus filtros dejan de
+    // aplicarse YA (antes seguían excluyendo gente hasta reiniciar); al
+    // comprarlo, vuelven los guardados.
+    if (oldWidget.isPlus != widget.isPlus && _filters.hasPlusFilters) {
+      reload = true;
+    }
     if (reload) _load();
     // El documento ya trae la ubicación que habíamos adoptado: el respaldo deja
     // de hacer falta y se suelta. Si no, una lectura de esta sesión mandaba sobre
@@ -1344,31 +1418,46 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       _loadedLat = (travelingPending || aiSearchPending) ? null : _effectiveLat;
       _loadedLng = (travelingPending || aiSearchPending) ? null : _effectiveLng;
       final List<SeedProfile> all = await widget.onLoadSeedProfiles();
-      // Excluidos (likeados/pasados/matcheados/bloqueados). Best-effort: si la
-      // lectura falla, no vaciamos el feed.
-      Set<String> excluded = const <String>{};
-      Set<String> disliked = const <String>{};
+      // Excluidos, SEPARADOS POR MOTIVO (likes, pases, matches, bloqueos).
+      FeedExclusions exclusions = const FeedExclusions();
       if (myUid.isNotEmpty) {
+        FeedExclusions fetched;
         try {
-          excluded = await widget.matchService.fetchExcludedUids(myUid);
+          fetched = await widget.matchService.fetchExcludedUids(myUid);
         } catch (_) {
-          excluded = const <String>{};
+          fetched = FeedExclusions.unavailable;
         }
-        try {
-          disliked = await widget.matchService.fetchDislikedUids(myUid);
-        } catch (_) {
-          disliked = const <String>{};
-        }
+        if (!mounted || generation != _loadGeneration) return;
+        // FALLAR CERRADO. Antes, si la lectura fallaba, el feed seguía con
+        // NADIE excluido: volvían matches, likes ya dados y bloqueados (en la
+        // app que se revisó por la Guideline 1.2). Lo que falle se cubre con la
+        // última lectura buena de esta misma persona; y si no la hay (primera
+        // carga), el feed NO se pinta: sale el estado de error con
+        // "Reintentar". Un feed que no carga a la primera es un fastidio; uno
+        // que te enseña a quien bloqueaste es un fallo de seguridad.
+        final FeedExclusions? covered =
+            fetched.coveredBy(_exclusionsUid == myUid ? _exclusions : null);
+        if (covered == null) throw const _ExclusionsUnavailable();
+        exclusions = covered;
+        _exclusions = covered;
+        _exclusionsUid = myUid;
       }
-      // Segunda vuelta: no excluir los pases (para re-verlos). Sigue excluyendo
-      // likes/matches/bloqueos (al dar like el backend borra el dislike, así que
-      // no reaparecen los ya likeados).
-      if (_secondRound) {
-        excluded = excluded.difference(disliked);
-      }
+      // Segunda vuelta: solo se levantan los PASES normales. Lo duro (likes y
+      // Attras, matches de cualquier estado —también el 'blocked' que delata
+      // que alguien TE bloqueó—, bloqueos y los pases permanentes del directo)
+      // se queda fuera siempre. Antes se restaban todos los pases del conjunto
+      // mezclado y quien estaba excluido por un pase Y un bloqueo perdía las
+      // dos cosas a la vez.
+      final Set<String> excluded =
+          exclusions.excludedFor(secondRound: _secondRound);
+      final Set<String> disliked = exclusions.secondRoundCandidates;
       if (!mounted || generation != _loadGeneration) {
         return;
       }
+      // Lo que se aplica (sin Plus, sin los filtros de Plus).
+      final FeedFilters filters = _appliedFilters;
+      // Mi edad, para la reciprocidad del rango de edad.
+      final int? myAge = widget.user?.age;
       // ¿Hay algún filtro IA PEDIDO? (independiente de si el plan lo permite).
       // Se guarda para poder avisar de que un filtro IA guardado ya no se
       // aplica: antes se ignoraba en silencio.
@@ -1418,8 +1507,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myGender: widget.user?.gender ?? '',
           myInterestedIn: widget.user?.interestedIn ?? const <String>[],
           excludedUids: excluded,
-          filters: _filters,
+          filters: filters,
           myIntent: widget.user?.intentMode ?? IntentMode.dating,
+          myAge: myAge,
         );
         filtered = travel.profiles;
         travelWidened = travel.widened;
@@ -1430,7 +1520,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myGender: widget.user?.gender ?? '',
           myInterestedIn: widget.user?.interestedIn ?? const <String>[],
           excludedUids: excluded,
-          filters: _filters,
+          filters: filters,
           // En búsqueda IA no hay "mi" lat/lng (no filtra por distancia).
           myLat: _loadedLat,
           myLng: _loadedLng,
@@ -1445,6 +1535,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myCity: widget.user?.city ?? '',
           // Modo Amigos: filtra por compatibilidad de intención (default dating).
           myIntent: widget.user?.intentMode ?? IntentMode.dating,
+          myAge: myAge,
         );
       }
       // RESPALDO cuando el PAÍS declarado es lo único que vacía el feed.
@@ -1475,13 +1566,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myGender: widget.user?.gender ?? '',
           myInterestedIn: widget.user?.interestedIn ?? const <String>[],
           excludedUids: excluded,
-          filters: _filters,
+          filters: filters,
           myLat: _loadedLat,
           myLng: _loadedLng,
           myCountry: '',
           defaultMaxKm: widget.user?.maxDistanceKm,
           requireGeo: true,
           myIntent: widget.user?.intentMode ?? IntentMode.dating,
+          myAge: myAge,
         )
             .where((SeedProfile p) =>
                 FeedFilter.sameCountry(
@@ -1493,7 +1585,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           countryFallback = true;
         }
       }
-      // Segunda vuelta: quédate SOLO con los perfiles que pasaste.
+      // Segunda vuelta: quédate SOLO con los pases que se pueden reconsiderar.
       if (_secondRound) {
         filtered = filtered
             .where((SeedProfile p) => disliked.contains(p.id))
@@ -1562,7 +1654,15 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       // Se le pasan los boosts activos porque, al recortar a sus 12 perfiles
       // por afinidad, borraba por completo el efecto del Boost pagado que
       // BoostAwareRanker acababa de aplicar (ver SlowDatingRanker.maxBoostBonus).
-      if (!aiSearch && (widget.user?.slowDatingEnabled ?? false)) {
+      //
+      // En la segunda vuelta NO se recorta: volver a pasar a alguien no le
+      // excluye (su dislike sigue ahí), así que el recorte a 12 por afinidad
+      // sacaba SIEMPRE los mismos 12 y el resto de pases eran inalcanzables. La
+      // segunda vuelta ya es un grupo pequeño y pedido a mano, y su pantalla
+      // promete enseñar a "las N personas que pasaste".
+      if (!aiSearch &&
+          !_secondRound &&
+          (widget.user?.slowDatingEnabled ?? false)) {
         filtered = SlowDatingRanker.curate(
           profiles: filtered,
           me: widget.user,
@@ -1668,7 +1768,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         return;
       }
       setState(() {
-        _error = 'No se pudo cargar el feed. ($error)';
+        _error = error is _ExclusionsUnavailable
+            ? error.message
+            : 'No se pudo cargar el feed. ($error)';
         _loading = false;
       });
     }
@@ -1745,7 +1847,17 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         _consumed.add(acted);
       }
       if (acted == null || acted == currentUid) {
-        _index += 1;
+        // A la siguiente persona TODAVÍA SIN DECIDIR. Tras una marcha atrás el
+        // índice vuelve a una carta anterior y lo que hay detrás puede estar ya
+        // decidido (un Attra, un match): el `+= 1` a pelo la volvía a enseñar
+        // —y dejaba pasarla, escribiendo un dislike junto a un Attra pagado o
+        // reabriendo el diálogo de un match que ya existía—.
+        int next = _index + 1;
+        while (
+            next < _profiles.length && _consumed.contains(_profiles[next].id)) {
+          next++;
+        }
+        _index = next;
       } else {
         // El gesto era sobre otra persona (el muro cambió con el modal abierto):
         // se recompone el muro para sacarla, pero NO se avanza el índice, que
@@ -1761,6 +1873,43 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     _precacheNext();
     _recordCurrentImpression();
   }
+
+  /// Deshace el avance optimista de un gesto que el backend ha RECHAZADO sin
+  /// escribir nada (tope diario de likes): la persona deja de estar decidida,
+  /// su gesto sale del historial de marcha atrás y la carta vuelve delante.
+  ///
+  /// Se busca por UID y no se restaura el índice guardado: con gestos
+  /// encadenados en vuelo o el muro recompuesto, esa posición puede ser ya de
+  /// otra persona (igual que en [_onRewind]).
+  void _undoAdvance(String uid) {
+    if (!mounted) return;
+    setState(() {
+      _consumed.remove(uid);
+      _rewind = _rewindState.forget(uid);
+      // El anuncio que ese gesto hubiera traído tampoco toca.
+      if (_pendingAd && _swipesSinceAd == 0) {
+        _pendingAd = false;
+        _swipesSinceAd = _adFrequency - 1;
+      } else if (_swipesSinceAd > 0) {
+        _swipesSinceAd--;
+      }
+      int found = _profiles.indexWhere((SeedProfile p) => p.id == uid);
+      if (found < 0) {
+        _applyStoryWall();
+        found = _profiles.indexWhere((SeedProfile p) => p.id == uid);
+      }
+      if (found >= 0) _index = found;
+      // La tarjeta salió volando con el gesto: si vuelve la misma persona sin
+      // que se haya pintado nada entre medias, no hay cambio de perfil que la
+      // recoloque.
+      _cardResetToken++;
+    });
+    _precacheNext();
+    _recordCurrentImpression();
+  }
+
+  /// Ver [_SwipeCard.resetToken].
+  int _cardResetToken = 0;
 
   void _removeRewindActionFor(String targetUid) {
     final RewindState next = _rewindState.forget(targetUid);
@@ -1895,6 +2044,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       setState(() {
         _pendingAd = false;
         _excluded = <String>{..._excluded}..remove(action.targetUid);
+        // Y de la última lectura buena, que es con la que se cubre una lectura
+        // fallida: si no, quien acabas de recuperar volvería a quedar fuera.
+        _exclusions = _exclusions?.withoutGesture(action.targetUid);
         // Deshecha la acción, deja de estar decidido: puede volver a salir.
         // Sin esto el perfil no reaparece y el usuario habría gastado su marcha
         // atrás para nada.
@@ -2124,6 +2276,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Responder a un prompt: MISMO camino que responder a una foto (gate de
+  /// pendientes, saldo, métrica, avance con rewind). Antes mandaba el like o el
+  /// Attra y ya: la tarjeta se quedaba en pantalla (parecía que no había ido),
+  /// no se podía deshacer, no contaba en el embudo y se saltaba el límite de
+  /// conversaciones pendientes. Si hacía match, al cerrar el diálogo la
+  /// persona seguía delante y un pase le escribía un dislike a un match.
   Future<void> _onRespondToPrompt(
       SeedProfile profile, PublicPrompt prompt) async {
     final PhotoResponseResult? res = await PromptResponseSheet.show(
@@ -2135,7 +2293,21 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       canComment: widget.canComment,
     );
     if (res == null || !mounted) return;
-    if (res.kind == PhotoResponseKind.like) {
+    final bool isAttra = res.kind == PhotoResponseKind.attra;
+    // El gate va DESPUÉS de la hoja: aquí el tipo (like o Attra) se elige
+    // dentro, y cada uno tiene su propio interruptor de bloqueo suave.
+    if (await _pendingBlocks(isAttra: isAttra)) return;
+    if (!mounted) return;
+    if (isAttra && widget.attrasBalance <= 0) {
+      _snack('No tienes Attras suficientes.');
+      return;
+    }
+    // `targetUid` explícito: con la hoja abierta el muro puede haberse
+    // recompuesto y la carta actual ser ya otra persona (ver [_advance]).
+    if (!isAttra) {
+      widget.metrics
+          ?.log(FeedMetricsService.likeSent, uid: _uid, targetUid: profile.id);
+      _advance(targetUid: profile.id, rewindAction: FeedActionKind.like);
       await _sendAndHandle(
         () => widget.matchService.sendLike(
           profile.id,
@@ -2147,6 +2319,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         profile,
       );
     } else {
+      widget.metrics
+          ?.log(FeedMetricsService.attraSent, uid: _uid, targetUid: profile.id);
+      _advance(targetUid: profile.id, notRewindable: true);
       await _sendAndHandle(
         () => widget.matchService.sendAttra(
           profile.id,
@@ -2238,7 +2413,16 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           }
           break;
         case MatchOutcome.limitReached:
+          // El like NO se ha escrito: la carta vuelve. Antes el avance
+          // optimista se quedaba y cada like al tope se comía a una persona
+          // hasta la siguiente recarga, sin like, sin aviso a nadie y sin
+          // marcha atrás para Free.
+          _undoAdvance(profile.id);
           _snack('Has alcanzado tu límite de likes de hoy.');
+          if (!_likeLimitPaywallShown) {
+            _likeLimitPaywallShown = true;
+            widget.onOpenUpgrade?.call();
+          }
           break;
         case MatchOutcome.insufficientAttras:
           _snack('No tienes Attras suficientes.');
@@ -2330,6 +2514,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       initial: _filters,
       isPlus: widget.isPlus,
       canVisualMatch: widget.canUseVisualMatch,
+      radiusKm: _effectiveRadiusKm.round(),
     );
     _applyFilters(result);
   }
@@ -2337,7 +2522,18 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   void _applyFilters(FeedFilters? result) {
     if (result == null || !mounted) return;
     setState(() => _filters = result);
+    _saveFilters(result);
     _load();
+  }
+
+  /// Guarda los filtros elegidos (best-effort: sin red, Firestore la encola;
+  /// si falla, el feed sigue funcionando con ellos en esta sesión).
+  void _saveFilters(FeedFilters filters) {
+    final Future<void> Function(FeedFilters)? save = widget.onSaveFilters;
+    if (save == null) return;
+    unawaited(save(filters).catchError((Object error) {
+      if (kDebugMode) debugPrint('[Attra][Filtros] no se guardaron: $error');
+    }));
   }
 
   /// Chip de un filtro de Plus. Sin el plan lleva candado y lleva al paywall:
@@ -2367,7 +2563,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// filtro, relleno cuando está puesto. Sustituye a la cabecera con título, que
   /// ocupaba una fila entera para decir "Descubrir".
   Widget _filterBar() {
-    final FeedFilters f = _filters;
+    // Lo que se APLICA: sin Plus, sus filtros no cuentan en el badge.
+    final FeedFilters f = _appliedFilters;
+    final int radiusKm = _effectiveRadiusKm.round();
     // Modo viajes: antes un globo suelto; ahora un chip más, relleno si estás
     // de viaje, que es cuando está cambiando de dónde salen los perfiles. Con
     // el plan caducado el viaje no cuenta y el chip no puede decir lo contrario.
@@ -2397,10 +2595,16 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         ),
         FeedFilterChip(
           key: const ValueKey<String>('feed-chip-distance'),
-          label: 'Distancia',
+          // El radio que se está aplicando, siempre: sin él, "Distancia"
+          // apagado se leía como "sin límite" mientras el feed cortaba en el
+          // radio del onboarding. Corto (icono + km) para que la fila de chips
+          // siga cabiendo en un móvil.
+          icon: Icons.near_me_outlined,
+          label: '$radiusKm km',
           active: f.maxDistanceKm != null,
-          onTap: () async =>
-              _applyFilters(await QuickFilterSheet.distance(context, _filters)),
+          onTap: () async => _applyFilters(await QuickFilterSheet.distance(
+              context, _filters,
+              radiusKm: radiusKm)),
         ),
         _plusFilterChip(
           label: 'Altura',
@@ -3058,6 +3262,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           stories: stories,
           storySeen: _ownerStoriesSeen(profile.id),
           onOpenStory: _openBlindViewer,
+          resetToken: _cardResetToken,
           // Marcha atrás en la propia tarjeta: es donde se da el like y el pase
           // cuando el muro está apagado.
           rewind: _rewindState,
@@ -3212,6 +3417,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     // no modificables.
     setState(() {
       _excluded = <String>{..._excluded, profile.id};
+      // También en la última lectura buena: si la siguiente carga no puede
+      // leer los bloqueos y se cubre con esta, el bloqueado no puede volver.
+      _exclusions = _exclusions?.withBlocked(profile.id);
+      _dislikedUids = <String>{..._dislikedUids}..remove(profile.id);
       _consumed.add(profile.id);
       _rankedPool = _rankedPool
           .where((SeedProfile p) => p.id != profile.id)
@@ -3240,10 +3449,16 @@ class _SwipeCard extends StatefulWidget {
     this.stories = const <Story>[],
     this.storySeen = false,
     this.onOpenStory,
+    this.resetToken = 0,
   });
 
   final SeedProfile profile;
   final bool likedMe;
+
+  /// Cambia cuando la MISMA persona vuelve a la tarjeta tras un gesto que el
+  /// backend rechazó (tope diario): la tarjeta había salido volando y, sin
+  /// cambio de perfil, se quedaba fuera de la pantalla.
+  final int resetToken;
 
   /// Marcha atrás: estado (calculado por el feed) y acción. La tarjeta no sabe
   /// de planes ni de historial, solo lo pinta.
@@ -3305,7 +3520,8 @@ class _SwipeCardState extends State<_SwipeCard>
   @override
   void didUpdateWidget(covariant _SwipeCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.profile.id != widget.profile.id) {
+    if (oldWidget.profile.id != widget.profile.id ||
+        oldWidget.resetToken != widget.resetToken) {
       _controller.stop();
       setState(() => _dx = 0);
     }
@@ -3813,6 +4029,7 @@ class _PromptCard extends StatelessWidget {
               shape: const CircleBorder(),
               elevation: 2,
               child: InkWell(
+                key: ValueKey<String>('feed-prompt-respond-${prompt.id}'),
                 customBorder: const CircleBorder(),
                 onTap: onRespond,
                 child: Padding(

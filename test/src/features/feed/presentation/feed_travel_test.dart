@@ -3,6 +3,7 @@ import 'package:attra/src/features/auth/domain/app_user.dart';
 import 'package:attra/src/features/auth/domain/location_refresh_policy.dart';
 import 'package:attra/src/features/auth/domain/resolved_place.dart';
 import 'package:attra/src/features/chat/data/chat_service.dart';
+import 'package:attra/src/features/feed/domain/feed_exclusions.dart';
 import 'package:attra/src/features/feed/presentation/feed_screen.dart';
 import 'package:attra/src/features/geo/data/geo_repository.dart';
 import 'package:attra/src/features/match/data/match_service.dart';
@@ -349,10 +350,8 @@ class _SinGps implements DeviceLocationSource {
 
 class _MatchServiceStub implements MatchService {
   @override
-  Future<Set<String>> fetchExcludedUids(String uid) async => const <String>{};
-
-  @override
-  Future<Set<String>> fetchDislikedUids(String uid) async => const <String>{};
+  Future<FeedExclusions> fetchExcludedUids(String uid) async =>
+      const FeedExclusions();
 
   @override
   Future<void> passProfile(String toUid) async {}

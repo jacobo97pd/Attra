@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../feed/domain/feed_exclusions.dart';
 import '../domain/like.dart';
 import '../domain/received_like_priority.dart';
 import '../domain/sent_like_ordering.dart';
@@ -27,58 +28,45 @@ class MatchRepository {
   CollectionReference<Map<String, dynamic>> get _blocks =>
       _firestore.collection('blocks');
 
-  /// Uids que el usuario PASÓ (descartes/dislikes), para la "segunda vuelta":
-  /// re-verlos cuando se acaba el feed. Solo dislikes (no likes ni matches).
-  Future<Set<String>> fetchDislikedUids(String uid) async {
-    final QuerySnapshot<Map<String, dynamic>> snap =
-        await _dislikes.where('fromUid', isEqualTo: uid).get();
-    final Set<String> out = <String>{};
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
-      final String? to = d.data()['toUid'] as String?;
-      if (to != null && to.isNotEmpty) out.add(to);
-    }
-    return out;
-  }
-
-  /// Uids con los que el usuario ya interactuo (like, pass, match) o bloqueo,
-  /// para excluirlos del feed. Lecturas puntuales permitidas por las reglas
-  /// (fromUid==me / blockerUid==me / participante). Los que ME bloquearon NO se
-  /// pueden leer (reglas), pero el backend igualmente impide interactuar.
-  Future<Set<String>> fetchExcludedUids(String uid) async {
-    final List<QuerySnapshot<Map<String, dynamic>>> results = await Future.wait(
-      <Future<QuerySnapshot<Map<String, dynamic>>>>[
-        _likes.where('fromUid', isEqualTo: uid).get(),
-        _dislikes.where('fromUid', isEqualTo: uid).get(),
-        _matches.where('users', arrayContains: uid).get(),
-        _blocks.where('blockerUid', isEqualTo: uid).get(),
-      ],
-    );
-
-    final Set<String> excluded = <String>{};
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-        in results[0].docs) {
-      final String? to = d.data()['toUid'] as String?;
-      if (to != null) excluded.add(to);
-    }
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-        in results[1].docs) {
-      final String? to = d.data()['toUid'] as String?;
-      if (to != null) excluded.add(to);
-    }
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-        in results[2].docs) {
-      final List<dynamic> users =
-          (d.data()['users'] as List<dynamic>?) ?? const <dynamic>[];
-      for (final dynamic u in users) {
-        if (u is String && u != uid) excluded.add(u);
+  /// A quién excluir del feed, SEPARADO POR MOTIVO (ver [FeedExclusions]):
+  /// likes enviados, pases (normales y permanentes), matches de cualquier
+  /// estado y bloqueos hechos. Lecturas puntuales permitidas por las reglas
+  /// (fromUid==me / blockerUid==me / participante). Los bloqueos que ME hicieron
+  /// no se pueden leer (reglas): de esos solo queda el match en 'blocked'.
+  ///
+  /// Cada lectura va por su cuenta: antes iban en un solo `Future.wait` y el
+  /// fallo de UNA (un token que se refresca, un `unavailable`) tiraba las
+  /// cuatro, y el feed seguía con NADIE excluido. Ahora la que falla se apunta
+  /// en [FeedExclusions.failed] y el feed decide qué hacer sin perder las demás.
+  /// Esta llamada ya no lanza.
+  Future<FeedExclusions> fetchExcludedUids(String uid) async {
+    Future<List<Map<String, dynamic>>?> read(
+        Query<Map<String, dynamic>> query) async {
+      try {
+        final QuerySnapshot<Map<String, dynamic>> snap = await query.get();
+        return snap.docs
+            .map((QueryDocumentSnapshot<Map<String, dynamic>> d) => d.data())
+            .toList(growable: false);
+      } catch (_) {
+        return null;
       }
     }
-    for (final QueryDocumentSnapshot<Map<String, dynamic>> d
-        in results[3].docs) {
-      final String? blocked = d.data()['blockedUid'] as String?;
-      if (blocked != null) excluded.add(blocked);
-    }
-    return excluded;
+
+    final List<List<Map<String, dynamic>>?> results = await Future.wait(
+      <Future<List<Map<String, dynamic>>?>>[
+        read(_likes.where('fromUid', isEqualTo: uid)),
+        read(_dislikes.where('fromUid', isEqualTo: uid)),
+        read(_matches.where('users', arrayContains: uid)),
+        read(_blocks.where('blockerUid', isEqualTo: uid)),
+      ],
+    );
+    return FeedExclusions.fromDocs(
+      uid: uid,
+      likes: results[0],
+      dislikes: results[1],
+      matches: results[2],
+      blocks: results[3],
+    );
   }
 
   /// Matches activos del usuario, mas recientes primero. La consulta ya pide

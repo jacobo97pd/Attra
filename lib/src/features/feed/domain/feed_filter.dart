@@ -13,8 +13,10 @@ import 'feed_filters.dart';
 /// 2. Compatibilidad BIDIRECCIONAL de género (siempre dura).
 /// 3. Filtros del usuario ([filters]). Un filtro con valor solo EXCLUYE si es
 ///    "no negociable" (su clave está en filters.dealbreakers); si no, es
-///    preferencia blanda y no excluye. El género a mostrar y "solo con foto"
-///    son siempre duros. Si falta el dato del candidato, no excluye (permisivo).
+///    preferencia blanda y no excluye. El género a mostrar, "solo con foto" y
+///    "solo verificados" son siempre duros. La EDAD es dura y RECÍPROCA: mi
+///    edad en su rango y la suya en el mío. Si falta el dato del candidato, no
+///    excluye (permisivo).
 class FeedFilter {
   const FeedFilter._();
 
@@ -39,6 +41,7 @@ class FeedFilter {
     bool travelersNeedGeo = false,
     String myCity = '',
     IntentMode myIntent = IntentMode.dating,
+    int? myAge,
   }) {
     final String noGeoCityKey =
         noGeoCity.trim().isEmpty ? '' : PlaceNames.canonCity(noGeoCity);
@@ -142,13 +145,32 @@ class FeedFilter {
         return false;
       }
 
-      // --- Con deal-breaker: solo excluyen si "no negociable" ---
-      // Edad.
-      if (filters.isDealbreaker(FeedFilters.kAge) &&
-          p.age != null &&
-          (p.age! < filters.minAge || p.age! > filters.maxAge)) {
+      // "Solo verificados": duro, como "solo con foto". Solo excluía si además
+      // se marcaba "no negociable", un interruptor que salía apagado: se
+      // activaba el filtro, se aplicaba y seguían saliendo no verificados.
+      if (filters.verifiedOnly && !p.verified) return false;
+
+      // --- EDAD: dura y RECÍPROCA (la misma regla que el directo,
+      //     `isLiveCompatible` en functions/src/live.ts) ---
+      // El rango del onboarding ("Personaliza a quién te mostraremos") no se
+      // usaba en ninguna parte: con 22 años y 22-30 salías a quien tiene 58, y
+      // tú veías a gente de 58. Ahora mi rango (el de [filters], que sale de
+      // `preferences.preferredAgeMin/Max`) y el que publica cada uno en
+      // discovery tienen que casar en los DOS sentidos. Sin dato, permisivo.
+      if (p.age != null &&
+          !FeedFilters.ageInRange(p.age!, filters.minAge, filters.maxAge)) {
         return false;
       }
+      if (myAge != null &&
+          (p.preferredAgeMin != null || p.preferredAgeMax != null)) {
+        final ({int min, int max}) theirs =
+            FeedFilters.clampAgeRange(p.preferredAgeMin, p.preferredAgeMax);
+        if (!FeedFilters.ageInRange(myAge, theirs.min, theirs.max)) {
+          return false;
+        }
+      }
+
+      // --- Con deal-breaker: solo excluyen si "no negociable" ---
       // (La distancia se aplica arriba, en RELEVANCIA GEOGRÁFICA.)
       // Qué busca.
       if (_excludesString(filters, FeedFilters.kGoal, filters.relationshipGoal,
@@ -183,12 +205,6 @@ class FeedFilter {
           p.heightCm != null &&
           (p.heightCm! < filters.minHeight ||
               p.heightCm! > filters.maxHeight)) {
-        return false;
-      }
-      // Verificación.
-      if (filters.isDealbreaker(FeedFilters.kVerified) &&
-          filters.verifiedOnly &&
-          !p.verified) {
         return false;
       }
       return true;

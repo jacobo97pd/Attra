@@ -34,6 +34,10 @@ class AppUser {
     this.countryName = '',
     this.countryIso2 = '',
     this.maxDistanceKm,
+    this.age,
+    this.preferredAgeMin,
+    this.preferredAgeMax,
+    this.savedFeedFilters = const <String, dynamic>{},
     this.slowDatingEnabled = false,
     this.tutorialCompleted = false,
     this.screenshotProtectionEnabled = false,
@@ -191,8 +195,25 @@ class AppUser {
   final String countryIso2;
 
   /// Radio máximo preferido en km (preferences.maxDistanceKm). null = usa el
-  /// radio por defecto del feed.
+  /// radio por defecto del feed. Es la ÚNICA verdad del radio: la escriben el
+  /// onboarding y el filtro "Distancia" del feed.
   final int? maxDistanceKm;
+
+  /// Edad propia (profile.age, o calculada de la fecha de nacimiento). La usa
+  /// el feed para la reciprocidad: si no cabes en el rango de alguien, no le
+  /// sales ni te sale. null = sin dato (permisivo).
+  final int? age;
+
+  /// Rango de edad que busca (`preferences.preferredAgeMin/Max`, obligatorio
+  /// en el onboarding y editable desde el filtro "Edad" del feed). Antes solo
+  /// lo leía el directo: el feed empezaba siempre en 18-80.
+  final int? preferredAgeMin;
+  final int? preferredAgeMax;
+
+  /// Resto de filtros del feed guardados (`preferences.feedFilters`), en
+  /// crudo: los interpreta `FeedFilters.fromPreferences`. Antes vivían solo en
+  /// memoria y un "no negociable" puesto el viernes desaparecía el sábado.
+  final Map<String, dynamic> savedFeedFilters;
 
   /// Modo viajes (Plus/Pro): si está activo, el feed se centra en el destino
   /// elegido y tu perfil aparece allí "de viaje". De `users/{uid}.travel`.
@@ -321,6 +342,15 @@ class AppUser {
           ? _asIso2(profile['currentCountryIso2'])
           : _asIso2(profile['currentCountryCode']),
       maxDistanceKm: _asIntOrNull(preferences['maxDistanceKm']),
+      // Misma prioridad que la ficha pública (discovery.ts): edad declarada y,
+      // si no, la de la fecha de nacimiento.
+      age: _asIntOrNull(profile['age']) ??
+          _asIntOrNull(data['age']) ??
+          _ageFromBirthDate(_asEpochDate(profile['birthDate']) ??
+              _asEpochDate(data['birthDate'])),
+      preferredAgeMin: _asIntOrNull(preferences['preferredAgeMin']),
+      preferredAgeMax: _asIntOrNull(preferences['preferredAgeMax']),
+      savedFeedFilters: _asMap(preferences['feedFilters']),
       slowDatingEnabled: _asBool(settings['privacy.slowDating']),
       tutorialCompleted: _asBool(settings['tutorial.completed']),
       screenshotProtectionEnabled:
@@ -377,6 +407,17 @@ class AppUser {
     }
     if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
     return null;
+  }
+
+  static int? _ageFromBirthDate(DateTime? birthDate) {
+    if (birthDate == null) return null;
+    final DateTime now = DateTime.now();
+    final DateTime local = birthDate.toLocal();
+    int age = now.year - local.year;
+    final bool birthdayPassed = now.month > local.month ||
+        (now.month == local.month && now.day >= local.day);
+    if (!birthdayPassed) age -= 1;
+    return age < 0 || age > 120 ? null : age;
   }
 
   static double? _asDouble(dynamic value) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/attra_colors.dart';
+import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
 import 'filters_screen.dart';
 
@@ -19,9 +20,15 @@ class QuickFilterSheet {
   static Future<FeedFilters?> age(BuildContext context, FeedFilters current) =>
       _show(context, _AgeSheet(current: current));
 
+  /// [radiusKm] es el radio que el feed está aplicando AHORA: el slider parte
+  /// de ahí. Partía de 100 fijos y pulsar "Aplicar" sin tocarlo duplicaba el
+  /// radio del onboarding (50).
   static Future<FeedFilters?> distance(
-          BuildContext context, FeedFilters current) =>
-      _show(context, _DistanceSheet(current: current));
+    BuildContext context,
+    FeedFilters current, {
+    int radiusKm = FeedFilter.defaultRadiusKm,
+  }) =>
+      _show(context, _DistanceSheet(current: current, radiusKm: radiusKm));
 
   static Future<FeedFilters?> height(
           BuildContext context, FeedFilters current) =>
@@ -53,6 +60,7 @@ class _SheetFrame extends StatelessWidget {
     required this.onClear,
     required this.onApply,
     required this.children,
+    this.clearLabel = 'Quitar',
   });
 
   final String title;
@@ -60,6 +68,10 @@ class _SheetFrame extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onApply;
   final List<Widget> children;
+
+  /// Texto del botón de volver al valor neutro. La distancia no se puede
+  /// "quitar" (siempre hay un radio): vuelve al de por defecto.
+  final String clearLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +96,7 @@ class _SheetFrame extends StatelessWidget {
                 TextButton(
                   key: const ValueKey<String>('quick-filter-clear'),
                   onPressed: onClear,
-                  child: const Text('Quitar'),
+                  child: Text(clearLabel),
                 ),
               ],
             ),
@@ -145,11 +157,13 @@ class _AgeSheetState extends State<_AgeSheet> {
     widget.current.minAge.toDouble(),
     widget.current.maxAge.toDouble(),
   );
-  late bool _db = widget.current.isDealbreaker(FeedFilters.kAge);
 
   @override
   Widget build(BuildContext context) {
     final FeedFilters f = widget.current;
+    // Sin "No negociable": la edad es SIEMPRE dura y recíproca (es el rango
+    // del onboarding, el mismo que usa el directo). Un interruptor que ya no
+    // cambia nada sería mentir al usuario.
     return _SheetFrame(
       title: 'Edad',
       summary: '${_age.start.round()} – ${_age.end.round()} años',
@@ -161,7 +175,7 @@ class _AgeSheetState extends State<_AgeSheet> {
       onApply: () => Navigator.of(context).pop(f.copyWith(
         minAge: _age.start.round(),
         maxAge: _age.end.round(),
-        dealbreakers: _withKey(f.dealbreakers, FeedFilters.kAge, _db),
+        dealbreakers: _withKey(f.dealbreakers, FeedFilters.kAge, false),
       )),
       children: <Widget>[
         RangeSlider(
@@ -172,39 +186,63 @@ class _AgeSheetState extends State<_AgeSheet> {
           labels: RangeLabels('${_age.start.round()}', '${_age.end.round()}'),
           onChanged: (RangeValues v) => setState(() => _age = v),
         ),
-        _DealbreakerSwitch(
-          value: _db,
-          onChanged: (bool v) => setState(() => _db = v),
-        ),
+        const _AgeReciprocityNote(),
       ],
     );
   }
 }
 
+/// Por qué el rango de edad deja gente fuera (y por qué a ti te pueden no ver).
+class _AgeReciprocityNote extends StatelessWidget {
+  const _AgeReciprocityNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'Es recíproco: ves a quien está en tu rango y además te incluye en el '
+      'suyo.',
+      key: const ValueKey<String>('quick-filter-age-note'),
+      style: Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(color: context.colors.textSecondary),
+    );
+  }
+}
+
 class _DistanceSheet extends StatefulWidget {
-  const _DistanceSheet({required this.current});
+  const _DistanceSheet({required this.current, required this.radiusKm});
 
   final FeedFilters current;
+
+  /// Radio que el feed aplica ahora mismo (el guardado o el por defecto).
+  final int radiusKm;
 
   @override
   State<_DistanceSheet> createState() => _DistanceSheetState();
 }
 
 class _DistanceSheetState extends State<_DistanceSheet> {
-  // 100 km de partida, como en la pantalla completa.
-  late double _km = (widget.current.maxDistanceKm ?? 100).toDouble();
+  // Parte del radio que se está APLICANDO (antes, de 100 fijos) y con el mismo
+  // tope que el onboarding (antes 200: quien eligió 300 no podía volver).
+  late double _km = widget.radiusKm
+      .clamp(FeedFilters.distanceFloor, FeedFilters.distanceCeil)
+      .toDouble();
 
   @override
   Widget build(BuildContext context) {
     final FeedFilters f = widget.current;
     // La distancia es siempre dura: poner un máximo y que siga saliendo gente
-    // de más lejos no tiene lectura posible.
+    // de más lejos no tiene lectura posible. Y siempre HAY un radio, así que
+    // "Quitar" no existe: se vuelve al de por defecto, y se guarda (si no, al
+    // reiniciar volvería el de antes).
     return _SheetFrame(
       title: 'Distancia',
       summary: 'Hasta ${_km.round()} km',
+      clearLabel: 'Por defecto',
       onClear: () => Navigator.of(context).pop(f.copyWith(
-        clearDistance: true,
-        dealbreakers: _withKey(f.dealbreakers, FeedFilters.kDistance, false),
+        maxDistanceKm: FeedFilter.defaultRadiusKm,
+        dealbreakers: _withKey(f.dealbreakers, FeedFilters.kDistance, true),
       )),
       onApply: () => Navigator.of(context).pop(f.copyWith(
         maxDistanceKm: _km.round(),
@@ -213,9 +251,9 @@ class _DistanceSheetState extends State<_DistanceSheet> {
       children: <Widget>[
         Slider(
           value: _km,
-          min: 1,
-          max: 200,
-          divisions: 199,
+          min: FeedFilters.distanceFloor.toDouble(),
+          max: FeedFilters.distanceCeil.toDouble(),
+          divisions: FeedFilters.distanceCeil - FeedFilters.distanceFloor,
           label: '${_km.round()} km',
           onChanged: (double v) => setState(() => _km = v),
         ),

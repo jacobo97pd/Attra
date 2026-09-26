@@ -148,6 +148,7 @@ class TravelScope {
     required Set<String> excludedUids,
     FeedFilters filters = const FeedFilters(),
     IntentMode myIntent = IntentMode.dating,
+    int? myAge,
   }) {
     List<SeedProfile> run(int? radiusKm) => FeedFilter.apply(
           profiles: profiles,
@@ -163,6 +164,9 @@ class TravelScope {
           maxKmOverride: radiusKm,
           noGeoCity: origin.hasCoordinates ? origin.city : '',
           myIntent: myIntent,
+          // Viajando la edad sigue siendo recíproca: el destino no cambia a
+          // quién quieres ver ni quién te quiere ver.
+          myAge: myAge,
         );
 
     if (!origin.hasCoordinates) {
