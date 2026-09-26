@@ -229,18 +229,19 @@ void main() {
     );
 
     test('IA apagada por emergencia: el viaje de un Pro sigue contando', () {
-      // Es la palanca de emergencia de la IA. Antes el feed usaba
-      // canUseTravelMode (que la mira) y todo viajero Pro volvía a su casa
-      // mientras el backend le seguía publicando en el destino.
+      // Es la palanca de emergencia de la IA. Antes apagaba el tier Pro entero
+      // y todo viajero Pro volvía a su casa mientras el backend le seguía
+      // publicando en el destino. Viajar no es IA: ni la hoja ni el feed
+      // deben enterarse de que la IA está apagada.
       const MonetizationFeatureFlags iaApagada =
           MonetizationFeatureFlags(aiKillSwitch: true);
       expect(
           pro.hasFeature(PremiumFeature.travelMode,
               flags: iaApagada, at: ahora),
-          isFalse,
-          reason: 'la hoja no deja ACTIVAR viajes nuevos');
+          isTrue,
+          reason: 'la palanca de la IA solo apaga funciones de IA');
       expect(TravelScope.planKeepsTravel(pro, now: ahora), isTrue,
-          reason: 'pero el que ya está puesto sigue, como en el backend');
+          reason: 'y el viaje puesto sigue, como en el backend');
     });
 
     test('monetización apagada: igual, manda el plan', () {

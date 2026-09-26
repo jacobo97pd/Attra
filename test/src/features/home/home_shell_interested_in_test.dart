@@ -186,7 +186,8 @@ Future<_Calls> _pumpShell(
           String iso2 = '',
           String city = '',
           String country = '',
-        }) async {},
+        }) async =>
+            null,
         onLoadProfileByUid: (String _) async => null,
       ),
     ),
