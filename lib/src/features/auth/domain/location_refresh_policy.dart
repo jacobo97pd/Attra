@@ -87,10 +87,19 @@ class StoredLocation {
     this.longitude,
     this.updatedAt,
     this.measuredAt,
+    this.placeLatitude,
+    this.placeLongitude,
   });
 
   final double? latitude;
   final double? longitude;
+
+  /// `users/{uid}.location.placeLat/placeLng`: dónde se resolvieron por última
+  /// vez la ciudad y el país. Si el geocodificador falla al moverse, las
+  /// coordenadas se guardan igual pero este punto se queda atrás: así se sabe
+  /// que el país guardado es el de antes y hay que volver a preguntarlo.
+  final double? placeLatitude;
+  final double? placeLongitude;
 
   /// `users/{uid}.location.updatedAt`. En producción hay documentos SIN esta
   /// marca (se escribía, pero nadie la leía), así que "sin marca" no puede
@@ -331,6 +340,35 @@ class LocationRefreshPolicy {
   /// ~1,1 km, así que por debajo de 1 km la escritura no cambiaría nada de lo que
   /// ven los demás.
   static const double minMoveKm = 1;
+
+  /// Umbral de movimiento para un radio de feed dado: la mitad del radio,
+  /// entre [minMoveKm] y [significantMoveKm].
+  ///
+  /// Es UNA sola función para dos decisiones que tienen que coincidir: cuándo
+  /// se GUARDA la ubicación y cuándo se RECARGA el feed. Con dos umbrales
+  /// distintos (el de recarga fijo en 10 km), con radio 10 km un movimiento de
+  /// 8 km se guardaba y se publicaba, pero el mazo seguía filtrado desde el
+  /// punto viejo: vecinos nuevos ocultos y gente a 18 km en pantalla.
+  static double moveThresholdForRadius(double radiusKm) =>
+      (radiusKm / 2).clamp(minMoveKm, significantMoveKm).toDouble();
+
+  /// ¿Hay que volver a preguntar ciudad y país aunque las coordenadas no
+  /// cambien?
+  ///
+  /// Sí cuando el último intento del geocodificador no llegó a guardarse (sin
+  /// red, limitado por tasa): las coordenadas ya son las de Lisboa y el país
+  /// sigue siendo España, y como la siguiente lectura ya no es un "movimiento",
+  /// nadie volvía a preguntarlo en todo el viaje. Portugueses y españoles lo
+  /// descartaban a la vez. Documentos sin marca (anteriores a ella): una vez,
+  /// para poder fecharlos.
+  static bool needsPlaceRetry(StoredLocation stored) {
+    if (!stored.hasCoordinates) return false;
+    final double? pLat = stored.placeLatitude;
+    final double? pLng = stored.placeLongitude;
+    if (pLat == null || pLng == null) return true;
+    return distanceKm(stored.latitude!, stored.longitude!, pLat, pLng) >=
+        significantMoveKm;
+  }
 
   /// Con permiso concedido, si la ubicación sigue más vieja que esto es que los
   /// refrescos están fallando (GPS sin señal, timeout, escritura rechazada): se

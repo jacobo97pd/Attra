@@ -118,6 +118,23 @@ class RankingSignals {
   final int exposureCap;
 }
 
+/// Punto desde el que el ranking mide la CERCANÍA.
+///
+/// Sin él se medía siempre desde `me.latitude/longitude`, que son las
+/// coordenadas REALES (se siguen guardando mientras viajas): quien estaba en
+/// Madrid de viaje en Cádiz veía a la gente de Madrid con cercanía 1 y a la de
+/// Cádiz con 0, y Madrid subía arriba del todo. El feed pasa aquí el mismo
+/// punto con el que filtra: el destino al viajar, nada en una búsqueda global.
+class RankingOrigin {
+  const RankingOrigin({this.lat, this.lng});
+
+  /// Sin punto: cercanía neutra para todos (nunca la de casa).
+  static const RankingOrigin none = RankingOrigin();
+
+  final double? lat;
+  final double? lng;
+}
+
 /// Ranking ORGÁNICO del feed (puro y testeable). NO aplica filtros duros (eso
 /// es de [FeedFilter], antes): aquí solo se ORDENA por compatibilidad real.
 ///
@@ -147,7 +164,8 @@ class RankingScorer {
   /// Ordena [profiles] de mayor a menor afinidad para [me]. [signalsFor] permite
   /// inyectar señales del backend por uid (todo opcional). [config] hace los
   /// pesos/jitter remotamente configurables. [jitterSeed] fija la randomización
-  /// (tests).
+  /// (tests). [origin] fija desde dónde se mide la cercanía (si falta, desde
+  /// `me`).
   static List<SeedProfile> rank({
     required List<SeedProfile> profiles,
     required AppUser? me,
@@ -155,6 +173,7 @@ class RankingScorer {
     RankingConfig config = const RankingConfig(),
     bool diversify = true,
     int? jitterSeed,
+    RankingOrigin? origin,
   }) {
     if (profiles.length <= 1) return profiles;
     final List<RankedProfile> scored = score(
@@ -162,6 +181,7 @@ class RankingScorer {
       me: me,
       signalsFor: signalsFor,
       config: config,
+      origin: origin,
     );
     // Randomización controlada: ±jitter estable por candidato (no rompe el
     // orden básico; solo desempata y evita un feed 100% determinista).
@@ -187,14 +207,15 @@ class RankingScorer {
     required AppUser? me,
     RankingSignals Function(SeedProfile)? signalsFor,
     RankingConfig config = const RankingConfig(),
+    RankingOrigin? origin,
   }) {
     final String myIntent = (me?.relationshipIntent ?? '').trim().toLowerCase();
     final Set<String> myInterests = <String>{
       for (final String i in me?.interests ?? const <String>[])
         i.trim().toLowerCase()
     }..removeWhere((String s) => s.isEmpty);
-    final double? myLat = me?.latitude;
-    final double? myLng = me?.longitude;
+    final double? myLat = origin != null ? origin.lat : me?.latitude;
+    final double? myLng = origin != null ? origin.lng : me?.longitude;
     final DateTime now = DateTime.now();
     // Normaliza pesos por si la config remota no suma exactamente 1.
     final double wSum =

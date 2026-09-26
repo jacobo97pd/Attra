@@ -152,7 +152,9 @@ flutter:
   assets:
     - assets/images/
     - assets/geo/countries.json
+    - assets/geo/country_names.json
     - assets/geo/cities/
+    - assets/geo/coords/
     - assets/login/
 
   # To add assets to your application, add an assets section, like this:

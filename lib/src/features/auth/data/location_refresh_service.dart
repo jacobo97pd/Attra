@@ -112,6 +112,12 @@ class LocationRefreshService {
 
   bool _inFlight = false;
 
+  /// Ya se reintentó en esta sesión resolver un sitio atrasado (ver
+  /// [LocationRefreshPolicy.needsPlaceRetry]). Una vez basta: si el
+  /// geocodificador sigue sin contestar, insistir en cada `resumed` solo
+  /// gastaría la cuota de CLGeocoder.
+  bool _placeRetryTried = false;
+
   /// Ya se pidió el permiso con un gesto del usuario y no se consiguió. En iOS
   /// `restricted` (Screen Time/MDM) el diálogo no se abre NUNCA, así que seguir
   /// ofreciendo "Activar" es un botón que no puede funcionar.
@@ -242,7 +248,15 @@ class LocationRefreshService {
         now: _clock(),
         moveThresholdKm: moveThresholdKm,
       );
-      if (!decision.persist) {
+      // El último intento del geocodificador no llegó a guardarse: el país
+      // guardado puede ser el de antes aunque las coordenadas ya sean las
+      // buenas. Una vez por sesión (CLGeocoder va por tasa) y nunca viajando
+      // (el feed está anclado al destino y no se publica la ciudad real).
+      final bool retryPlace = _placeResolver != null &&
+          !travelActive &&
+          !_placeRetryTried &&
+          LocationRefreshPolicy.needsPlaceRetry(known);
+      if (!decision.persist && !retryPlace) {
         return LocationRefreshOutcome(
           reason: plan.reason,
           notice: _notice(known, permission, travelActive),
@@ -257,6 +271,47 @@ class LocationRefreshService {
       // horas después y en otra ciudad.
       final DateTime fixedAt = fix.timestamp ?? _clock();
 
+      // La ciudad y el pais se resuelven ANTES de escribir, para que vayan en
+      // la MISMA escritura que las coordenadas. En dos escrituras habria un
+      // intervalo con coordenadas nuevas y pais viejo, y el trigger de
+      // backend republicaria `discovery` en ese estado incoherente.
+      //
+      // Solo se pide si la persona se ha movido de verdad (o si el intento
+      // anterior falló, ver arriba): el geocodificador de iOS esta limitado por
+      // tasa y esto no vale una peticion por arranque.
+      ResolvedPlace? place;
+      if (_placeResolver != null &&
+          (retryPlace ||
+              decision.reason == LocationPersistReason.moved ||
+              decision.reason == LocationPersistReason.noCoordinates)) {
+        if (retryPlace) _placeRetryTried = true;
+        try {
+          place = await _placeResolver.resolve(
+              latitude: fix.latitude, longitude: fix.longitude);
+        } catch (error) {
+          // Blindaje del CONTRATO, no del PlatformPlaceResolver (ese ya
+          // captura por dentro). No poder nombrar la ciudad jamas puede
+          // impedir guardar unas coordenadas buenas: se perderia el arreglo
+          // entero por un fallo de red. Lo caza un test.
+          if (kDebugMode) {
+            debugPrint('[Attra][Ubicación] sitio sin resolver: $error');
+          }
+        }
+      }
+      final bool placeUsable = place != null && place.isUsable;
+      // Reintento del sitio sin movimiento: solo merece una escritura si esta
+      // vez sí hay sitio. Si vuelve a fallar no se toca nada (la marca de sitio
+      // atrasado ya está guardada y se reintentará en otra sesión).
+      if (!decision.persist && !placeUsable) {
+        return LocationRefreshOutcome(
+          reason: plan.reason,
+          notice: _notice(known, permission, travelActive),
+          permission: permission,
+          fix: fix,
+          persistReason: decision.reason,
+        );
+      }
+
       bool failed = false;
       try {
         // Con timeout: la future de una escritura de Firestore no completa hasta
@@ -266,31 +321,6 @@ class LocationRefreshService {
         // (Firestore la confirmará al recuperar red), solo deja de esperarla: se
         // trata como fallo para que la ronda siguiente vuelva a intentarlo en vez
         // de dar por fresca una ubicación que quizá no llegó.
-        // La ciudad y el pais se resuelven ANTES de escribir, para que vayan en
-        // la MISMA escritura que las coordenadas. En dos escrituras habria un
-        // intervalo con coordenadas nuevas y pais viejo, y el trigger de
-        // backend republicaria `discovery` en ese estado incoherente.
-        //
-        // Solo se pide si la persona se ha movido de verdad: el geocodificador
-        // de iOS esta limitado por tasa y esto no vale una peticion por
-        // arranque.
-        ResolvedPlace? place;
-        if (_placeResolver != null &&
-            (decision.reason == LocationPersistReason.moved ||
-                decision.reason == LocationPersistReason.noCoordinates)) {
-          try {
-            place = await _placeResolver.resolve(
-                latitude: fix.latitude, longitude: fix.longitude);
-          } catch (error) {
-            // Blindaje del CONTRATO, no del PlatformPlaceResolver (ese ya
-            // captura por dentro). No poder nombrar la ciudad jamas puede
-            // impedir guardar unas coordenadas buenas: se perderia el arreglo
-            // entero por un fallo de red. Lo caza un test.
-            if (kDebugMode) {
-              debugPrint('[Attra][Ubicación] sitio sin resolver: $error');
-            }
-          }
-        }
         await _persist(
           latitude: fix.latitude,
           longitude: fix.longitude,
@@ -321,6 +351,11 @@ class LocationRefreshService {
               longitude: fix.longitude,
               updatedAt: _clock(),
               measuredAt: fixedAt,
+              // Sin sitio resuelto el punto del sitio se queda donde estaba: es
+              // justo lo que delata que el país guardado es el de antes.
+              placeLatitude: placeUsable ? fix.latitude : known.placeLatitude,
+              placeLongitude:
+                  placeUsable ? fix.longitude : known.placeLongitude,
             );
       if (!failed) _lastPersisted = effective;
 

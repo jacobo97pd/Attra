@@ -26,6 +26,9 @@ import '../../monetization/data/boost_service.dart';
 import '../../monetization/data/entitlement_service.dart';
 import '../../monetization/data/feature_flag_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
+import '../../feed/domain/feed_filter.dart';
+import '../../geo/data/travel_destination_resolvers.dart';
+import '../../geo/domain/travel_destination_resolver.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import '../../profile/domain/intro_media.dart';
 import '../../profile/domain/profile_prompt.dart';
@@ -69,7 +72,9 @@ class SessionController extends ChangeNotifier {
     FriendGroupService? friendGroupService,
     SocialDiscoveryService? socialDiscoveryService,
     SafeDateService? safeDateService,
+    TravelDestinationResolver? travelDestinationResolver,
   })  : _authService = authService,
+        _travelDestinationResolver = travelDestinationResolver,
         _sparkService = sparkService,
         _datePlanService = datePlanService,
         _safeDateService = safeDateService,
@@ -123,6 +128,16 @@ class SessionController extends ChangeNotifier {
   final BoostService? _boostService;
   final FeedMetricsService? _feedMetricsService;
   final NotificationService? _notificationService;
+
+  /// Sitúa el destino de un viaje (dataset → geocodificador → servidor). Se
+  /// crea al primer uso: casi siempre acierta el dataset offline y así ni los
+  /// tests ni una sesión sin viaje tocan Firebase Functions.
+  TravelDestinationResolver? _travelDestinationResolver;
+  TravelDestinationResolver get _travelResolver =>
+      _travelDestinationResolver ??= buildTravelDestinationResolver();
+
+  /// Uids cuyo viaje sin coordenadas ya se intentó reparar en esta sesión.
+  final Set<String> _travelGeoHealTried = <String>{};
 
   /// Bandeja de notificaciones in-app. Null si no se inyecta.
   NotificationService? get notificationService => _notificationService;
@@ -235,22 +250,71 @@ class SessionController extends ChangeNotifier {
 
   /// MODO VIAJES (Plus/Pro): fija (active=true) o desactiva el destino. Refresca
   /// el usuario para que el feed reaccione (lee `AppUser.travel*`).
-  Future<void> setTravelLocation({
+  ///
+  /// Al activar, sitúa ANTES el centro de la ciudad (la hoja tiene el spinner
+  /// puesto mientras tanto): sin él el feed no tenía desde dónde medir y se
+  /// quedaba con todo el país, Madrid incluido, para quien viajaba a Cádiz.
+  Future<TravelApplyResult> setTravelLocation({
     required bool active,
     String iso2 = '',
     String city = '',
     String country = '',
   }) async {
     final String? uid = _state.user?.uid;
-    if (uid == null) return;
+    if (uid == null) return const TravelApplyResult(located: false);
+    TravelDestination? center;
+    if (active && city.trim().isNotEmpty) {
+      center = await _travelResolver.resolve(
+          iso2: iso2, city: city, countryName: country);
+    }
     await _userRepository.setTravelLocation(
       uid: uid,
       active: active,
       iso2: iso2,
       city: city,
       country: country,
+      latitude: center?.latitude,
+      longitude: center?.longitude,
+      geoSource: center?.source ?? TravelGeoSource.none,
     );
     await _refreshAuthenticatedUser(uid);
+    // Viajar a un país entero no tiene centro por diseño: no es un fallo.
+    return TravelApplyResult(
+        located: !active || city.trim().isEmpty || center != null);
+  }
+
+  /// AUTO-REPARACIÓN de viajes guardados sin coordenadas (versiones anteriores
+  /// de la app, o un destino que en su momento no se pudo situar). Añade SOLO
+  /// el centro, sin tocar `active` ni la fecha de fin; el trigger republica
+  /// entonces la ficha en el destino. Una vez por sesión y usuario, sin
+  /// bloquear la entrada: si falla, el viaje sigue a nivel de país.
+  @visibleForTesting
+  Future<void> healTravelGeo(AppUser user) async {
+    if (!user.isTraveling ||
+        user.hasTravelOrigin ||
+        user.travelCity.trim().isEmpty ||
+        !_travelGeoHealTried.add(user.uid)) {
+      return;
+    }
+    try {
+      final TravelDestination? center = await _travelResolver.resolve(
+        iso2: user.travelIso2,
+        city: user.travelCity,
+        countryName: user.travelCountry,
+      );
+      if (center == null || _isDisposed || _state.user?.uid != user.uid) {
+        return;
+      }
+      await _userRepository.patchTravelGeo(
+        uid: user.uid,
+        latitude: center.latitude,
+        longitude: center.longitude,
+        source: center.source,
+      );
+      await _refreshAuthenticatedUser(user.uid);
+    } catch (error) {
+      debugPrint('[Attra][Viajes] no se pudo situar el viaje: $error');
+    }
   }
 
   /// Repositorio de la Settings Platform (consumido por HomeShell para
@@ -937,14 +1001,18 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<List<SeedProfile>> loadSeedProfiles() async {
-    final String uid = _state.user?.uid ?? '';
+    final AppUser? me = _state.user;
+    final String uid = me?.uid ?? '';
     // Seeds (bots) son la base; los perfiles reales (discovery) se anaden si
     // la lectura esta permitida. Si discovery falla (reglas aun no publicadas),
     // el feed sigue mostrando los seeds.
     final List<SeedProfile> seeds = await _userRepository.fetchSeedProfiles();
     List<SeedProfile> discovery = const <SeedProfile>[];
     try {
-      discovery = await _userRepository.fetchDiscoveryProfiles(excludeUid: uid);
+      discovery = await _userRepository.fetchDiscoveryProfiles(
+        excludeUid: uid,
+        countryIso2s: discoveryCountriesFor(me),
+      );
     } catch (_) {
       discovery = const <SeedProfile>[];
     }
@@ -952,11 +1020,11 @@ class SessionController extends ChangeNotifier {
     // BOOST PAGADO: quien tiene un Boost activo entra al pool SIEMPRE, aunque
     // caiga fuera del corte general.
     //
-    // El corte es `discovery.limit(50)` sin ordenar por nada, así que un perfil
-    // impulsado que no estuviera entre esos 50 no aparecía en el feed de nadie:
-    // el Boost solo reordenaba a quien YA te iba a salir. Se vendía "sube al
-    // frente del feed" y ni siquiera se entraba en él. Ordenarlos después
-    // (BoostAwareRanker) no arregla eso; hay que meterlos en el pool.
+    // El pool de discovery va acotado por país y con tope, así que un perfil
+    // impulsado podía no estar: el Boost solo reordenaba a quien YA te iba a
+    // salir. Se vendía "sube al frente del feed" y ni siquiera se entraba en
+    // él. Ordenarlos después (BoostAwareRanker) no arregla eso; hay que meterlos
+    // en el pool.
     final List<SeedProfile> boosted = await _loadBoostedProfiles(
       uid: uid,
       alreadyInPool: <String>{
@@ -966,6 +1034,28 @@ class SessionController extends ChangeNotifier {
     );
 
     return <SeedProfile>[...boosted, ...discovery, ...seeds];
+  }
+
+  /// Países (ISO2) por los que se consulta discovery: el de casa y, si hay un
+  /// viaje activo, el de destino. Los dos a la vez porque el feed decide si el
+  /// viaje cuenta según el plan (que aquí no se conoce): con el plan caducado
+  /// el feed vuelve a casa y el pool tiene que tener a los de casa.
+  ///
+  /// Sin ISO2 guardado (cuentas antiguas) se deduce del nombre si es uno de
+  /// los conocidos; si no, queda la consulta antigua sin filtro.
+  @visibleForTesting
+  static Set<String> discoveryCountriesFor(AppUser? user) {
+    if (user == null) return const <String>{};
+    String home = user.countryIso2.trim().toUpperCase();
+    if (home.isEmpty) {
+      final String guess = FeedFilter.canonCountry(user.countryName);
+      if (RegExp(r'^[a-z]{2}$').hasMatch(guess)) home = guess.toUpperCase();
+    }
+    return <String>{
+      if (home.length == 2) home,
+      if (user.isTraveling && user.travelIso2.trim().length == 2)
+        user.travelIso2.trim().toUpperCase(),
+    };
   }
 
   /// Perfiles con Boost activo que NO estaban ya en el pool. Best-effort: si
@@ -1080,13 +1170,24 @@ class SessionController extends ChangeNotifier {
   }
 
   void _continueUserSession(AppUser user, {String? errorMessage}) {
+    final bool authenticated =
+        user.onboardingCompleted && user.profileCompleted;
     _emit(SessionState(
-      status: user.onboardingCompleted && user.profileCompleted
+      status: authenticated
           ? SessionStatus.authenticated
           : SessionStatus.onboardingRequired,
       user: user,
       errorMessage: errorMessage,
     ));
+    // Viaje activo sin centro (guardado antes de que existieran las
+    // coordenadas): se sitúa en segundo plano. No se espera: el feed ya se
+    // centra solo con el dataset offline mientras tanto.
+    if (authenticated &&
+        user.isTraveling &&
+        !user.hasTravelOrigin &&
+        user.travelCity.trim().isNotEmpty) {
+      unawaited(healTravelGeo(user));
+    }
   }
 
   String _profileSyncErrorMessage(Object error) {

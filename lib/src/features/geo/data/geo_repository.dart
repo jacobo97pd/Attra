@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../domain/place_names.dart';
+
 /// País con metadatos para el selector (nombre, ISO2, bandera emoji, región).
 class Country {
   const Country({
@@ -36,10 +38,14 @@ class GeoRepository {
   static final GeoRepository instance = GeoRepository._();
 
   static const String _countriesAsset = 'assets/geo/countries.json';
+  static const String _countryNamesAsset = 'assets/geo/country_names.json';
 
   List<Country>? _countries;
   Map<String, Country>? _byIso2;
+  Map<String, String>? _countryNames;
   final Map<String, List<String>> _citiesCache = <String, List<String>>{};
+  final Map<String, List<({double lat, double lng})?>> _coordsCache =
+      <String, List<({double lat, double lng})?>>{};
 
   Future<List<Country>> loadCountries() async {
     final List<Country>? cached = _countries;
@@ -140,54 +146,94 @@ class GeoRepository {
     return (await canonicalCity(iso2, city)) != null;
   }
 
-  /// Normaliza para comparar: minúsculas, sin acentos, espacios colapsados.
-  static String normalize(String input) {
-    final String lower = input.toLowerCase().trim();
-    if (lower.isEmpty) {
+  /// Coordenadas de cada ciudad, ALINEADAS índice a índice con
+  /// `cities/<ISO2>.json` (las dos salen de la misma descarga del dataset, ver
+  /// tool/gen_geo_assets.mjs). `null` = sin centro fiable (homónimos lejanos).
+  Future<List<({double lat, double lng})?>> loadCityCoordinates(
+      String iso2) async {
+    final String key = iso2.toUpperCase();
+    final List<({double lat, double lng})?>? cached = _coordsCache[key];
+    if (cached != null) {
+      return cached;
+    }
+    try {
+      final String raw =
+          await rootBundle.loadString('assets/geo/coords/$key.json');
+      final List<dynamic> decoded = json.decode(raw) as List<dynamic>;
+      final List<({double lat, double lng})?> coords =
+          decoded.map<({double lat, double lng})?>((dynamic e) {
+        if (e is List && e.length == 2 && e[0] is num && e[1] is num) {
+          return (
+            lat: (e[0] as num).toDouble() / 100,
+            lng: (e[1] as num).toDouble() / 100,
+          );
+        }
+        return null;
+      }).toList(growable: false);
+      _coordsCache[key] = coords;
+      return coords;
+    } catch (_) {
+      _coordsCache[key] = const <({double lat, double lng})?>[];
+      return const <({double lat, double lng})?>[];
+    }
+  }
+
+  /// Centro de [city] en el país [iso2], o null si la ciudad no existe, es
+  /// ambigua o el fichero de coordenadas no casa con el de nombres.
+  ///
+  /// Casa con [normalize], así que 'Cádiz' y 'Cadiz' dan el mismo punto: el
+  /// selector guarda la grafía del dataset y los perfiles la de siempre.
+  Future<({double lat, double lng})?> cityCoordinates(
+    String iso2,
+    String city,
+  ) async {
+    final String n = normalize(city);
+    if (n.isEmpty || iso2.trim().isEmpty) {
+      return null;
+    }
+    final List<String> cities = await loadCities(iso2);
+    final List<({double lat, double lng})?> coords =
+        await loadCityCoordinates(iso2);
+    // Desalineados = datos de dos descargas distintas: cualquier índice podría
+    // apuntar a otra ciudad, así que no se da ninguno por bueno.
+    if (coords.length != cities.length) {
+      return null;
+    }
+    for (int i = 0; i < cities.length; i++) {
+      if (normalize(cities[i]) == n) {
+        return coords[i];
+      }
+    }
+    return null;
+  }
+
+  /// ISO2 de un país escrito con su nombre en cualquier idioma del dataset
+  /// ('España', 'Spain', 'Espagne', 'Espanya'…), o '' si no se reconoce. Es
+  /// para registros antiguos que guardaron solo el nombre.
+  Future<String> iso2ForCountryName(String name) async {
+    final String n = normalize(name);
+    if (n.isEmpty) {
       return '';
     }
-    final StringBuffer buffer = StringBuffer();
-    for (final int codeUnit in lower.runes) {
-      final String ch = String.fromCharCode(codeUnit);
-      buffer.write(_diacritics[ch] ?? ch);
+    Map<String, String>? byName = _countryNames;
+    if (byName == null) {
+      try {
+        final String raw = await rootBundle.loadString(_countryNamesAsset);
+        final Map<String, dynamic> decoded =
+            json.decode(raw) as Map<String, dynamic>;
+        byName = <String, String>{
+          for (final MapEntry<String, dynamic> e in decoded.entries)
+            if (e.value is String) e.key: (e.value as String).toUpperCase(),
+        };
+      } catch (_) {
+        byName = const <String, String>{};
+      }
+      _countryNames = byName;
     }
-    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return byName[n] ?? '';
   }
-}
 
-const Map<String, String> _diacritics = <String, String>{
-  'á': 'a',
-  'à': 'a',
-  'â': 'a',
-  'ä': 'a',
-  'ã': 'a',
-  'å': 'a',
-  'ā': 'a',
-  'é': 'e',
-  'è': 'e',
-  'ê': 'e',
-  'ë': 'e',
-  'ē': 'e',
-  'í': 'i',
-  'ì': 'i',
-  'î': 'i',
-  'ï': 'i',
-  'ī': 'i',
-  'ó': 'o',
-  'ò': 'o',
-  'ô': 'o',
-  'ö': 'o',
-  'õ': 'o',
-  'ø': 'o',
-  'ō': 'o',
-  'ú': 'u',
-  'ù': 'u',
-  'û': 'u',
-  'ü': 'u',
-  'ū': 'u',
-  'ñ': 'n',
-  'ç': 'c',
-  'ß': 'ss',
-  'œ': 'oe',
-  'æ': 'ae',
-};
+  /// Normaliza para comparar: minúsculas, sin acentos, espacios colapsados.
+  /// La regla vive en [PlaceNames] (pura) para que el dominio la comparta.
+  static String normalize(String input) => PlaceNames.normalize(input);
+}

@@ -40,6 +40,7 @@ import {
   liveCol,
   noteLiveModerationCoverage,
 } from "./liveModeration";
+import { iso2ForCountryName, normalizeIso2 } from "./travel";
 
 // ── Constantes propias del emparejamiento ───────────────────────────────────
 // (LIVE_SESSION_MAX_MS, LIVE_SAMPLE_MS, LIVE_STRIKE_BLOCK_MS y LIVE_MAX_STRIKES
@@ -195,6 +196,20 @@ function canonCountry(raw: unknown): string {
   return COUNTRY_ALIASES[s] ?? s;
 }
 
+/// Clave de país del vivo: el ISO2 del geocodificador o del onboarding (en
+/// minúsculas, que es lo que ya daban los alias para los países conocidos) y,
+/// si no hay, el deducido del nombre en cualquier idioma. Igual que el feed:
+/// comparando nombres, un teléfono en catalán ('Espanya') o en alemán
+/// ('Spanien') no casaba con los demás españoles. [canonCountry] queda como
+/// último recurso para nombres que no se reconocen.
+export function liveCountryKey(profile: DocumentData): string {
+  const iso2 =
+    normalizeIso2(profile.currentCountryIso2) ||
+    normalizeIso2(profile.currentCountryCode) ||
+    iso2ForCountryName(asString(profile.currentCountryName));
+  return iso2 ? iso2.toLowerCase() : canonCountry(profile.currentCountryName);
+}
+
 /// Espejo de `IntentMode.channels` (Dart). `groups` no participa en el feed de
 /// personas → tampoco en el vivo (su superficie son los grupos).
 function intentChannels(mode: string): Set<string> {
@@ -260,7 +275,7 @@ async function loadCriteria(uid: string): Promise<LiveCriteria> {
     gender: asString(profile.gender),
     interestedIn: asStringList(prefs.interestedIn),
     countryName,
-    countryKey: canonCountry(countryName),
+    countryKey: liveCountryKey(profile),
     intentMode: normalizeIntent(profile.intentMode),
     minAge,
     maxAge,

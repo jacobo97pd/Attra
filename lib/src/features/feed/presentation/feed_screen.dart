@@ -57,6 +57,9 @@ import '../domain/ranking.dart';
 import '../domain/ranking_config.dart';
 import '../domain/rewind_policy.dart';
 import '../domain/slow_dating.dart';
+import '../domain/travel_scope.dart';
+import '../../geo/data/travel_destination_resolvers.dart';
+import '../../geo/domain/travel_destination_resolver.dart';
 import 'feed_top_bar.dart';
 import 'filters_screen.dart';
 import 'quick_filter_sheet.dart';
@@ -88,8 +91,11 @@ class FeedScreen extends StatefulWidget {
     this.metrics,
     this.boostService,
     this.adsEnabled = false,
-    this.canUseTravelMode = false,
+    this.travelPlanActive = false,
+    this.entitlementsLoading = false,
     this.onOpenTravel,
+    this.onTravelExpired,
+    this.travelDestinationResolver,
     this.rankingSignals,
     this.rankingConfig = const RankingConfig(),
     this.antiGhostingConfig,
@@ -198,9 +204,28 @@ class FeedScreen extends StatefulWidget {
   /// usuario NO es Plus/Pro). Si false, el feed va sin anuncios.
   final bool adsEnabled;
 
-  /// Modo viajes (Plus/Pro): botón para cambiar la ubicación del feed.
-  final bool canUseTravelMode;
+  /// GATE del modo viajes en el feed: el plan sigue siendo de pago (ver
+  /// [TravelScope.planKeepsTravel]). Con el plan caducado el viaje no cuenta
+  /// (el backend ya publica al usuario en casa) aunque siga marcado como
+  /// activo. NO es `canUseTravelMode`: ese mira además los flags remotos, que
+  /// el backend no mira, y los dos lados volvían a no coincidir.
+  final bool travelPlanActive;
+
+  /// Los entitlements aún no han llegado. Mientras tanto el viaje SÍ cuenta:
+  /// el controlador arranca como Free y, sin esto, todo viajero de pago veía un
+  /// instante el feed de casa (con su recarga y su refresco de ubicación).
+  final bool entitlementsLoading;
   final VoidCallback? onOpenTravel;
+
+  /// El viaje ha caducado (pasó su fecha): quien lo recibe lo apaga en
+  /// `users/{uid}` para que la ficha pública vuelva a casa. El feed ya se ha
+  /// vuelto a centrar en la ubicación real.
+  final Future<void> Function()? onTravelExpired;
+
+  /// Sitúa el destino de un viaje guardado SIN coordenadas (versiones
+  /// anteriores). Por defecto solo el dataset offline: pintar el feed no puede
+  /// depender de la red. Inyectable para tests.
+  final TravelDestinationResolver? travelDestinationResolver;
 
   /// Ranking inteligente: señales server-side (prefetch) + config remota. Si
   /// null o `rankingConfig.enabled == false`, el feed usa el orden orgánico
@@ -422,6 +447,33 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// de otro país, sin explicación, parece un error.
   bool _countryFallback = false;
 
+  /// Viajando no había nadie en el radio del destino y se ha ampliado una vez
+  /// a [TravelScope.widenedRadiusKm]. Se cuenta en un banner.
+  bool _travelWidened = false;
+
+  /// Ya se ha avisado (y pedido apagar) un viaje caducado en esta sesión.
+  bool _travelExpiryHandled = false;
+
+  /// Resolutor por defecto (solo dataset offline) para viajes sin centro.
+  TravelDestinationResolver? _offlineTravelResolver;
+
+  /// ¿Cuenta el viaje para el feed de [w]? Viaje vigente Y plan de pago
+  /// (o entitlements aún cargando). Ver [TravelScope.isTravelEffective].
+  static bool _travelEffectiveFor(FeedScreen w) =>
+      TravelScope.isTravelEffective(
+        w.user,
+        travelAllowed: w.travelPlanActive || w.entitlementsLoading,
+      );
+
+  bool get _travelEffective => _travelEffectiveFor(widget);
+
+  /// Destino de [w] para detectar un cambio de destino sin cambio de estado.
+  static String _travelKeyOf(FeedScreen w) {
+    final AppUser? u = w.user;
+    if (u == null) return '';
+    return '${u.travelIso2}|${u.travelCity}|${u.travelLat}|${u.travelLng}';
+  }
+
   /// Lat efectiva del usuario: la del dispositivo si la acabamos de leer y aún
   /// no ha vuelto del backend, y si no la guardada.
   ///
@@ -478,7 +530,46 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _load();
     _loadStoriesFlag();
-    _refreshLocation(LocationRefreshTrigger.appStart);
+    // Un viaje que caducó con la app cerrada: el feed ya vuelve a casa (el
+    // viaje no está vigente), pero hay que mirar dónde está de verdad antes de
+    // que la ficha se republique en la ciudad de la que se fue.
+    final bool expired = _checkTravelExpired();
+    _refreshLocation(expired
+        ? LocationRefreshTrigger.travelEnded
+        : LocationRefreshTrigger.appStart);
+  }
+
+  /// Si el viaje ha caducado (sigue marcado como activo pero pasó su fecha),
+  /// avisa UNA vez y pide apagarlo en `users/{uid}`. Devuelve true si lo ha
+  /// manejado ahora.
+  ///
+  /// Antes nada lo apagaba: `isTraveling` ya daba false, pero el documento
+  /// seguía con `active: true` y el refresco de "fin de viaje" solo saltaba al
+  /// apagarlo a mano, así que la ficha podía seguir en el destino.
+  bool _checkTravelExpired() {
+    final AppUser? user = widget.user;
+    if (_travelExpiryHandled || user == null || !user.travelExpired) {
+      return false;
+    }
+    _travelExpiryHandled = true;
+    final String where = user.travelCity.trim().isNotEmpty
+        ? user.travelCity.trim()
+        : user.travelCountry.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(where.isEmpty
+            ? 'Tu viaje ha terminado: vuelves a ver gente de tu zona.'
+            : 'Tu viaje a $where ha terminado: vuelves a ver gente de tu zona.'),
+      ));
+    });
+    final Future<void> Function()? expire = widget.onTravelExpired;
+    if (expire != null) {
+      unawaited(expire().catchError((Object error) {
+        if (kDebugMode) debugPrint('[Attra][Viajes] no se pudo apagar: $error');
+      }));
+    }
+    return true;
   }
 
   @override
@@ -498,6 +589,13 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final DateTime? since = _backgroundSince;
       _backgroundSince = null;
+      // El viaje puede caducar con el proceso vivo (la app en el fondo días):
+      // ni hay arranque ni cambia el usuario, así que es aquí donde se nota.
+      if (_checkTravelExpired()) {
+        _refreshLocation(LocationRefreshTrigger.travelEnded);
+        _load();
+        return;
+      }
       _refreshLocation(
         LocationRefreshTrigger.appResume,
         // Cuánto ha estado la app fuera: con media hora o más, la política deja
@@ -533,12 +631,15 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         awayFor: awayFor,
         // Umbral de escritura acorde con el radio del feed: con "Distancia
         // máxima" en 2 km, no guardar un movimiento de 9 km dejaba al usuario
-        // likeando a vecinos que, con su radio, no le podían ver.
-        moveThresholdKm: _effectiveRadiusKm / 2,
+        // likeando a vecinos que, con su radio, no le podían ver. Es el MISMO
+        // umbral con el que se decide recargar ([_feedWouldChangeWith]).
+        moveThresholdKm:
+            LocationRefreshPolicy.moveThresholdForRadius(_effectiveRadiusKm),
         // El modo viaje NO se puede pisar: la política evita gastar GPS cuando el
-        // feed está anclado al destino, y `DiscoveryPublisher` sigue siendo quien
-        // decide que viajando no se publican coordenadas.
-        travelActive: user.isTraveling,
+        // feed está anclado al destino, y el backend sigue siendo quien decide
+        // que viajando no se publican las coordenadas reales. Con el plan
+        // caducado el viaje ya no cuenta y la ubicación real vuelve a importar.
+        travelActive: _travelEffective,
       );
       if (!mounted) return false;
 
@@ -599,15 +700,18 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// Evita una segunda carga (con sus lecturas de red) en cada arranque: lo
   /// normal es que el fix confirme el sitio donde el feed ya te estaba situando.
   ///
-  /// El umbral es el mismo con el que se decide GUARDAR: `_load()` es
+  /// El umbral es el mismo con el que se decide GUARDAR
+  /// ([LocationRefreshPolicy.moveThresholdForRadius]): antes este era un 10 km
+  /// fijo y, con radio 10 km, un movimiento de 8 km se guardaba y se publicaba
+  /// pero el mazo seguía filtrado desde el punto viejo. `_load()` es
   /// DESTRUCTIVO (vacía el mazo, vuelve a la primera carta y borra el historial
-  /// de rewind), así que recargar por 1 km era perder la sesión de swipe de quien
-  /// va en autobús por su ciudad, y encima sin poder cambiar a quién ve (el radio
-  /// mínimo son kilómetros y las coordenadas públicas se redondean a ~1,1 km).
+  /// de rewind), por eso el umbral nunca baja de 1 km (las coordenadas públicas
+  /// se redondean a ~1,1 km) y los refrescos solo llegan en arranque, vuelta
+  /// del fondo o a mano.
   bool _feedWouldChangeWith(LocationFix fix) {
-    // Viajando el feed usa el país de destino y descarta la latitud/longitud:
+    // Viajando el feed se mide desde el destino, no desde la ubicación real:
     // recargar por una coordenada nueva no cambiaría ni un perfil.
-    if (widget.user?.isTraveling ?? false) return false;
+    if (_travelEffective) return false;
     final double? lat = _loadedLat;
     final double? lng = _loadedLng;
     // El feed se cargó SIN ubicación: pasa de filtrar por país a filtrar por
@@ -615,7 +719,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     if (lat == null || lng == null) return true;
     return LocationRefreshPolicy.distanceKm(
             lat, lng, fix.latitude, fix.longitude) >=
-        LocationRefreshPolicy.significantMoveKm;
+        LocationRefreshPolicy.moveThresholdForRadius(_effectiveRadiusKm);
   }
 
   /// Recarga que pide el usuario desde un estado vacío. Además de volver a
@@ -839,47 +943,33 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Centra el feed en el destino de viaje: deja solo los perfiles del país
-  /// elegido y pone delante los de la ciudad. Sin país no filtra (devuelve tal
-  /// cual). Comparaciones case-insensitive.
-  List<SeedProfile> _applyTravel(List<SeedProfile> profiles) {
-    // País normalizado (Italy=Italia, Spain=España…) para no vaciar el feed por
-    // diferencias de idioma entre el destino y los perfiles.
-    final String country =
-        FeedFilter.canonCountry(widget.user?.travelCountry ?? '');
-    final String city = _canonCity(widget.user?.travelCity ?? '');
-    if (country.isEmpty) return profiles;
-    final List<SeedProfile> inCountry = profiles
-        .where((SeedProfile p) => FeedFilter.canonCountry(p.country) == country)
-        .toList(growable: false);
-    if (city.isEmpty) return inCountry;
-    inCountry.sort((SeedProfile a, SeedProfile b) {
-      final bool aCity = _canonCity(a.city) == city;
-      final bool bCity = _canonCity(b.city) == city;
-      if (aCity == bCity) return 0;
-      return aCity ? -1 : 1;
-    });
-    return inCountry;
-  }
-
-  /// Normaliza ciudad para comparar pese al idioma (Rome=Roma, etc.).
-  static String _canonCity(String raw) {
-    final String s = raw.trim().toLowerCase();
-    const Map<String, String> aliases = <String, String>{
-      'roma': 'rome',
-      'rome': 'rome',
-      'milán': 'milan',
-      'milan': 'milan',
-      'milano': 'milan',
-      'londres': 'london',
-      'london': 'london',
-      'lisboa': 'lisbon',
-      'lisbon': 'lisbon',
-      'munich': 'munich',
-      'múnich': 'munich',
-      'münchen': 'munich',
-    };
-    return aliases[s] ?? s;
+  /// Origen del feed para el viaje de esta carga, o null si no se viaja (o el
+  /// viaje no cuenta). Un viaje guardado SIN centro (versiones anteriores) se
+  /// sitúa al vuelo con el dataset offline, sin esperar a que la sesión lo
+  /// repare: así la primera carga ya es la buena.
+  Future<FeedOrigin?> _travelOrigin() async {
+    final AppUser? user = widget.user;
+    if (user == null || !_travelEffective) return null;
+    ({double lat, double lng})? center;
+    if (!user.hasTravelOrigin && user.travelCity.trim().isNotEmpty) {
+      final TravelDestinationResolver resolver = widget
+              .travelDestinationResolver ??
+          (_offlineTravelResolver ??= buildOfflineTravelDestinationResolver());
+      try {
+        final TravelDestination? hit = await resolver.resolve(
+          iso2: user.travelIso2,
+          city: user.travelCity,
+          countryName: user.travelCountry,
+        );
+        if (hit != null) center = (lat: hit.latitude, lng: hit.longitude);
+      } catch (_) {/* sin centro: el viaje se queda a nivel de país */}
+    }
+    return TravelScope.resolve(
+      user,
+      travelAllowed: true,
+      filterMaxKm: _filters.maxDistanceKm,
+      fallbackCenter: center,
+    );
   }
 
   /// Muro de historias activo.
@@ -1158,18 +1248,31 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   void didUpdateWidget(FeedScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Al volver a la pestaña Feed, recarga y re-excluye (matched/liked/pasados).
-    if (oldWidget.reloadToken != widget.reloadToken && !_loading) {
-      _load();
-    }
-    // Modo viaje que se APAGA: mientras viajabas no se publicaban coordenadas y
+    bool reload = oldWidget.reloadToken != widget.reloadToken && !_loading;
+    // Modo viaje que deja de CONTAR (se apaga, o el plan que lo incluía caduca
+    // con la app abierta): mientras viajabas no se publicaban tus coordenadas y
     // las guardadas pueden ser de antes del viaje. Ahora vuelven a publicarse,
     // así que hay que mirar dónde estás de verdad antes de que los demás te vean
-    // en la ciudad de la que te fuiste.
-    final bool wasTraveling = oldWidget.user?.isTraveling ?? false;
-    final bool isTraveling = widget.user?.isTraveling ?? false;
+    // en la ciudad de la que te fuiste. Se compara el estado EFECTIVO (viaje +
+    // plan): un cambio solo de plan no cambia el usuario y antes no se notaba.
+    final bool wasTraveling = _travelEffectiveFor(oldWidget);
+    final bool isTraveling = _travelEffectiveFor(widget);
     if (wasTraveling && !isTraveling) {
       _refreshLocation(LocationRefreshTrigger.travelEnded);
+      reload = true;
+    } else if (!wasTraveling && isTraveling) {
+      reload = true;
+    } else if (isTraveling && _travelKeyOf(oldWidget) != _travelKeyOf(widget)) {
+      // Otro destino (o el centro que acaba de llegar de la auto-reparación).
+      reload = true;
     }
+    // El viaje ha caducado mientras la app seguía abierta (llega un usuario
+    // recargado con la fecha ya pasada): se avisa y se apaga.
+    if (_checkTravelExpired()) {
+      _refreshLocation(LocationRefreshTrigger.travelEnded);
+      reload = true;
+    }
+    if (reload) _load();
     // El documento ya trae la ubicación que habíamos adoptado: el respaldo deja
     // de hacer falta y se suelta. Si no, una lectura de esta sesión mandaba sobre
     // el documento el resto de la sesión, incluso cuando otro dispositivo
@@ -1234,8 +1337,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       final bool aiSearchPending = _filters.aiSearchActive &&
           widget.canUseVisualMatch &&
           widget.aiVisualService != null;
-      final bool travelingPending =
-          !aiSearchPending && (widget.user?.isTraveling ?? false);
+      final bool travelingPending = !aiSearchPending && _travelEffective;
+      // Viajando `_loadedLat/_loadedLng` se quedan en null A PROPÓSITO: son la
+      // ubicación REAL con la que se cargó, y viajando el feed se mide desde el
+      // destino (así un fix nuevo en casa no recarga nada).
       _loadedLat = (travelingPending || aiSearchPending) ? null : _effectiveLat;
       _loadedLng = (travelingPending || aiSearchPending) ? null : _effectiveLng;
       final List<SeedProfile> all = await widget.onLoadSeedProfiles();
@@ -1286,54 +1391,82 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       }
       // Cualquier búsqueda IA (foto o prompt) desactiva distancia/curación.
       final bool aiSearch = visualSearch || promptSearch;
-      // Modo viajes: cuando viajas, el feed se CENTRA en el destino (se ignora
-      // la distancia real y se usa el PAÍS de destino para la relevancia).
-      final bool traveling = !aiSearch && (widget.user?.isTraveling ?? false);
+      // Modo viajes (Tinder Passport): el feed se CENTRA en el destino: radio
+      // alrededor del centro de la ciudad, país de destino y NUNCA las
+      // coordenadas de casa. Solo si el viaje cuenta (vigente y con plan).
+      final FeedOrigin? origin = aiSearch ? null : await _travelOrigin();
+      if (!mounted || generation != _loadGeneration) return;
+      final bool traveling = origin != null;
       // Las coordenadas de esta carga se apuntaron antes del primer await; aquí
       // solo se anulan si el estado cambió por medio (se activó el viaje o una
-      // búsqueda IA), porque entonces no se filtra por distancia.
+      // búsqueda IA), porque entonces no se filtra por la ubicación real.
       if (traveling || aiSearch) {
         _loadedLat = null;
         _loadedLng = null;
       }
-      final String myCountry = aiSearch
-          ? ''
-          : (traveling
-              ? (widget.user?.travelCountry ?? '')
-              : (widget.user?.countryName ?? ''));
-      List<SeedProfile> filtered = FeedFilter.apply(
-        profiles: all,
-        myUid: myUid,
-        myGender: widget.user?.gender ?? '',
-        myInterestedIn: widget.user?.interestedIn ?? const <String>[],
-        excludedUids: excluded,
-        filters: _filters,
-        // En viaje/búsqueda IA no hay "mi" lat/lng (no filtra por distancia).
-        myLat: _loadedLat,
-        myLng: _loadedLng,
-        myCountry: myCountry,
-        defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
-        // Modo Amigos: filtra por compatibilidad de intención (default dating).
-        myIntent: widget.user?.intentMode ?? IntentMode.dating,
-      );
+      final String myCountry = aiSearch ? '' : (widget.user?.countryName ?? '');
+      final String myCountryIso2 =
+          aiSearch ? '' : (widget.user?.countryIso2 ?? '');
+      bool travelWidened = false;
+      List<SeedProfile> filtered;
+      if (origin != null) {
+        final ({List<SeedProfile> profiles, bool widened}) travel =
+            TravelScope.filter(
+          origin: origin,
+          profiles: all,
+          myUid: myUid,
+          myGender: widget.user?.gender ?? '',
+          myInterestedIn: widget.user?.interestedIn ?? const <String>[],
+          excludedUids: excluded,
+          filters: _filters,
+          myIntent: widget.user?.intentMode ?? IntentMode.dating,
+        );
+        filtered = travel.profiles;
+        travelWidened = travel.widened;
+      } else {
+        filtered = FeedFilter.apply(
+          profiles: all,
+          myUid: myUid,
+          myGender: widget.user?.gender ?? '',
+          myInterestedIn: widget.user?.interestedIn ?? const <String>[],
+          excludedUids: excluded,
+          filters: _filters,
+          // En búsqueda IA no hay "mi" lat/lng (no filtra por distancia).
+          myLat: _loadedLat,
+          myLng: _loadedLng,
+          myCountry: myCountry,
+          myCountryIso2: myCountryIso2,
+          defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
+          // Viajeros publicados SIN centro (apps antiguas, ciudades que no se
+          // pudieron situar): se saltaban el radio y salían en todo el país.
+          // Solo entran para quien está en su ciudad de destino. La búsqueda
+          // IA es global a propósito y no filtra por ubicación.
+          travelersNeedGeo: !aiSearch,
+          myCity: widget.user?.city ?? '',
+          // Modo Amigos: filtra por compatibilidad de intención (default dating).
+          myIntent: widget.user?.intentMode ?? IntentMode.dating,
+        );
+      }
       // RESPALDO cuando el PAÍS declarado es lo único que vacía el feed.
       //
-      // El país sale de `profile.currentCountryName`, que solo se escribe una vez
-      // (selector manual del onboarding) porque en la app no hay geocodificación
-      // inversa: al cruzar una frontera las coordenadas son las de verdad y el
-      // país sigue siendo el de casa, así que la regla de país tira a los de
-      // alrededor y la de radio a los del país declarado. Resultado: feed VACÍO,
-      // sin explicación y sin salida (el modo viaje es de pago).
+      // Para quien acaba de cruzar una frontera y todavía tiene guardado el país
+      // de antes (el geocodificador no ha podido actualizarlo): la regla de país
+      // tira a los de alrededor y la de radio a los del país declarado.
+      // Resultado: feed VACÍO, sin explicación y sin salida (el modo viaje es de
+      // pago).
       //
-      // Solo se aplica cuando el feed se quedaría vacío, así que no relaja la
-      // regla "nunca de otro país" para nadie más, y el radio se sigue
-      // respetando: lo que entra está SIEMPRE en tu zona.
+      // Solo entra quien TIENE coordenadas dentro del radio y es de OTRO país:
+      // sin coordenadas no se puede demostrar que esté "en tu zona" (entraban
+      // perfiles sin ubicación de Kabul o Sídney, y viajeros de todo el mundo,
+      // presentados como "gente de alrededor"), y alguien de tu propio país ya
+      // lo descartó la primera pasada por otros motivos (ya visto, filtros), así
+      // que un feed agotado no se rellena con extranjeros.
       bool countryFallback = false;
       if (filtered.isEmpty &&
           !traveling &&
           !aiSearch &&
           !_secondRound &&
-          myCountry.isNotEmpty &&
+          (myCountry.isNotEmpty || myCountryIso2.isNotEmpty) &&
           _loadedLat != null &&
           _loadedLng != null) {
         final List<SeedProfile> nearby = FeedFilter.apply(
@@ -1347,15 +1480,18 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myLng: _loadedLng,
           myCountry: '',
           defaultMaxKm: widget.user?.maxDistanceKm,
+          requireGeo: true,
           myIntent: widget.user?.intentMode ?? IntentMode.dating,
-        );
+        )
+            .where((SeedProfile p) =>
+                FeedFilter.sameCountry(
+                    myCountryIso2, myCountry, p.countryIso2, p.country) ==
+                false)
+            .toList(growable: false);
         if (nearby.isNotEmpty) {
           filtered = nearby;
           countryFallback = true;
         }
-      }
-      if (traveling) {
-        filtered = _applyTravel(filtered);
       }
       // Segunda vuelta: quédate SOLO con los perfiles que pasaste.
       if (_secondRound) {
@@ -1393,12 +1529,24 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       }
       // Orden BASE orgánico (compatibilidad real). No salta filtros: solo ordena
       // lo ya filtrado. Los modos opt-in de abajo lo re-curan si están activos.
+      //
+      // La cercanía se mide desde el MISMO punto con el que se ha filtrado: el
+      // destino si se viaja, la ubicación de esta carga si no, y ninguno en una
+      // búsqueda IA (global). Antes el ranking leía siempre las coordenadas
+      // reales del usuario y, viajando de Madrid a Cádiz, Madrid subía arriba.
+      // Viajando tampoco se diversifica por ciudad: mandaría al final a la
+      // tercera persona seguida de la ciudad de destino.
+      final RankingOrigin rankingOrigin = origin != null
+          ? origin.rankingOrigin
+          : RankingOrigin(lat: _loadedLat, lng: _loadedLng);
       filtered = activeBoosts.isEmpty
           ? RankingScorer.rank(
               profiles: filtered,
               me: widget.user,
               signalsFor: signalsFor,
               config: widget.rankingConfig,
+              diversify: !traveling,
+              origin: rankingOrigin,
             )
           : BoostAwareRanker.rank(
               profiles: filtered,
@@ -1406,6 +1554,8 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
               activeBoosts: activeBoosts,
               signalsFor: signalsFor,
               config: widget.rankingConfig,
+              diversify: !traveling,
+              origin: rankingOrigin,
             );
       // Slow Dating (opt-in): cura el feed (menos perfiles, más afines e
       // intencionales). No se aplica en búsqueda visual (que es global).
@@ -1418,6 +1568,13 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           me: widget.user,
           activeBoosts: activeBoosts,
         );
+      }
+      // Viajando, la gente de la ciudad de destino va PRIMERO. Va después de
+      // ranking y Slow Dating a propósito: la ordenación por ciudad de antes
+      // se hacía antes y el ranking la deshacía. Partición estable: dentro de
+      // cada grupo se respeta el orden por afinidad.
+      if (origin != null) {
+        filtered = TravelScope.destinationFirst(filtered, origin);
       }
       // IA visual (Pro): ordena por parecido a la foto de referencia.
       if (visualSearch) {
@@ -1484,6 +1641,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         _activeBoostsByUid = activeBoosts;
         _aiSearch = aiState;
         _countryFallback = countryFallback;
+        _travelWidened = travelWidened;
         _rankedPool = filtered;
         _profiles = const <SeedProfile>[];
         _index = 0;
@@ -2211,8 +2369,9 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   Widget _filterBar() {
     final FeedFilters f = _filters;
     // Modo viajes: antes un globo suelto; ahora un chip más, relleno si estás
-    // de viaje, que es cuando está cambiando de dónde salen los perfiles.
-    final bool traveling = widget.user?.isTraveling ?? false;
+    // de viaje, que es cuando está cambiando de dónde salen los perfiles. Con
+    // el plan caducado el viaje no cuenta y el chip no puede decir lo contrario.
+    final bool traveling = _travelEffective;
     final VoidCallback? onOpenTravel = widget.onOpenTravel;
     // La forma de publicar historia tiene que seguir a mano mientras el muro
     // exista: sin ella, un muro que solo enseña a quien tiene historia viva se
@@ -2419,6 +2578,74 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
                 country.isEmpty
                     ? 'No hay nadie de tu país en tu zona: te enseñamos gente de alrededor'
                     : 'No hay nadie de $country en tu zona: te enseñamos gente de alrededor',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Viaje guardado que NO cuenta porque el plan ya no lo incluye. Sin esto el
+  /// usuario seguía viendo "De viaje en Cádiz" con el feed de casa (o al revés)
+  /// y no sabía por qué. El toque abre la hoja, que deja apagarlo sin plan.
+  Widget _travelPausedBanner() {
+    final ThemeData theme = Theme.of(context);
+    final Color color = theme.colorScheme.outline;
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      child: InkWell(
+        onTap: widget.onOpenTravel,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.flight_land_rounded, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Modo viajes en pausa: tu plan ya no lo incluye. Ves tu zona.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: color, fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+              Text('Gestionar',
+                  style: TextStyle(
+                      color: color, fontWeight: FontWeight.w700, fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Viajando no había nadie en el radio del destino y se ha ampliado a
+  /// [TravelScope.widenedRadiusKm]: se dice, para que nadie crea que la gente a
+  /// 150 km "es de Cádiz".
+  Widget _travelWidenedBanner() {
+    final ThemeData theme = Theme.of(context);
+    final Color color = theme.colorScheme.outline;
+    final String city = (widget.user?.travelCity ?? '').trim();
+    final String where =
+        city.isNotEmpty ? city : (widget.user?.travelCountry ?? '').trim();
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.travel_explore_rounded, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Poca gente cerca de $where: te enseñamos hasta '
+                '${TravelScope.widenedRadiusKm} km',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -2698,8 +2925,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       _reportChrome();
     });
     final bool chromeHidden = _chromeHidden;
+    final bool travelEffective = _travelEffective;
     final List<Widget> banners = <Widget>[
-      if (widget.user?.isTraveling ?? false) _travelBanner(),
+      if (travelEffective) _travelBanner(),
+      if (!travelEffective && (widget.user?.isTraveling ?? false))
+        _travelPausedBanner(),
+      if (travelEffective && _travelWidened) _travelWidenedBanner(),
       // Va después del de viaje porque viajando no se enseña (la política
       // devuelve `none`): el feed del destino es intencionado, no un fallo.
       if (_locationNotice != LocationNotice.none) _locationBanner(),

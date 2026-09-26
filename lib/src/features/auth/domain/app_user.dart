@@ -29,7 +29,10 @@ class AppUser {
     this.locationUpdatedAt,
     this.locationMeasuredAt,
     this.locationPermissionStatus = 'unknown',
+    this.placeLatitude,
+    this.placeLongitude,
     this.countryName = '',
+    this.countryIso2 = '',
     this.maxDistanceKm,
     this.slowDatingEnabled = false,
     this.tutorialCompleted = false,
@@ -51,6 +54,9 @@ class AppUser {
     this.travelCity = '',
     this.travelCountry = '',
     this.travelUntil,
+    this.travelLat,
+    this.travelLng,
+    this.travelGeoSource = '',
     this.busyModeEnabled = false,
     this.busyModeUntil,
     this.busyModeStartedAt,
@@ -158,17 +164,31 @@ class AppUser {
   /// 'denied', 'denied_forever', 'service_disabled' o 'unknown'.
   final String locationPermissionStatus;
 
+  /// Dónde se resolvió por última vez la ciudad/país (`location.placeLat/Lng`).
+  /// Si las coordenadas se alejan de este punto es que el último intento del
+  /// geocodificador falló y el país guardado puede ser el de antes.
+  final double? placeLatitude;
+  final double? placeLongitude;
+
   /// Ubicación guardada tal cual, para la política de refresco.
   StoredLocation get storedLocation => StoredLocation(
         latitude: latitude,
         longitude: longitude,
         updatedAt: locationUpdatedAt,
         measuredAt: locationMeasuredAt,
+        placeLatitude: placeLatitude,
+        placeLongitude: placeLongitude,
       );
 
   /// País del usuario (profile.currentCountryName). Fallback de relevancia
   /// geográfica cuando no hay coordenadas para calcular distancia.
   final String countryName;
+
+  /// ISO2 del país (`profile.currentCountryIso2`, que escribe el geocodificador,
+  /// o `profile.currentCountryCode`, que escribe el onboarding). Es lo que se
+  /// compara en el feed: el nombre sale en el idioma del teléfono ('Espanya',
+  /// 'Spanien') y con él un catalán dejaba de ver a los de su propia ciudad.
+  final String countryIso2;
 
   /// Radio máximo preferido en km (preferences.maxDistanceKm). null = usa el
   /// radio por defecto del feed.
@@ -181,8 +201,28 @@ class AppUser {
   final String travelCity;
   final String travelCountry;
 
-  /// Fin del viaje (`settings.travel.until`, 30 días al activarlo).
+  /// Fin del viaje (`settings.travel.untilAt`, o el ISO `until` de versiones
+  /// anteriores; 30 días al activarlo).
   final DateTime? travelUntil;
+
+  /// Centro de la ciudad de destino (`settings.travel.lat/lng`). NUNCA es la
+  /// ubicación real: el feed del viaje se mide desde aquí y la ficha pública se
+  /// publica aquí. null = viaje sin coordenadas (a un país entero, o antiguo).
+  final double? travelLat;
+  final double? travelLng;
+
+  /// De dónde salió ese centro: 'asset' | 'device' | 'server' | 'none'.
+  final String travelGeoSource;
+
+  bool get hasTravelOrigin => travelLat != null && travelLng != null;
+
+  /// El viaje sigue marcado como activo pero su fecha ya pasó: hay que
+  /// apagarlo (el backend lo hace en su barrido; el cliente lo hace al verlo
+  /// para no esperar y para devolver al usuario a su ubicación real).
+  bool get travelExpired =>
+      travelActive &&
+      travelUntil != null &&
+      !travelUntil!.isAfter(DateTime.now());
 
   /// True si el modo viaje está vigente. Expiración **defensiva en cliente**
   /// (igual que [busyModeActive]): el backend ya caduca el viaje al publicar la
@@ -270,9 +310,16 @@ class AppUser {
           (location['permissionStatus'] as String?)?.trim().isNotEmpty == true
               ? location['permissionStatus'] as String
               : 'unknown',
+      placeLatitude: _asLatitude(location['placeLat']),
+      placeLongitude: _asLongitude(location['placeLng']),
       countryName: (profile['currentCountryName'] as String?) ??
           (profile['currentCountry'] as String?) ??
           '',
+      // El del geocodificador primero: es el que se refresca al moverse. El
+      // del onboarding se escribe una vez y, tras cruzar una frontera, miente.
+      countryIso2: _asIso2(profile['currentCountryIso2']).isNotEmpty
+          ? _asIso2(profile['currentCountryIso2'])
+          : _asIso2(profile['currentCountryCode']),
       maxDistanceKm: _asIntOrNull(preferences['maxDistanceKm']),
       slowDatingEnabled: _asBool(settings['privacy.slowDating']),
       tutorialCompleted: _asBool(settings['tutorial.completed']),
@@ -303,7 +350,13 @@ class AppUser {
       travelIso2: ((travel['iso2'] as String?) ?? '').toUpperCase(),
       travelCity: (travel['city'] as String?) ?? '',
       travelCountry: (travel['country'] as String?) ?? '',
-      travelUntil: _asEpochDate(travel['until']),
+      // `untilAt` (Timestamp) es el nuevo; `until` (ISO) lo siguen escribiendo
+      // y leyendo las versiones anteriores de la app.
+      travelUntil:
+          _asEpochDate(travel['untilAt']) ?? _asEpochDate(travel['until']),
+      travelLat: _asLatitude(travel['lat']),
+      travelLng: _asLongitude(travel['lng']),
+      travelGeoSource: (travel['geoSource'] as String?)?.trim() ?? '',
       busyModeEnabled: _asBool(settings['privacy.busyModeEnabled']),
       busyModeUntil: _asEpochDate(settings['privacy.busyModeUntil']),
       busyModeStartedAt: _asEpochDate(settings['privacy.busyModeStartedAt']),
@@ -330,6 +383,23 @@ class AppUser {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value);
     return null;
+  }
+
+  /// `settings` no valida tipos en las reglas: una coordenada fuera de rango
+  /// no puede convertirse en el centro del feed.
+  static double? _asLatitude(dynamic value) {
+    final double? v = _asDouble(value);
+    return v != null && v.isFinite && v >= -90 && v <= 90 ? v : null;
+  }
+
+  static double? _asLongitude(dynamic value) {
+    final double? v = _asDouble(value);
+    return v != null && v.isFinite && v >= -180 && v <= 180 ? v : null;
+  }
+
+  static String _asIso2(dynamic value) {
+    final String s = value is String ? value.trim().toUpperCase() : '';
+    return s.length == 2 ? s : '';
   }
 
   bool get canUseAiVisual =>

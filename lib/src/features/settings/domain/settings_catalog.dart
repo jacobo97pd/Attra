@@ -341,18 +341,11 @@ class SettingsCatalog {
         defaultValue: true,
         auditLevel: AuditLevel.standard,
       ),
-      SettingDefinition(
-        key: 'location.travelMode',
-        sectionKey: secLocation,
-        type: SettingType.boolean,
-        label: 'Modo viaje',
-        description:
-            'Fija tu ubicacion en otra ciudad para hacer match antes de '
-            'llegar.',
-        defaultValue: false,
-        requiresSubscription: true,
-        auditLevel: AuditLevel.standard,
-      ),
+      // 'location.travelMode' ya NO es un ajuste: era un interruptor sin
+      // lector (escribía `settings['location.travelMode']` y el viaje de
+      // verdad vive en `settings.travel`, con destino). Salía apagado estando
+      // de viaje y apagarlo no hacía nada. El modo viaje se gestiona desde el
+      // chip "Viajes" del feed; los valores viejos guardados se ignoran.
       SettingDefinition(
         key: 'location.useForMatching',
         sectionKey: secLocation,

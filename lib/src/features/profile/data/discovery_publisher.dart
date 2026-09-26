@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../feed/domain/feed_filter.dart';
 import '../domain/profile_trait.dart';
 import '../domain/profile_traits_catalog.dart';
 import '../domain/profile_visibility.dart';
@@ -9,18 +10,29 @@ import '../domain/public_identity.dart';
 /// `users/{uid}`, respetando visibilidad/consentimiento. PURO (sin I/O) para
 /// ser testeable.
 ///
+/// Quien ESCRIBE la ficha es solo el backend (functions/src/discovery.ts,
+/// `buildDiscoveryDoc`): las reglas ya no dejan al cliente escribirla. Esto es
+/// su espejo en Dart y tiene que decidir LO MISMO (se prueba contra el feed):
+/// si divergen, los tests del cliente dejan de describir lo que ven los demás.
+///
 /// Garantias:
-/// - NUNCA publica email, nombre legal/Auth, tokens, selfie privada ni lat/lng.
+/// - NUNCA publica email, nombre legal/Auth, tokens, selfie privada ni lat/lng
+///   exactas; viajando, nunca las coordenadas reales (solo el centro del
+///   destino).
 /// - El nombre es el PUBLICO elegido ([resolvePublicDisplayName]).
 /// - Un rasgo sensible solo se publica si visibleInProfile=true.
 /// - Un valor `prefer_not_to_say` (o vacío) no se publica.
 class DiscoveryPublisher {
   const DiscoveryPublisher._();
 
+  /// [isPaid] = plan de pago activo (el viaje es Plus/Pro: sin él se ignora,
+  /// igual que en el backend). [now] fija el reloj para la caducidad (tests).
   static Map<String, dynamic> buildPayload(
     String uid,
-    Map<String, dynamic> userData,
-  ) {
+    Map<String, dynamic> userData, {
+    bool isPaid = true,
+    DateTime? now,
+  }) {
     final Map<String, dynamic> profile = _map(userData['profile']);
     final Map<String, dynamic> prefs = _map(userData['preferences']);
     final ProfileVisibility vis = ProfileVisibility.fromUserData(userData);
@@ -37,11 +49,30 @@ class DiscoveryPublisher {
     final Map<String, dynamic> travel = _map(settings['travel']).isNotEmpty
         ? _map(settings['travel'])
         : _map(userData['travel']);
+    // Mismas condiciones que el backend: activo, con país, con plan de pago y
+    // sin caducar (`untilAt` o el ISO `until` de versiones anteriores).
+    final DateTime? travelUntil =
+        _asDate(travel['untilAt']) ?? _asDate(travel['until']);
+    final bool travelOver = travelUntil != null &&
+        !travelUntil.isAfter((now ?? DateTime.now()).toUtc());
     final bool traveling = travel['active'] == true &&
-        (travel['country'] ?? '').toString().trim().isNotEmpty;
+        (travel['country'] ?? '').toString().trim().isNotEmpty &&
+        isPaid &&
+        !travelOver;
     final String realCity =
         (profile['currentCity'] ?? profile['city'] ?? '').toString();
     final String realCountry = (profile['currentCountryName'] ?? '').toString();
+    // País COMPARABLE (ISO2): el de destino viajando; si no, el del
+    // geocodificador, el del onboarding o, como último recurso, el deducido del
+    // nombre. Es lo que el feed compara: el nombre sale en el idioma de cada
+    // teléfono.
+    final String countryIso2 = traveling
+        ? _iso2(travel['iso2'])
+        : <String>[
+            _iso2(profile['currentCountryIso2']),
+            _iso2(profile['currentCountryCode']),
+            _iso2(FeedFilter.canonCountry(realCountry)),
+          ].firstWhere((String s) => s.isNotEmpty, orElse: () => '');
 
     // Ajustes de privacidad/ubicación que afectan a lo que se publica.
     // - location.showOnProfile=false → no exponer la ciudad (sí el país, que se
@@ -67,9 +98,24 @@ class DiscoveryPublisher {
       'bio': profile['bio'] ?? '',
       'currentCity': showCity ? pubCity : '',
       'currentCountryName': traveling ? (travel['country'] ?? '') : realCountry,
+      if (countryIso2.isNotEmpty) 'countryIso2': countryIso2,
       'traveling': traveling,
+      // Viajando se publica el fin del viaje: así el feed de los demás puede
+      // dejar de enseñarlo "de viaje" aunque el barrido del backend no haya
+      // pasado todavía.
+      if (traveling && travelUntil != null)
+        'travelUntil': Timestamp.fromDate(travelUntil),
       'showDistance': showDistance,
       'showActiveStatus': showActiveStatus,
+      // Modo Amigos: intención + intereses sociales (default dating si falta),
+      // como el backend.
+      'intentMode': (profile['intentMode'] is String &&
+              (profile['intentMode'] as String).isNotEmpty)
+          ? profile['intentMode']
+          : 'dating',
+      'socialInterests': profile['socialInterests'] is List
+          ? profile['socialInterests']
+          : <dynamic>[],
     };
 
     // Rasgos del catálogo: se publican bajo su `field` si son utilizables y
@@ -138,16 +184,28 @@ class DiscoveryPublisher {
     // Ubicación APROXIMADA (coords redondeadas ~1.1km) para distancia. NUNCA
     // exacta. Solo si el usuario tiene ubicación.
     //
-    // MODO VIAJE: con el viaje activo NO se publican coordenadas. Publicar las
-    // reales junto al país de destino dejaba al viajero invisible en TODOS los
-    // feeds: fuera del suyo por el filtro de país (su país publicado ya es el
-    // destino) y fuera del de destino por el filtro de radio (sus coordenadas
-    // seguían a miles de km). Sin `geo`, FeedFilter salta la regla de radio
-    // (necesita coordenadas en AMBOS lados) y manda la de país, que es
-    // exactamente la semántica del modo viaje.
+    // MODO VIAJE: las coordenadas REALES nunca se publican viajando (junto al
+    // país de destino dejaban al viajero invisible en todos los feeds). Se
+    // publica el CENTRO de la ciudad de destino si el viaje lo tiene: así solo
+    // lo ve quien está alrededor del destino (antes, sin `geo`, lo veía el país
+    // entero, su propia ciudad incluida). Sin centro (viaje a un país entero o
+    // antiguo), sin `geo`: manda la regla de país, como antes.
     final Map<String, dynamic> location = _map(userData['location']);
-    final double? lat = traveling ? null : _asDouble(location['latitude']);
-    final double? lng = traveling ? null : _asDouble(location['longitude']);
+    final double? travelLat = _asDouble(travel['lat']);
+    final double? travelLng = _asDouble(travel['lng']);
+    final bool travelCentered = traveling &&
+        travelLat != null &&
+        travelLng != null &&
+        travelLat.isFinite &&
+        travelLng.isFinite &&
+        travelLat.abs() <= 90 &&
+        travelLng.abs() <= 180;
+    final double? lat = traveling
+        ? (travelCentered ? travelLat : null)
+        : _asDouble(location['latitude']);
+    final double? lng = traveling
+        ? (travelCentered ? travelLng : null)
+        : _asDouble(location['longitude']);
     if (lat != null && lng != null) {
       // Precisión: 'precise' redondea ~1.1km (2 decimales); 'approximate'
       // difumina a ~11km (1 decimal) para no revelar la zona exacta.
@@ -162,6 +220,11 @@ class DiscoveryPublisher {
     }
 
     return out;
+  }
+
+  static String _iso2(Object? v) {
+    final String s = v is String ? v.trim().toUpperCase() : '';
+    return RegExp(r'^[A-Z]{2}$').hasMatch(s) ? s : '';
   }
 
   static double _round2(double v) => (v * 100).roundToDouble() / 100;
