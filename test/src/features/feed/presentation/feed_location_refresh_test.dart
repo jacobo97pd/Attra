@@ -508,9 +508,9 @@ Widget _host({
   _Loads? loads,
   Duration? loadDelay,
   List<SeedProfile> profiles = const <SeedProfile>[],
-  // El viaje solo cuenta con un plan que lo incluya: estos tests modelan a
-  // quien lo paga (el caso sin plan tiene su propio test).
-  bool canUseTravelMode = true,
+  // El viaje solo cuenta con un plan de pago: estos tests modelan a quien lo
+  // paga (el caso sin plan tiene su propio test).
+  bool travelPlanActive = true,
 }) {
   return MaterialApp(
     theme: AppTheme.light,
@@ -526,7 +526,7 @@ Widget _host({
         chatService: _ChatServiceStub(),
         locationSource: source,
         onDeviceLocation: saved.call,
-        canUseTravelMode: canUseTravelMode,
+        travelPlanActive: travelPlanActive,
         // Estos tests van del GPS, no de dónde se centra el viaje: un destino
         // sin centro deja el feed a nivel de país, como antes (lo del centro lo
         // cubre feed_travel_test).

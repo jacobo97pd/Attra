@@ -31,6 +31,7 @@ import '../../chat/presentation/chats_screen.dart';
 import '../../feed/data/feed_metrics_service.dart';
 import '../../feed/data/ranking_signals_repository.dart';
 import '../../feed/domain/ranking_config.dart';
+import '../../feed/domain/travel_scope.dart';
 import '../../feed/presentation/feed_screen.dart';
 import '../../feed/presentation/travel_sheet.dart';
 import '../../geo/domain/travel_destination_resolver.dart';
@@ -575,7 +576,13 @@ class _HomeShellState extends State<HomeShell> {
           // Anuncios: flag activo Y el usuario NO es Plus/Pro (premium sin ads).
           adsEnabled: (_entitlementController?.flags.adsEnabled ?? false) &&
               !(_entitlementController?.isPlusActive ?? false),
-          canUseTravelMode: _entitlementController?.canUseTravelMode ?? false,
+          // Gate del viaje en el feed: la misma condición que el backend (plan
+          // de pago vigente), NO `canUseTravelMode`, que mira también los
+          // flags. Con la IA apagada por emergencia, todo viajero Pro volvía
+          // al feed de casa mientras el backend le seguía publicando en el
+          // destino.
+          travelPlanActive:
+              TravelScope.planKeepsTravel(_entitlementController?.entitlements),
           // Mientras cargan los entitlements el viaje cuenta: el controlador
           // arranca como Free y, si no, todo viajero de pago veía un instante
           // el feed de casa.

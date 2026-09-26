@@ -480,8 +480,9 @@ export function buildDiscoveryDoc(
   // publica el CENTRO de la ciudad de destino, redondeado igual: asi el
   // viajero sale alrededor del destino (Cadiz, Jerez, El Puerto) y no en toda
   // Espana, su propia ciudad incluida, como pasaba sin `geo`. Sin centro
-  // (viaje a un pais entero, o guardado por una version antigua) no hay `geo`
-  // y manda la regla de pais, como antes.
+  // (viaje a un pais entero, o guardado por una version antigua) no hay `geo`:
+  // los clientes nuevos solo ensenan esa ficha a quien esta en la ciudad de
+  // destino (FeedFilter, `travelersNeedGeo`); los antiguos, a todo el pais.
   const location = asMap(data.location);
   const center = traveling ? travelCenter(travel) : null;
   const latitude = traveling

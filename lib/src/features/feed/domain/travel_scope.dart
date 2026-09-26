@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../../auth/domain/app_user.dart';
 import '../../auth/domain/location_refresh_policy.dart';
 import '../../geo/domain/place_names.dart';
+import '../../monetization/domain/user_entitlements.dart';
 import '../../profile/domain/profile_state.dart';
 import '../../social/domain/intent_mode.dart';
 import 'feed_filter.dart';
@@ -64,12 +65,30 @@ class TravelScope {
   /// caducado el backend ya publica al usuario en su casa, así que su feed no
   /// puede seguir en el destino (vería a gente que no le puede ver).
   ///
-  /// [travelAllowed] = el plan lo incluye o los entitlements aún no han
-  /// cargado: al arrancar el controlador empieza como Free y, sin esa
-  /// tolerancia, todo viajero de pago veía un instante el feed de casa (y se
-  /// disparaba una recarga y un refresco de ubicación para nada).
+  /// [travelAllowed] = el plan sigue siendo de pago ([planKeepsTravel]) o los
+  /// entitlements aún no han cargado: al arrancar el controlador es Free y,
+  /// sin esa tolerancia, todo viajero de pago veía un instante el feed de casa
+  /// (y se disparaba una recarga y un refresco de ubicación para nada).
   static bool isTravelEffective(AppUser? user, {required bool travelAllowed}) =>
       user != null && user.isTraveling && travelAllowed;
+
+  /// ¿Sigue el plan sosteniendo un viaje YA activado? Es la misma condición
+  /// que usa el backend para publicar al viajero en el destino (`isPaidActive`
+  /// en functions/src/discovery.ts): tier de pago y sin caducar. Nada más.
+  ///
+  /// A propósito NO pasa por `hasFeature`/`canUseTravelMode`: esos miran los
+  /// flags de monetización, y para Pro también los interruptores de la IA
+  /// (`aiKillSwitch`, `proAiEnabled`). El backend no los mira y sigue
+  /// publicando al viajero en el destino, así que apagar la IA en una
+  /// emergencia devolvía el feed de todo viajero Pro a su casa: él seguía
+  /// "de viaje en Cádiz" para los demás y veía gente que no le podía ver
+  /// (la visibilidad de un solo sentido que este gate venía a quitar). Los
+  /// flags deciden si se puede ACTIVAR un viaje (la hoja), no si uno ya
+  /// activo sigue contando.
+  static bool planKeepsTravel(UserEntitlements? entitlements, {DateTime? now}) {
+    if (entitlements == null) return false;
+    return entitlements.effectiveTierAt(now ?? DateTime.now()).isPaid;
+  }
 
   /// Radio viajando: el del usuario (filtro o preferencia) con suelo en
   /// [minTravelRadiusKm].

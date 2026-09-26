@@ -40,6 +40,8 @@ void main() {
     int? maxKmOverride,
     String noGeoCity = '',
     bool requireGeo = false,
+    bool travelersNeedGeo = false,
+    String myCity = '',
   }) =>
       FeedFilter.apply(
         profiles: profiles,
@@ -54,6 +56,8 @@ void main() {
         maxKmOverride: maxKmOverride,
         noGeoCity: noGeoCity,
         requireGeo: requireGeo,
+        travelersNeedGeo: travelersNeedGeo,
+        myCity: myCity,
       );
 
   group('país por ISO2', () {
@@ -144,6 +148,100 @@ void main() {
         }),
       ]);
       expect(ids(out), <String>['vigente']);
+    });
+
+    group('feed de casa: viajeros publicados sin centro', () {
+      const double madridLat = 40.42;
+      const double madridLng = -3.70;
+      const Map<String, dynamic> deViaje = <String, dynamic>{
+        'traveling': true,
+      };
+      // Pool del caso D02: una app antigua en Madrid activa un viaje a Cádiz
+      // sin lat/lng y el backend la publica "de viaje" en España SIN `geo`.
+      final List<SeedProfile> pool = <SeedProfile>[
+        p('viajero_cadiz_sin_geo',
+            city: 'Cádiz', country: 'España', iso2: 'ES', extra: deViaje),
+        p('viajero_pais_entero', country: 'España', iso2: 'ES', extra: deViaje),
+        p('viajero_madrid_sin_geo',
+            city: 'Madrid', country: 'España', iso2: 'ES', extra: deViaje),
+        p('viajero_cadiz_con_centro',
+            city: 'Cádiz',
+            country: 'España',
+            iso2: 'ES',
+            lat: 36.53,
+            lng: -6.29,
+            extra: deViaje),
+        // Fichas normales sin coordenadas (mocks, gente sin ubicación): no
+        // cambian, siguen con la regla de país.
+        p('local_sin_geo', city: 'Sevilla', country: 'España', iso2: 'ES'),
+        p('madrileno',
+            city: 'Madrid',
+            country: 'España',
+            iso2: 'ES',
+            lat: madridLat,
+            lng: madridLng),
+      ];
+
+      test('desde Madrid no sale quien viaja a Cádiz sin centro', () {
+        final List<SeedProfile> out = apply(
+          pool,
+          myCountry: 'España',
+          myCountryIso2: 'ES',
+          myLat: madridLat,
+          myLng: madridLng,
+          maxKmOverride: 100,
+          travelersNeedGeo: true,
+          myCity: 'Madrid',
+        );
+        expect(ids(out), <String>[
+          'viajero_madrid_sin_geo',
+          'local_sin_geo',
+          'madrileno',
+        ]);
+      });
+
+      test('en Cádiz sí (misma ciudad aunque cambie la grafía)', () {
+        final List<SeedProfile> out = apply(
+          pool,
+          myCountry: 'España',
+          myCountryIso2: 'ES',
+          myLat: 36.53,
+          myLng: -6.29,
+          maxKmOverride: 100,
+          travelersNeedGeo: true,
+          myCity: 'Cadiz',
+        );
+        expect(
+            ids(out),
+            containsAll(<String>[
+              'viajero_cadiz_sin_geo',
+              'viajero_cadiz_con_centro',
+            ]));
+        expect(ids(out), isNot(contains('viajero_pais_entero')),
+            reason: 'un viaje a todo el país no tiene ciudad con la que casar');
+        expect(ids(out), isNot(contains('viajero_madrid_sin_geo')));
+      });
+
+      test('sin ciudad propia no se puede comprobar: no entra', () {
+        final List<SeedProfile> out = apply(
+          pool,
+          myCountry: 'España',
+          myCountryIso2: 'ES',
+          travelersNeedGeo: true,
+        );
+        expect(ids(out), isNot(contains('viajero_cadiz_sin_geo')));
+        expect(ids(out), contains('local_sin_geo'));
+      });
+
+      test('regla apagada (búsqueda IA, feed de viaje): como antes', () {
+        final List<SeedProfile> out = apply(
+          pool,
+          myCountry: 'España',
+          myCountryIso2: 'ES',
+          myCity: 'Madrid',
+        );
+        expect(ids(out), contains('viajero_cadiz_sin_geo'));
+      });
     });
   });
 

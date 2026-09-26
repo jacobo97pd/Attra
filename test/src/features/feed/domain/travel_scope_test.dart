@@ -3,6 +3,10 @@ import 'package:attra/src/features/feed/domain/ranking.dart';
 import 'package:attra/src/features/feed/domain/ranking_config.dart';
 import 'package:attra/src/features/feed/domain/travel_scope.dart';
 import 'package:attra/src/features/geo/domain/place_names.dart';
+import 'package:attra/src/features/monetization/domain/monetization_feature_flags.dart';
+import 'package:attra/src/features/monetization/domain/premium_feature.dart';
+import 'package:attra/src/features/monetization/domain/subscription_tier.dart';
+import 'package:attra/src/features/monetization/domain/user_entitlements.dart';
 import 'package:attra/src/features/profile/domain/profile_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -214,5 +218,62 @@ void main() {
         isFalse);
     expect(
         TravelScope.isTravelEffective(viajera(), travelAllowed: true), isTrue);
+  });
+
+  group('gate del viaje = el del backend (isPaidActive), no los flags', () {
+    final DateTime ahora = DateTime(2026, 9, 26, 12);
+    final UserEntitlements pro = UserEntitlements.forTier(
+      uid: 'yo',
+      tier: SubscriptionTier.pro,
+      expiresAt: ahora.add(const Duration(days: 10)),
+    );
+
+    test('IA apagada por emergencia: el viaje de un Pro sigue contando', () {
+      // Es la palanca de emergencia de la IA. Antes el feed usaba
+      // canUseTravelMode (que la mira) y todo viajero Pro volvía a su casa
+      // mientras el backend le seguía publicando en el destino.
+      const MonetizationFeatureFlags iaApagada =
+          MonetizationFeatureFlags(aiKillSwitch: true);
+      expect(
+          pro.hasFeature(PremiumFeature.travelMode,
+              flags: iaApagada, at: ahora),
+          isFalse,
+          reason: 'la hoja no deja ACTIVAR viajes nuevos');
+      expect(TravelScope.planKeepsTravel(pro, now: ahora), isTrue,
+          reason: 'pero el que ya está puesto sigue, como en el backend');
+    });
+
+    test('monetización apagada: igual, manda el plan', () {
+      const MonetizationFeatureFlags sinMonetizacion =
+          MonetizationFeatureFlags(monetizationEnabled: false);
+      expect(
+          pro.hasFeature(PremiumFeature.travelMode,
+              flags: sinMonetizacion, at: ahora),
+          isFalse);
+      expect(TravelScope.planKeepsTravel(pro, now: ahora), isTrue);
+    });
+
+    test('plan caducado, Free o sin datos: no cuenta', () {
+      final UserEntitlements caducado = UserEntitlements.forTier(
+        uid: 'yo',
+        tier: SubscriptionTier.plus,
+        expiresAt: ahora.subtract(const Duration(days: 1)),
+      );
+      expect(TravelScope.planKeepsTravel(caducado, now: ahora), isFalse);
+      expect(
+          TravelScope.planKeepsTravel(UserEntitlements.free(uid: 'yo'),
+              now: ahora),
+          isFalse);
+      expect(TravelScope.planKeepsTravel(null, now: ahora), isFalse);
+    });
+
+    test('vitalicio (cuentas de App Review): cuenta sin fecha de fin', () {
+      final UserEntitlements vitalicio = UserEntitlements.forTier(
+        uid: 'yo',
+        tier: SubscriptionTier.pro,
+        isLifetime: true,
+      );
+      expect(TravelScope.planKeepsTravel(vitalicio, now: ahora), isTrue);
+    });
   });
 }

@@ -39,7 +39,7 @@ void main() {
     await tester.pumpWidget(_host(
       user: _viajera(travelLat: 36.53, travelLng: -6.29),
       profiles: pool,
-      canUseTravelMode: true,
+      travelPlanActive: true,
     ));
     await tester.pumpAndSettle();
 
@@ -63,7 +63,7 @@ void main() {
     await tester.pumpWidget(_host(
       user: _viajera(travelLat: null, travelLng: null),
       profiles: pool,
-      canUseTravelMode: true,
+      travelPlanActive: true,
     ));
     await tester.pumpAndSettle();
 
@@ -81,7 +81,7 @@ void main() {
     await tester.pumpWidget(_host(
       user: _viajera(travelLat: 36.53, travelLng: -6.29),
       profiles: pool,
-      canUseTravelMode: false,
+      travelPlanActive: false,
     ));
     await tester.pumpAndSettle();
 
@@ -102,7 +102,7 @@ void main() {
     await tester.pumpWidget(_host(
       user: _viajera(travelLat: 36.53, travelLng: -6.29),
       profiles: pool,
-      canUseTravelMode: false,
+      travelPlanActive: false,
       entitlementsLoading: true,
     ));
     await tester.pumpAndSettle();
@@ -125,7 +125,7 @@ void main() {
         travelUntil: DateTime.now().subtract(const Duration(days: 1)),
       ),
       profiles: pool,
-      canUseTravelMode: true,
+      travelPlanActive: true,
       onTravelExpired: () async => apagados++,
     ));
     await tester.pumpAndSettle();
@@ -138,6 +138,59 @@ void main() {
     final List<String> mazo = await _recorrerMazo(tester);
     expect(mazo, contains('Mario'), reason: 'vuelve el feed de casa');
   });
+
+  testWidgets(
+      'feed de casa en Madrid: no sale quien viaja a Cádiz publicado sin '
+      'centro', (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    // Caso D02 tras el despliegue: alguien con la app ANTIGUA en Madrid activa
+    // un viaje a Cádiz sin lat/lng y el backend lo publica "de viaje" en
+    // España SIN `geo`. Sin coordenadas se saltaba el radio de quien mira y
+    // salía, "De viaje", a toda la gente de Madrid.
+    await tester.pumpWidget(_host(
+      user: _madrilena(),
+      profiles: <SeedProfile>[
+        ...pool,
+        _perfil('viajero_cadiz', 'Tomás', city: 'Cádiz', traveling: true),
+        _perfil('viajero_madrid', 'Toni', city: 'Madrid', traveling: true),
+      ],
+      travelPlanActive: false,
+    ));
+    await tester.pumpAndSettle();
+
+    final List<String> mazo = await _recorrerMazo(tester);
+    expect(mazo, isNot(contains('Tomás')),
+        reason: 'de viaje en Cádiz y sin centro: no se puede medir, y desde '
+            'Madrid no es "de tu zona"');
+    expect(mazo, contains('Toni'),
+        reason: 'quien viaja a TU ciudad sí sale, aunque no tenga centro');
+    expect(mazo, containsAll(<String>['Mario', 'Manu']),
+        reason: 'las fichas normales (con o sin ubicación) no cambian');
+    expect(mazo, isNot(contains('Lucas')), reason: 'Cádiz, fuera del radio');
+  });
+}
+
+/// Quien mira desde casa: vive en Madrid, no viaja.
+AppUser _madrilena() {
+  return AppUser(
+    uid: 'yo',
+    email: 'yo@example.test',
+    displayName: 'Yo',
+    photoUrl: '',
+    onboardingCompleted: true,
+    profileCompleted: true,
+    profileCompletionPercent: 100,
+    isBot: false,
+    gender: 'female',
+    interestedIn: const <String>['male'],
+    latitude: 40.4168,
+    longitude: -3.7038,
+    locationUpdatedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+    countryName: 'España',
+    countryIso2: 'ES',
+    city: 'Madrid',
+    maxDistanceKm: 100,
+  );
 }
 
 AppUser _viajera({
@@ -179,6 +232,7 @@ SeedProfile _perfil(
   required String city,
   double? lat,
   double? lng,
+  bool traveling = false,
 }) {
   return SeedProfile.fromMap(id, <String, dynamic>{
     'displayName': nombre,
@@ -190,6 +244,7 @@ SeedProfile _perfil(
     'interestedIn': <String>['female'],
     'isBot': false,
     'bio': 'Hola',
+    if (traveling) 'traveling': true,
     if (lat != null && lng != null)
       'geo': <String, dynamic>{'lat': lat, 'lng': lng},
   });
@@ -198,7 +253,7 @@ SeedProfile _perfil(
 Widget _host({
   required AppUser user,
   required List<SeedProfile> profiles,
-  required bool canUseTravelMode,
+  required bool travelPlanActive,
   bool entitlementsLoading = false,
   Future<void> Function()? onTravelExpired,
 }) {
@@ -213,7 +268,7 @@ Widget _host({
         locationSource: _SinGps(),
         onDeviceLocation: _noGuardar,
         placeResolver: const _SinSitio(),
-        canUseTravelMode: canUseTravelMode,
+        travelPlanActive: travelPlanActive,
         entitlementsLoading: entitlementsLoading,
         onTravelExpired: onTravelExpired,
       ),

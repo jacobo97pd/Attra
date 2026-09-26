@@ -36,10 +36,14 @@ class FeedFilter {
     int? maxKmOverride,
     String noGeoCity = '',
     bool requireGeo = false,
+    bool travelersNeedGeo = false,
+    String myCity = '',
     IntentMode myIntent = IntentMode.dating,
   }) {
     final String noGeoCityKey =
         noGeoCity.trim().isEmpty ? '' : PlaceNames.canonCity(noGeoCity);
+    final String myCityKey =
+        myCity.trim().isEmpty ? '' : PlaceNames.canonCity(myCity);
     return profiles.where((SeedProfile p) {
       if (p.id == myUid) return false;
       if (excludedUids.contains(p.id)) return false;
@@ -88,6 +92,21 @@ class FeedFilter {
       if (noGeoCityKey.isNotEmpty &&
           !theyHaveGeo &&
           PlaceNames.canonCity(p.city) != noGeoCityKey) {
+        return false;
+      }
+      // Feed de casa ([travelersNeedGeo]): una ficha "de viaje" SIN
+      // coordenadas (viaje guardado por una versión antigua de la app, viaje a
+      // un país entero o a una ciudad que no se pudo situar) se saltaba el
+      // radio y la veía TODO el país: quien vive en Madrid y viaja a Cádiz
+      // seguía saliendo, "de viaje", a la gente de Madrid. Sin centro no hay
+      // distancia que medir, así que solo entra para quien está en esa misma
+      // ciudad ([myCity]; sin ciudad propia no se puede comprobar y no entra).
+      // Las fichas normales sin coordenadas no cambian: siguen con la regla de
+      // país, como siempre.
+      if (travelersNeedGeo &&
+          p.traveling &&
+          !theyHaveGeo &&
+          (myCityKey.isEmpty || PlaceNames.canonCity(p.city) != myCityKey)) {
         return false;
       }
 

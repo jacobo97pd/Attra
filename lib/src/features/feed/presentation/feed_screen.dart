@@ -91,7 +91,7 @@ class FeedScreen extends StatefulWidget {
     this.metrics,
     this.boostService,
     this.adsEnabled = false,
-    this.canUseTravelMode = false,
+    this.travelPlanActive = false,
     this.entitlementsLoading = false,
     this.onOpenTravel,
     this.onTravelExpired,
@@ -204,10 +204,12 @@ class FeedScreen extends StatefulWidget {
   /// usuario NO es Plus/Pro). Si false, el feed va sin anuncios.
   final bool adsEnabled;
 
-  /// Modo viajes (Plus/Pro): botón para cambiar la ubicación del feed. Es
-  /// también el GATE del feed: con el plan caducado el viaje no cuenta (el
-  /// backend ya publica al usuario en casa) aunque siga marcado como activo.
-  final bool canUseTravelMode;
+  /// GATE del modo viajes en el feed: el plan sigue siendo de pago (ver
+  /// [TravelScope.planKeepsTravel]). Con el plan caducado el viaje no cuenta
+  /// (el backend ya publica al usuario en casa) aunque siga marcado como
+  /// activo. NO es `canUseTravelMode`: ese mira además los flags remotos, que
+  /// el backend no mira, y los dos lados volvían a no coincidir.
+  final bool travelPlanActive;
 
   /// Los entitlements aún no han llegado. Mientras tanto el viaje SÍ cuenta:
   /// el controlador arranca como Free y, sin esto, todo viajero de pago veía un
@@ -455,12 +457,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// Resolutor por defecto (solo dataset offline) para viajes sin centro.
   TravelDestinationResolver? _offlineTravelResolver;
 
-  /// ¿Cuenta el viaje para el feed de [w]? Viaje vigente Y plan que lo incluye
+  /// ¿Cuenta el viaje para el feed de [w]? Viaje vigente Y plan de pago
   /// (o entitlements aún cargando). Ver [TravelScope.isTravelEffective].
   static bool _travelEffectiveFor(FeedScreen w) =>
       TravelScope.isTravelEffective(
         w.user,
-        travelAllowed: w.canUseTravelMode || w.entitlementsLoading,
+        travelAllowed: w.travelPlanActive || w.entitlementsLoading,
       );
 
   bool get _travelEffective => _travelEffectiveFor(widget);
@@ -1435,6 +1437,12 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myCountry: myCountry,
           myCountryIso2: myCountryIso2,
           defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
+          // Viajeros publicados SIN centro (apps antiguas, ciudades que no se
+          // pudieron situar): se saltaban el radio y salían en todo el país.
+          // Solo entran para quien está en su ciudad de destino. La búsqueda
+          // IA es global a propósito y no filtra por ubicación.
+          travelersNeedGeo: !aiSearch,
+          myCity: widget.user?.city ?? '',
           // Modo Amigos: filtra por compatibilidad de intención (default dating).
           myIntent: widget.user?.intentMode ?? IntentMode.dating,
         );
