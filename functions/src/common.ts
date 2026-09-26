@@ -1,5 +1,9 @@
 import { HttpsError } from "firebase-functions/v2/https";
-import { DocumentData, DocumentSnapshot } from "firebase-admin/firestore";
+import {
+  DocumentData,
+  DocumentReference,
+  DocumentSnapshot,
+} from "firebase-admin/firestore";
 import { db } from "./firebase";
 import { directedId } from "./ids";
 
@@ -111,6 +115,33 @@ export function isUserContactable(snap: DocumentSnapshot<DocumentData>): boolean
   if (data.isBanned === true) return false;
   if (data.isDeleted === true) return false;
   return true;
+}
+
+/// Lector de documentos inyectable: `ref.get()` fuera de transaccion o
+/// `tx.get(ref)` dentro, para que la misma comprobacion sirva en ambos sitios.
+export type DocReader = (
+  ref: DocumentReference<DocumentData>
+) => Promise<DocumentSnapshot<DocumentData>>;
+
+/// ¿Se le puede seguir escribiendo a `uid`? Usuario contactable o, si no tiene
+/// `users/{uid}`, perfil semilla (bots del feed), igual que admite `sendLike`.
+///
+/// QUE FALLABA: los callables de chat solo miraban `chat.status`, asi que un
+/// chat con alguien que habia borrado la cuenta (o baneado) seguia aceptando
+/// mensajes hacia un usuario que ya no existe. La limpieza al borrar la cuenta
+/// cierra esos chats, pero esto cubre los datos viejos y la ventana hasta que
+/// el trigger termina. Si `users/{uid}` existe decide el (baneado/borrado no se
+/// rescata por tener tambien un doc semilla): la segunda lectura solo se paga
+/// en chats con bots.
+export async function isReachableUser(
+  uid: string,
+  read: DocReader = (ref) => ref.get()
+): Promise<boolean> {
+  if (!uid) return false;
+  const userSnap = await read(col.users.doc(uid));
+  if (userSnap.exists) return isUserContactable(userSnap);
+  const seedSnap = await read(db.collection("seed_profiles").doc(uid));
+  return seedSnap.exists;
 }
 
 /// True si existe bloqueo en cualquier direccion entre a y b.

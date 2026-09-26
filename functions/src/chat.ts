@@ -7,6 +7,7 @@ import {
   MAX_MESSAGE_LENGTH,
   col,
   existsBlockBetween,
+  isReachableUser,
   nextJourneyStatus,
   requireAuthUid,
   requireStringArg,
@@ -40,6 +41,26 @@ function journeyPatch(
   const patch = { journeyStatus, journeyUpdatedAt: now };
   tx.set(col.matches.doc(matchId), patch, { merge: true });
   return patch;
+}
+
+/// Pre-validacion comun de los envios: sin bloqueo en ningun sentido y con un
+/// receptor que siga existiendo. Las dos lecturas van en paralelo para no
+/// sumar latencia a cada mensaje.
+///
+/// QUE FALLABA: solo se miraba `chat.status`, y borrar la cuenta no tocaba los
+/// chats, asi que un chat con alguien que ya no existe seguia aceptando
+/// mensajes (y notas de voz, y fotos) hacia nadie.
+async function assertCanWriteTo(senderId: string, otherUid: string): Promise<void> {
+  const [blocked, reachable] = await Promise.all([
+    existsBlockBetween(senderId, otherUid),
+    isReachableUser(otherUid),
+  ]);
+  if (blocked) {
+    throw new HttpsError("permission-denied", "No puedes escribir a este usuario.");
+  }
+  if (!reachable) {
+    throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
+  }
 }
 
 function messageCandidate(nextCount: number): JourneyStatus {
@@ -77,9 +98,7 @@ export const sendMessage = onCall({ region: REGION }, async (request) => {
     throw new HttpsError("permission-denied", "No participas en este chat.");
   }
   const otherUid = preUsers.find((u) => u !== senderId) ?? "";
-  if (await existsBlockBetween(senderId, otherUid)) {
-    throw new HttpsError("permission-denied", "No puedes escribir a este usuario.");
-  }
+  await assertCanWriteTo(senderId, otherUid);
 
   const messageId = await db.runTransaction(async (tx): Promise<string> => {
     const chatSnap = await tx.get(chatRef);
@@ -217,9 +236,7 @@ export const sendMediaMessage = onCall({ region: REGION }, async (request) => {
     throw new HttpsError("permission-denied", "No participas en este chat.");
   }
   const otherUid = preUsers.find((u) => u !== senderId) ?? "";
-  if (await existsBlockBetween(senderId, otherUid)) {
-    throw new HttpsError("permission-denied", "No puedes escribir a este usuario.");
-  }
+  await assertCanWriteTo(senderId, otherUid);
 
   await db.runTransaction(async (tx): Promise<void> => {
     const chatSnap = await tx.get(chatRef);
@@ -491,6 +508,12 @@ export const sendDateProposal = onCall({ region: REGION }, async (request) => {
       throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
     }
     const receiverId = users.find((u) => u !== senderId) ?? "";
+    // Mismo candado que sendMessage (receptor que siga existiendo). Aqui va
+    // dentro de la transaccion, antes de la primera escritura, porque el
+    // receptor sale del propio chat y no hay pre-lectura fuera.
+    if (!(await isReachableUser(receiverId, (ref) => tx.get(ref)))) {
+      throw new HttpsError("failed-precondition", "Este chat ya no esta disponible.");
+    }
     const matchId = (chat.matchId ?? chatId).toString();
 
     const now = FieldValue.serverTimestamp();
@@ -545,8 +568,8 @@ const MAX_CLOSURE_LENGTH = 500;
 
 /// closeConversationGracefully (Attra Clear §3): cierra un chat ACTIVO con un
 /// mensaje de despedida respetuoso. Es autoritativo: escribe el mensaje `closure`
-/// y marca el chat `closed` con metadatos (closedBy/Reason/Message) en una única
-/// transacción. Tras cerrar, el chat no admite más mensajes (status != active).
+/// y marca el chat (y su match) `closed` con metadatos (closedBy/Reason/Message)
+/// en una única transacción. Tras cerrar, el chat no admite más mensajes (status != active).
 /// Cuenta positivamente en métricas de fiabilidad (best-effort, §7).
 export const closeConversationGracefully = onCall(
   { region: REGION },
@@ -590,6 +613,22 @@ export const closeConversationGracefully = onCall(
         chat.journeyStatus,
         "archived",
         now
+      );
+      // El match se cierra CON el chat. QUE FALLABA: solo se marcaba el chat, el
+      // match seguia 'active' y la pestaña Matches (que filtra por el estado del
+      // match) enseñaba a ambos un "Enviar mensaje" hacia un chat donde ya no se
+      // puede escribir. 'closed' es un estado propio, distinto de 'unmatched' y
+      // 'blocked': todo lo que exige match 'active' (pestaña Matches,
+      // sendLike/sendAttra, Spark) ya lo trata como terminal.
+      tx.set(
+        col.matches.doc(matchId),
+        {
+          status: "closed",
+          closedAt: now,
+          closedByUserId: senderId,
+          updatedAt: now,
+        },
+        { merge: true }
       );
 
       tx.set(messageRef, {

@@ -123,6 +123,9 @@ class ReviewDemoSeedTest(unittest.TestCase):
                 self.assertEqual(request.get_header('Authorization'),
                                  'Bearer offline-placeholder')
                 return io.BytesIO(b'{}')
+            if "/matches/" in request.full_url:
+                # Cuenta limpia: ningun mock de LIKED_ME tiene match previo.
+                raise urllib.error.HTTPError(request.full_url, 404, "missing", {}, None)
             fields = {"isBot": {"booleanValue": True},
                       "photoUrl": {"stringValue": "https://example.test/photo"},
                       "displayName": {"stringValue": "Demo"}}
@@ -131,8 +134,10 @@ class ReviewDemoSeedTest(unittest.TestCase):
         with patch.object(self.seed.urllib.request, "urlopen", fake_urlopen):
             self.run_seed()
         methods = [request.get_method() for request in requests]
-        self.assertEqual(methods[:9], ["GET"] * 9)
-        self.assertEqual(methods[9:], ["POST"])
+        # users + 8 seed_profiles + un match por cada mock de LIKED_ME.
+        reads = 9 + len(self.seed.LIKED_ME)
+        self.assertEqual(methods[:reads], ["GET"] * reads)
+        self.assertEqual(methods[reads:], ["POST"])
 
     def test_missing_mock_aborts_before_any_write(self):
         self.seed.TOKEN = "offline-placeholder"
@@ -167,7 +172,8 @@ class ReviewDemoSeedTest(unittest.TestCase):
             'photoUrl': {'stringValue': 'https://example.test/photo'},
             'displayName': {'stringValue': 'Demo'},
             'storiesEnabled': {'booleanValue': True},
-        }), patch.object(self.seed.urllib.request, 'urlopen') as network:
+        }), patch.object(self.seed, 'find_document', return_value=None), \
+                patch.object(self.seed.urllib.request, 'urlopen') as network:
             output = self.run_seed('--check-only')
         network.assert_not_called()
         self.assertIn('storiesEnabled=True', output)
@@ -223,11 +229,59 @@ class ReviewDemoSeedTest(unittest.TestCase):
                 raise SystemExit('Falta cuenta de prueba')
             return fields
         with patch.object(self.seed, 'require_document', side_effect=existing), \
+                patch.object(self.seed, 'find_document', return_value=None), \
                 patch.object(self.seed.urllib.request, 'urlopen') as network:
             with self.assertRaisesRegex(SystemExit, 'Falta cuenta'):
                 self.run_seed('--peer-uid', 'other_review_account')
         network.assert_not_called()
         self.assertFalse(self.seed.PENDING_WRITES)
+
+    def test_old_match_with_liked_me_mock_aborts_before_any_write(self):
+        # Ronda anterior: el revisor respondio a Maria y deshizo el match. El
+        # backend trata ese match como terminal ('blocked'), asi que re-sembrar
+        # su like dejaba en la bandeja una tarjeta que no se podia responder.
+        self.seed.TOKEN = 'offline-placeholder'
+        fields = {'isBot': {'booleanValue': True},
+                  'photoUrl': {'stringValue': 'https://example.test/photo'},
+                  'displayName': {'stringValue': 'Demo'}}
+        stale = {self.seed.pair_id(self.uid, 'mock_t_maria'): 'unmatched',
+                 self.seed.pair_id(self.uid, 'mock_t_carmen'): 'active'}
+
+        def old_matches(path):
+            collection, _, doc_id = path.partition('/')
+            if collection == 'matches' and doc_id in stale:
+                return {'status': {'stringValue': stale[doc_id]}}
+            return None
+
+        with patch.object(self.seed, 'require_document', return_value=fields), \
+                patch.object(self.seed, 'find_document', side_effect=old_matches), \
+                patch.object(self.seed.urllib.request, 'urlopen') as network:
+            with self.assertRaises(SystemExit) as raised:
+                self.run_seed()
+        message = str(raised.exception)
+        self.assertIn('mock_t_maria (unmatched)', message)
+        self.assertIn('mock_t_carmen (active)', message)
+        self.assertIn(f'reset_mock_feed.py --uid {self.uid} '
+                      '--only mock_t_maria mock_t_carmen', message)
+        self.assertNotIn('mock_t_laura', message)
+        network.assert_not_called()
+        self.assertFalse(self.seed.PENDING_WRITES)
+
+    def test_find_document_reads_missing_docs_as_none(self):
+        self.seed.TOKEN = 'offline-placeholder'
+
+        def missing(request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 404, 'missing', {}, None)
+
+        with patch.object(self.seed.urllib.request, 'urlopen', missing):
+            self.assertIsNone(self.seed.find_document('matches/a_b'))
+
+        def denied(request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 403, 'denied', {}, None)
+
+        with patch.object(self.seed.urllib.request, 'urlopen', denied):
+            with self.assertRaises(urllib.error.HTTPError):
+                self.seed.find_document('matches/a_b')
 
 
 if __name__ == "__main__":

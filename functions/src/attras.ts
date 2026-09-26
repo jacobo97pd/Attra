@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { createHash } from "node:crypto";
 import {
+  DocumentData,
   DocumentReference,
   FieldValue,
   Transaction,
@@ -9,12 +10,17 @@ import { REGION, db } from "./firebase";
 import { directedId, pairId } from "./ids";
 import { ContextMessageParams, writeContextMessage, writeMatchAndChat } from "./match";
 import { parsePromptTarget } from "./likes";
-import { moderateComment } from "./moderation";
+import {
+  CommentModerationStatus,
+  ModerationResult,
+  moderateComment,
+} from "./moderation";
 import {
   recordBoostLikeReceivedForUser,
   recordBoostMatchGeneratedForUser,
 } from "./boosts";
 import {
+  activeEntitlementTier,
   col,
   isUserContactable,
   requireAuthUid,
@@ -142,6 +148,25 @@ export function commitAttraSpend(
   });
 }
 
+/// Comentar es funcion Plus, igual que en sendLike: para Free se descarta el
+/// comentario aunque la peticion lo incluya (el Attra en si lo puede enviar
+/// cualquiera; lo gateado es el comentario).
+///
+/// QUE FALLABA: se leia `tier` en crudo, asi que un Plus/Pro CADUCADO (el doc
+/// conserva el tier con un `expiresAt` pasado; nada lo baja a free) seguia
+/// comentando en cada Attra, mientras `senderPrioritySnapshot` del mismo envio
+/// ya lo sellaba como free. `activeEntitlementTier` resuelve caducidad y
+/// lifetime, como en sendLike.
+export function attraCommentFields(
+  entData: DocumentData | undefined,
+  mod: ModerationResult
+): { cmtStatus: CommentModerationStatus; cmtText: string | null } {
+  const isFree = activeEntitlementTier(entData) === "free";
+  const cmtStatus = isFree ? "none" : mod.status;
+  const cmtText = cmtStatus === "none" ? null : mod.cleanText;
+  return { cmtStatus, cmtText };
+}
+
 function hasContent(c: ContextMessageParams): boolean {
   return (
     (c.commentText ?? "").trim().length > 0 ||
@@ -220,12 +245,7 @@ export const sendAttra = onCall(
         tx.get(col.activeBoosts.doc(fromUid)),
       ]);
 
-    // Comentar es funcion Plus, igual que en sendLike: para Free se descarta el
-    // comentario aunque la peticion lo incluya (el Attra en si lo puede enviar
-    // cualquiera; lo gateado es el comentario).
-    const isFree = (entSnap.data()?.tier ?? "free").toString() === "free";
-    const cmtStatus = isFree ? "none" : mod.status;
-    const cmtText = cmtStatus === "none" ? null : mod.cleanText;
+    const { cmtStatus, cmtText } = attraCommentFields(entSnap.data(), mod);
     const prioritySnapshot = senderPrioritySnapshot(entSnap.data(), "attra");
 
     if (!isUserContactable(toSnap) && !seedSnap.exists) {
@@ -236,6 +256,12 @@ export const sendAttra = onCall(
     }
     if (matchSnap.exists && (matchSnap.data()?.status ?? "active") === "active") {
       return { outcome: "matched", matchId: matchSnap.id, chatId: matchSnap.id };
+    }
+    // Match deshecho/cerrado = terminal, igual que en sendLike: sin esto un
+    // Attra reabria el match que la otra persona habia cerrado. Va ANTES de
+    // `commitAttraSpend` para no cobrar un Attra que no puede entregarse.
+    if (matchSnap.exists) {
+      return { outcome: "blocked" };
     }
     if (
       likeFwd.exists &&

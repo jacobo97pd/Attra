@@ -47,6 +47,33 @@ export function canRestoreCancelledLike(
   );
 }
 
+/// Motivos con los que el SISTEMA cancela un like al cerrar la relacion del par
+/// (unmatch, bloqueo, cuenta borrada). No son un gesto de feed del usuario.
+const PAIR_CLOSED_CANCEL_REASONS = new Set([
+  "unmatched",
+  "blocked",
+  "account_deleted",
+]);
+
+/// ¿Este like lo cancelo el cierre del par? Entonces ya no se puede deshacer.
+///
+/// QUE FALLABA: la marcha atras solo frenaba un like 'matched' o un match
+/// 'active'. unmatch, applyBlock y la limpieza de cuenta borrada cancelan esos
+/// mismos likes, asi que despues de un unmatch se podia "deshacer" el like que
+/// hizo match: se borraba el doc (y su comentario, que es evidencia) y se
+/// devolvian el like del dia y el Attra Swipe de pago. Es defensa en
+/// profundidad: la guarda principal es que exista el doc del match (abajo),
+/// pero una cuenta borrada sin match no deja ese doc y el like si queda marcado.
+export function isCancelledByPairClosure(
+  data: Record<string, unknown> | undefined
+): boolean {
+  if (!data) return false;
+  return (
+    (data.status ?? "").toString() === "cancelled" &&
+    PAIR_CLOSED_CANCEL_REASONS.has((data.cancelReason ?? "").toString())
+  );
+}
+
 /// Que consumio el like que se esta deshaciendo, para devolverlo.
 export interface RewindRefund {
   /// Dia (`YYYYMMDD`) cuyo contador de likes hay que bajar. `null` = el doc no
@@ -76,7 +103,8 @@ export function refundForLike(
 
 /// rewindFeedAction: deshace el ultimo gesto de feed para perfiles no
 /// matcheados. Free no puede; Plus/Premium lo limita la UI a un paso; Pro guarda
-/// historial ilimitado en la sesion. En servidor bloqueamos Free y matches.
+/// historial ilimitado en la sesion. En servidor bloqueamos Free y cualquier
+/// par con doc de match (activo, deshecho, bloqueado o de cuenta borrada).
 ///
 /// Todo el deshacer va en UNA transaccion: borrar el gesto, devolver lo que
 /// consumio y revivir el like entrante son un solo hecho. Si se hicieran por
@@ -111,10 +139,23 @@ export const rewindFeedAction = onCall({ region: REGION }, async (request) => {
       tx.get(ref),
       tx.get(matchRef),
     ]);
-    if (matchSnap.exists && (matchSnap.data()?.status ?? "active") === "active") {
+    // CUALQUIER doc de match es terminal, no solo el 'active' (igual que en
+    // sendLike). QUE FALLABA: tras un unmatch, un bloqueo o una cuenta borrada
+    // el match queda 'unmatched'/'blocked'/'deleted' y sus likes 'cancelled', y
+    // ninguna de las dos guardas saltaba: deshacer el like que hizo match
+    // borraba el doc y devolvia el like y el Attra Swipe. Y deshacer un pase
+    // sobre un par ya cerrado devolvia la tarjeta de alguien que te bloqueo.
+    // Ese par ya no vuelve al feed, asi que no hay gesto que deshacer.
+    // `failed-precondition` hace que el cliente olvide el gesto sin cobrar la
+    // marcha atras ni reponer la tarjeta. El texto no dice POR QUE: con un
+    // bloqueo, delataria a quien bloqueo.
+    if (matchSnap.exists) {
+      const matchStatus = (matchSnap.data()?.status ?? "active").toString();
       throw new HttpsError(
         "failed-precondition",
-        "No se puede deshacer un match ya creado.",
+        matchStatus === "active"
+          ? "No se puede deshacer un match ya creado."
+          : "Este gesto ya no se puede deshacer.",
       );
     }
     // No hay nada registrado: se contesta `rewound: false` para que el cliente
@@ -167,6 +208,12 @@ export const rewindFeedAction = onCall({ region: REGION }, async (request) => {
       throw new HttpsError(
         "failed-precondition",
         "No se puede deshacer un like que ya hizo match.",
+      );
+    }
+    if (isCancelledByPairClosure(data)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Este gesto ya no se puede deshacer.",
       );
     }
 

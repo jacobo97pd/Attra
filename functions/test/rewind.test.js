@@ -29,6 +29,7 @@ const assert = require("node:assert");
 
 const {
   canRestoreCancelledLike,
+  isCancelledByPairClosure,
   refundForLike,
 } = require("../lib/rewind.js");
 
@@ -108,4 +109,28 @@ test("un like anterior a la marca no toca ningun contador", () => {
   const refund = refundForLike({ createdAt: "cuando fuera" });
   assert.strictEqual(refund.usageDay, null);
   assert.strictEqual(refund.swipe, false);
+});
+
+test("un like cancelado al cerrar el par (unmatch, bloqueo, cuenta borrada) ya no se deshace", () => {
+  // Tras un unmatch el like que hizo match queda 'cancelled': deshacerlo lo
+  // borraba y devolvia el like del dia y el Attra Swipe de pago.
+  for (const reason of ["unmatched", "blocked", "account_deleted"]) {
+    assert.strictEqual(
+      isCancelledByPairClosure({ status: "cancelled", cancelReason: reason }),
+      true,
+      reason
+    );
+  }
+});
+
+test("un like pendiente o que la otra persona paso sigue siendo deshacible", () => {
+  assert.strictEqual(isCancelledByPairClosure({ status: "active" }), false);
+  assert.strictEqual(
+    isCancelledByPairClosure({
+      status: "cancelled",
+      cancelReason: "passed_by_recipient",
+    }),
+    false
+  );
+  assert.strictEqual(isCancelledByPairClosure(undefined), false);
 });

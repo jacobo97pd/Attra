@@ -174,3 +174,7 @@ export {
   registerPushToken,
   unregisterPushToken,
 } from "./notifications";
+// --- backend_safety ---
+// Borrar la cuenta retira sus likes/matches/chats. Sin exportarlo aqui no se
+// despliega y los demas siguen viendo (y escribiendo a) una cuenta borrada.
+export { onUserDeletedCleanup } from "./accountCleanup";

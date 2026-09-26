@@ -350,6 +350,16 @@ export const replyToStory = onCall(
 
     const chatActive =
       chatSnap.exists && (chatSnap.data()?.status ?? "active") === "active";
+    // Chat que existe pero ya no esta activo = match deshecho/cerrado:
+    // terminal, igual que en sendLike/sendAttra. Sin esto la respuesta caia al
+    // camino del like y reabria el match (aqui el inverso cuenta con cualquier
+    // estado salvo 'rejected'). Antes de escribir y de cobrar nada.
+    if (chatSnap.exists && !chatActive) {
+      throw new HttpsError(
+        "permission-denied",
+        "No puedes interactuar con este perfil.",
+      );
+    }
 
     if (chatActive) {
       // Ya hay match: la reaccion es un mensaje mas. Un Attra no compra nada
