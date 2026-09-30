@@ -2,6 +2,7 @@ import 'package:attra/core/config/legal_links.dart';
 import 'package:attra/src/features/monetization/data/iap_service.dart';
 import 'package:attra/src/features/monetization/data/storekit_pending_transactions.dart';
 import 'package:attra/src/features/monetization/domain/subscription_tier.dart';
+import 'package:attra/src/features/monetization/domain/user_entitlements.dart';
 import 'package:attra/src/features/monetization/presentation/paywall_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -222,6 +223,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.purchaseAttempts,
         <String>['attra_plus_monthly', 'attra_plus_yearly']);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Pro mensual ofrece cambiar a Pro anual',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(430, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _SubscriptionStore store = _SubscriptionStore();
+    final IapService service = IapService(
+      iap: store,
+      pendingTransactions: StoreKitPendingTransactions(isIos: false),
+    );
+    await service.init(productIds: store.products.map((p) => p.id).toSet());
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: PaywallScreen(
+        currentTier: SubscriptionTier.pro,
+        currentProductId: 'attra_pro_monthly',
+        currentPeriod: 'monthly',
+        currentSource: EntitlementSource.appStore,
+        iapService: service,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Plan actual'), findsOneWidget);
+    await tester.tap(find.text('Anual'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cambiar a Pro anual'), findsOneWidget);
+    expect(find.text('Incluido en tu plan'), findsOneWidget);
+    await tester.ensureVisible(find.text('Cambiar a Pro anual'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cambiar a Pro anual'));
+    await tester.pumpAndSettle();
+    expect(store.purchaseAttempts, <String>['attra_pro_yearly']);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

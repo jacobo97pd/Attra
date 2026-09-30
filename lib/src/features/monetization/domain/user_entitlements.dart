@@ -33,6 +33,8 @@ class UserEntitlements {
     required this.renewsAt,
     required this.isLifetime,
     required this.features,
+    this.productId,
+    this.period,
   });
 
   factory UserEntitlements.free({required String uid}) {
@@ -47,6 +49,8 @@ class UserEntitlements {
     DateTime? renewsAt,
     bool isLifetime = false,
     List<PremiumFeature>? features,
+    String? productId,
+    String? period,
   }) {
     return UserEntitlements(
       uid: uid,
@@ -56,6 +60,8 @@ class UserEntitlements {
       renewsAt: renewsAt,
       isLifetime: isLifetime,
       features: features ?? defaultFeaturesForTier(tier),
+      productId: productId,
+      period: period,
     );
   }
 
@@ -75,6 +81,8 @@ class UserEntitlements {
       renewsAt: _asDate(map['renewsAt']),
       isLifetime: _asBool(map['isLifetime']),
       features: parsedFeatures.isEmpty ? null : parsedFeatures,
+      productId: map['productId'] is String ? map['productId'] as String : null,
+      period: map['period'] is String ? map['period'] as String : null,
     );
   }
 
@@ -85,6 +93,11 @@ class UserEntitlements {
   final DateTime? renewsAt;
   final bool isLifetime;
   final List<PremiumFeature> features;
+
+  /// Producto y periodicidad verificados por la tienda; el tier por sí solo no
+  /// distingue Pro mensual de Pro anual.
+  final String? productId;
+  final String? period;
 
   bool get isPaid => tier.isPaid;
 
@@ -133,6 +146,8 @@ class UserEntitlements {
       'expiresAt': expiresAt?.toIso8601String(),
       'renewsAt': renewsAt?.toIso8601String(),
       'isLifetime': isLifetime,
+      if (productId != null) 'productId': productId,
+      if (period != null) 'period': period,
       'features': features
           .map((PremiumFeature feature) => feature.wireName)
           .toList(growable: false),

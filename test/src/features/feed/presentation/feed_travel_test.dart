@@ -147,7 +147,8 @@ void main() {
     // Caso D02 tras el despliegue: alguien con la app ANTIGUA en Madrid activa
     // un viaje a Cádiz sin lat/lng y el backend lo publica "de viaje" en
     // España SIN `geo`. Sin coordenadas se saltaba el radio de quien mira y
-    // salía, "De viaje", a toda la gente de Madrid.
+    // salía, "De viaje", a toda la gente de Madrid. Con un radio elegido,
+    // tampoco puede entrar solo por declarar la misma ciudad.
     await tester.pumpWidget(_host(
       user: _madrilena(),
       profiles: <SeedProfile>[
@@ -163,10 +164,11 @@ void main() {
     expect(mazo, isNot(contains('Tomás')),
         reason: 'de viaje en Cádiz y sin centro: no se puede medir, y desde '
             'Madrid no es "de tu zona"');
-    expect(mazo, contains('Toni'),
-        reason: 'quien viaja a TU ciudad sí sale, aunque no tenga centro');
-    expect(mazo, containsAll(<String>['Mario', 'Manu']),
-        reason: 'las fichas normales (con o sin ubicación) no cambian');
+    expect(mazo, isNot(contains('Toni')),
+        reason: 'sin centro no se puede confirmar el radio elegido');
+    expect(mazo, contains('Mario'));
+    expect(mazo, isNot(contains('Manu')),
+        reason: 'sin coordenadas no se puede confirmar el radio elegido');
     expect(mazo, isNot(contains('Lucas')), reason: 'Cádiz, fuera del radio');
   });
 }

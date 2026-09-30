@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
@@ -13,6 +15,7 @@ import '../data/iap_service.dart';
 import '../domain/monetization_feature_flags.dart';
 import '../domain/price_format.dart';
 import '../domain/subscription_tier.dart';
+import '../domain/user_entitlements.dart';
 import 'monetization_plan_numbers.dart';
 
 /// Verifica una suscripción comprada por IAP en el backend. Devuelve true si se
@@ -32,6 +35,9 @@ class PaywallScreen extends StatefulWidget {
   const PaywallScreen({
     super.key,
     required this.currentTier,
+    this.currentProductId,
+    this.currentPeriod,
+    this.currentSource = EntitlementSource.none,
     this.flags = const MonetizationFeatureFlags(),
     this.iapService,
     this.verifySubscription,
@@ -45,6 +51,9 @@ class PaywallScreen extends StatefulWidget {
   });
 
   final SubscriptionTier currentTier;
+  final String? currentProductId;
+  final String? currentPeriod;
+  final EntitlementSource currentSource;
 
   /// Flags vigentes de monetización. De aquí salen TODOS los números que se
   /// anuncian (likes/día, Attras/mes, Boosts/mes, coste del Superboost): si
@@ -100,6 +109,21 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   String get _period => _yearly ? 'yearly' : 'monthly';
 
+  String? get _activePeriod {
+    final String id = widget.currentProductId ?? '';
+    if (id.endsWith('_yearly')) return 'yearly';
+    if (id.endsWith('_monthly')) return 'monthly';
+    return widget.currentPeriod;
+  }
+
+  bool _isCurrentPeriod(SubscriptionTier tier) =>
+      widget.currentTier == tier &&
+      (_activePeriod == null || _activePeriod == _period);
+
+  String _changePeriodLabel(SubscriptionTier tier) =>
+      'Cambiar a ${tier == SubscriptionTier.pro ? 'Pro' : 'Plus'} '
+      '${_yearly ? 'anual' : 'mensual'}';
+
   /// Oferta según el periodo:
   /// - iOS/App Store suele usar IDs separados por periodo.
   /// - Android/Play puede devolver varios planes básicos bajo el mismo ID.
@@ -114,6 +138,26 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
     final List<ProductDetails> offers = _iap.offersFor(baseProductId);
     if (offers.isEmpty) return null;
+    // Play no garantiza el orden de los planes basicos. Elegir first/last
+    // puede vender el mensual al tocar "Anual" (o viceversa).
+    for (final ProductDetails offer in offers) {
+      if (offer is! GooglePlayProductDetails ||
+          offer.subscriptionIndex == null) {
+        continue;
+      }
+      final details = offer
+          .productDetails.subscriptionOfferDetails![offer.subscriptionIndex!];
+      if (details.pricingPhases.isEmpty) continue;
+      final String billingPeriod = details.pricingPhases.last.billingPeriod;
+      if (_yearly
+          ? billingPeriod == 'P1Y' || billingPeriod == 'P12M'
+          : billingPeriod == 'P1M') {
+        return offer;
+      }
+    }
+    if (offers.any((ProductDetails p) => p is GooglePlayProductDetails)) {
+      return null;
+    }
     if (offers.length == 1) return _yearly ? null : offers.first;
     return _yearly ? offers.last : offers.first;
   }
@@ -336,6 +380,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   Future<void> _buyPlan({
     required ProductDetails? offer,
     required String fallbackProductId,
+    required SubscriptionTier targetTier,
   }) async {
     if (_busy) return;
     if (!_canPurchase) {
@@ -348,12 +393,31 @@ class _PaywallScreenState extends State<PaywallScreen> {
           .buy(fallbackProductId); // deja que IapService informe del error
       return;
     }
+    if (widget.currentSource == EntitlementSource.playStore &&
+        widget.currentTier.isPaid &&
+        (widget.currentProductId?.isNotEmpty != true)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No se pudo identificar tu suscripción actual. '
+            'Restaura las compras e inténtalo de nuevo.'),
+      ));
+      return;
+    }
     _pendingPeriodsByProductId[offer.id] = _period;
     // También en el servicio de sesión: si esta pantalla se cierra antes de que
     // la tienda resuelva, es el enrutador quien entrega la compra y necesita
     // saber si el usuario eligió mensual o anual.
     _iap.notePendingPeriod(offer.id, _period);
-    final bool started = await _iap.buyProduct(offer);
+    final bool started = await _iap.buyProduct(
+      offer,
+      replacingSubscriptionProductId:
+          widget.currentSource == EntitlementSource.playStore &&
+                  widget.currentTier.isPaid
+              ? widget.currentProductId
+              : null,
+      replacementMode: widget.currentTier == targetTier
+          ? ReplacementMode.withoutProration
+          : ReplacementMode.withTimeProration,
+    );
     if (!started) {
       _pendingPeriodsByProductId.remove(offer.id);
     }
@@ -540,12 +604,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       features: _plusFeatures(),
                       // Plus = negro → champagne (acceso prioritario premium).
                       gradient: AppColors.plus,
-                      owned: currentTier.atLeast(SubscriptionTier.plus),
+                      owned: currentTier == SubscriptionTier.pro ||
+                          _isCurrentPeriod(SubscriptionTier.plus),
                       // Un usuario Pro tiene Plus incluido, pero su plan
                       // actual NO es Plus: decirlo confunde y sugiere una
                       // bajada de plan que aquí no existe.
                       ctaLabel: currentTier == SubscriptionTier.plus
-                          ? 'Plan actual'
+                          ? _isCurrentPeriod(SubscriptionTier.plus)
+                              ? 'Plan actual'
+                              : _ofertaNoDisponible(plusOffer)
+                                  ? 'No disponible ahora mismo'
+                                  : _changePeriodLabel(SubscriptionTier.plus)
                           : currentTier.atLeast(SubscriptionTier.plus)
                               ? 'Incluido en tu plan'
                               : _ofertaNoDisponible(plusOffer)
@@ -556,12 +625,14 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           : null,
                       // Sin precio de la tienda no se puede comprar: dejar el
                       // botón activo solo lleva a un error (Guideline 3.1.2(c)).
-                      onTap: (currentTier.atLeast(SubscriptionTier.plus) ||
+                      onTap: (currentTier == SubscriptionTier.pro ||
+                              _isCurrentPeriod(SubscriptionTier.plus) ||
                               _busy ||
                               plusOffer == null)
                           ? null
                           : () => _buyPlan(
                                 offer: plusOffer,
+                                targetTier: SubscriptionTier.plus,
                                 fallbackProductId: _yearly
                                     ? widget.plusYearlyProductId
                                     : widget.plusMonthlyProductId,
@@ -593,18 +664,23 @@ class _PaywallScreenState extends State<PaywallScreen> {
                               'consentimiento explícito: lo das (y lo retiras) '
                               'cuando quieras desde la pantalla de IA.',
                       gradient: AppColors.pro,
-                      owned: currentTier == SubscriptionTier.pro,
+                      owned: _isCurrentPeriod(SubscriptionTier.pro),
                       ctaLabel: currentTier == SubscriptionTier.pro
-                          ? 'Plan actual'
+                          ? _isCurrentPeriod(SubscriptionTier.pro)
+                              ? 'Plan actual'
+                              : _ofertaNoDisponible(proOffer)
+                                  ? 'No disponible ahora mismo'
+                                  : _changePeriodLabel(SubscriptionTier.pro)
                           : _ofertaNoDisponible(proOffer)
                               ? 'No disponible ahora mismo'
                               : 'Hazte Pro',
-                      onTap: (currentTier == SubscriptionTier.pro ||
+                      onTap: (_isCurrentPeriod(SubscriptionTier.pro) ||
                               _busy ||
                               proOffer == null)
                           ? null
                           : () => _buyPlan(
                                 offer: proOffer,
+                                targetTier: SubscriptionTier.pro,
                                 fallbackProductId: _yearly
                                     ? widget.proYearlyProductId
                                     : widget.proMonthlyProductId,

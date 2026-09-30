@@ -445,13 +445,54 @@ class IapService extends ChangeNotifier {
 
   /// Compra una OFERTA concreta (para suscripciones con planes básicos, pasa la
   /// oferta elegida de [offersFor]; cada ProductDetails ya lleva su plan/oferta).
-  Future<bool> buyProduct(ProductDetails product) async {
+  Future<bool> buyProduct(
+    ProductDetails product, {
+    String? replacingSubscriptionProductId,
+    ReplacementMode? replacementMode,
+  }) async {
     if (!_available) {
       _error = 'Las compras no están disponibles en este dispositivo.';
       _notify();
       return false;
     }
-    final PurchaseParam param = PurchaseParam(productDetails: product);
+    PurchaseParam param = PurchaseParam(productDetails: product);
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        replacingSubscriptionProductId != null) {
+      try {
+        final InAppPurchaseAndroidPlatformAddition addition =
+            _iap.getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
+        final QueryPurchaseDetailsResponse previous =
+            await addition.queryPastPurchases();
+        if (previous.error != null) {
+          _error = 'No se pudo consultar tu suscripción actual en Google Play.';
+          _notify();
+          return false;
+        }
+        final GooglePlayPurchaseDetails? old = previous.pastPurchases
+            .where((GooglePlayPurchaseDetails p) =>
+                p.productID == replacingSubscriptionProductId)
+            .firstOrNull;
+        if (old == null) {
+          _error = 'No se encontró la suscripción actual en Google Play. '
+              'Comprueba que usas la misma cuenta de Play.';
+          _notify();
+          return false;
+        }
+        param = GooglePlayPurchaseParam(
+          productDetails: product,
+          changeSubscriptionParam: ChangeSubscriptionParam(
+            oldPurchaseDetails: old,
+            replacementMode:
+                replacementMode ?? ReplacementMode.withTimeProration,
+          ),
+        );
+      } catch (_) {
+        _error = 'No se pudo preparar el cambio de suscripción en Google Play.';
+        _notify();
+        return false;
+      }
+    }
     // Empezar limpio: si no, un error de un intento anterior se reemite como si
     // fuera de esta compra.
     _error = null;

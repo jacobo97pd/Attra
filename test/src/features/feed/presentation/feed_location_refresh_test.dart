@@ -277,10 +277,9 @@ void main() {
     expect(find.textContaining('No hay más personas'), findsOneWidget);
   });
 
-  // App Review 2.1(a): el revisor se crea una cuenta en EE. UU. y todas las
-  // semillas son de España. La regla de país las tiraba, el respaldo de país
-  // solo admite gente dentro del radio, y Descubrir salía VACÍO.
-  testWidgets('cuenta nueva fuera de España: las semillas rellenan Descubrir',
+  // Una cuenta en EE. UU. no puede ver una muestra de Madrid si está a miles
+  // de kilómetros: el radio prevalece aunque el mazo quede vacío.
+  testWidgets('cuenta nueva fuera de España: no muestra semillas lejanas',
       (WidgetTester tester) async {
     _usePhoneViewport(tester);
     const double nyLat = 40.7128;
@@ -320,9 +319,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('perfiles de ejemplo'), findsOneWidget);
-    expect(find.textContaining('No hay más personas'), findsNothing);
-    expect(find.textContaining('Lucía'), findsWidgets);
+    expect(find.textContaining('perfiles de ejemplo'), findsNothing);
+    expect(find.textContaining('No hay más personas'), findsOneWidget);
+    expect(find.textContaining('Lucía'), findsNothing);
     expect(find.textContaining('Marta'), findsNothing);
   });
 

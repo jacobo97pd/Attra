@@ -53,6 +53,7 @@ import '../../monetization/data/feature_flag_service.dart';
 import '../../monetization/domain/monetization_feature_flags.dart';
 import '../../monetization/domain/premium_feature.dart';
 import '../../monetization/domain/subscription_tier.dart';
+import '../../monetization/domain/user_entitlements.dart';
 import '../../monetization/presentation/entitlement_controller.dart';
 import '../../monetization/presentation/paywall_screen.dart';
 import '../../profile/data/profile_summary_repository.dart';
@@ -1088,6 +1089,10 @@ class _HomeShellState extends State<HomeShell> {
     Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => PaywallScreen(
         currentTier: tier,
+        currentProductId: _entitlementController?.entitlements.productId,
+        currentPeriod: _entitlementController?.entitlements.period,
+        currentSource: _entitlementController?.entitlements.source ??
+            EntitlementSource.none,
         // Flags REMOTOS: los numeros del paywall (Attras/Boosts al mes, tope de
         // likes) salen de aqui. Con los defaults compilados, cambiar un valor
         // en config/featureFlags dejaria el paywall anunciando el anterior.

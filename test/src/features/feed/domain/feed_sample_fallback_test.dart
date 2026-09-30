@@ -7,9 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Respaldo de MUESTRA de [FeedFilter.sampleProfiles].
 ///
-/// Una cuenta nueva fuera de España (el revisor de App Review en EE. UU.) veía
-/// Descubrir vacío: todos los semilla son de España y la regla de país los
-/// tiraba. El respaldo levanta SOLO país y radio, y SOLO para semillas.
+/// El respaldo solo acepta semillas. El feed real pasa coordenadas y radio;
+/// la ruta heredada sin origen se conserva para pruebas de otros filtros.
 void main() {
   // Madrid: los semilla están aquí; "yo" estoy en Nueva York.
   const double madridLat = 40.4168;
@@ -24,14 +23,18 @@ void main() {
     int age = 30,
     int? prefMin,
     int? prefMax,
+    String city = 'Madrid',
+    double? lat = madridLat,
+    double? lng = madridLng,
   }) =>
       SeedProfile.fromMap(id, <String, dynamic>{
         'displayName': id,
         'isBot': bot,
-        'currentCity': 'Madrid',
+        'currentCity': city,
         'currentCountryName': 'España',
         'countryIso2': 'ES',
-        'geo': <String, dynamic>{'lat': madridLat, 'lng': madridLng},
+        if (lat != null && lng != null)
+          'geo': <String, dynamic>{'lat': lat, 'lng': lng},
         'gender': gender,
         'interestedIn': interestedIn,
         'intentMode': intent,
@@ -118,6 +121,42 @@ void main() {
       isEmpty,
       reason: '"solo verificados" no se levanta por ser una muestra',
     );
+  });
+
+  test('Madrid 25 km excludes Malaga and profiles without coordinates', () {
+    final List<SeedProfile> pool = <SeedProfile>[
+      perfil('madrid'),
+      perfil('malaga', city: 'Malaga', lat: 36.7213, lng: -4.4214),
+      perfil('sin_geo', lat: null, lng: null),
+    ];
+    final List<SeedProfile> result = FeedFilter.sampleProfiles(
+      profiles: pool,
+      myUid: 'yo',
+      myGender: 'male',
+      myInterestedIn: const <String>['female'],
+      excludedUids: const <String>{},
+      myLat: madridLat,
+      myLng: madridLng,
+      maxKm: 25,
+      enforceRadius: true,
+    );
+    expect(result.map((SeedProfile p) => p.id), <String>['madrid']);
+  });
+
+  test('without coordinates, even the same city cannot prove 25 km', () {
+    final List<SeedProfile> result = FeedFilter.apply(
+      profiles: <SeedProfile>[
+        perfil('madrid', bot: false),
+        perfil('malaga', bot: false, city: 'Malaga'),
+      ],
+      myUid: 'yo',
+      myGender: 'male',
+      myInterestedIn: const <String>['female'],
+      excludedUids: const <String>{},
+      myCity: 'Madrid',
+      enforceRadius: true,
+    );
+    expect(result, isEmpty);
   });
 
   test('discovery solo trae personas reales aunque falte isBot', () {

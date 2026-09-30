@@ -185,6 +185,8 @@ void main() {
 AppUser _yo({bool slowDating = false, String country = ''}) {
   return AppUser(
     countryName: country,
+    latitude: 40.4168,
+    longitude: -3.7038,
     uid: 'yo',
     email: 'yo@example.test',
     displayName: 'Yo',
@@ -207,6 +209,7 @@ SeedProfile _muestra(String id, String nombre) {
     'currentCity': 'Madrid',
     'currentCountryName': 'España',
     'countryIso2': 'ES',
+    'geo': <String, dynamic>{'lat': 40.4168, 'lng': -3.7038},
   });
 }
 
@@ -216,6 +219,7 @@ SeedProfile _perfil(String id, String nombre) {
     'age': 30,
     'isBot': false,
     'bio': 'Hola',
+    'geo': <String, dynamic>{'lat': 40.4168, 'lng': -3.7038},
   });
 }
 

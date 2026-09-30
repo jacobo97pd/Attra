@@ -38,6 +38,7 @@ class FeedFilter {
     int? maxKmOverride,
     String noGeoCity = '',
     bool requireGeo = false,
+    bool enforceRadius = false,
     bool travelersNeedGeo = false,
     String myCity = '',
     IntentMode myIntent = IntentMode.dating,
@@ -82,6 +83,13 @@ class FeedFilter {
           defaultMaxKm ??
           defaultRadiusKm;
       final bool theyHaveGeo = p.lat != null && p.lng != null;
+      // Un radio en km exige dos posiciones medibles. Ni el nombre de la
+      // ciudad ni el respaldo de muestras prueban que alguien este cerca.
+      if (enforceRadius) {
+        if (myLat == null || myLng == null || !theyHaveGeo) {
+          return false;
+        }
+      }
       if (myLat != null && myLng != null && theyHaveGeo) {
         if (_distanceKm(myLat, myLng, p.lat!, p.lng!) > maxKm) return false;
       }
@@ -222,7 +230,8 @@ class FeedFilter {
   /// Regla estrecha a propósito:
   /// - SOLO perfiles semilla ([SeedProfile.isBot]). Nunca personas reales de
   ///   otro país: a ellas las siguen separando el país y el radio.
-  /// - De los semilla solo se ignoran el PAÍS y el RADIO. Todo lo demás se
+  /// - De los semilla se puede ignorar el PAÍS; el RADIO se conserva cuando
+  ///   [enforceRadius] es true. Todo lo demás se
   ///   aplica igual que en [apply]: exclusiones (likes, pases, matches,
   ///   bloqueos), reciprocidad de género, intención, rango de edad en los dos
   ///   sentidos y los filtros del usuario.
@@ -238,6 +247,10 @@ class FeedFilter {
     String myCity = '',
     IntentMode myIntent = IntentMode.dating,
     int? myAge,
+    double? myLat,
+    double? myLng,
+    int? maxKm,
+    bool enforceRadius = false,
   }) {
     return apply(
       profiles: profiles.where((SeedProfile p) => p.isBot).toList(),
@@ -246,10 +259,12 @@ class FeedFilter {
       myInterestedIn: myInterestedIn,
       excludedUids: excludedUids,
       filters: filters,
-      // Sin mis coordenadas no hay radio que medir, y sin mi país no hay regla
-      // de país: son las DOS únicas reglas que se levantan.
-      myLat: null,
-      myLng: null,
+      // Sin país no hay regla de país. La pantalla pasa el origen y el radio
+      // para no rellenar el mazo con muestras lejanas.
+      myLat: myLat,
+      myLng: myLng,
+      maxKmOverride: maxKm,
+      enforceRadius: enforceRadius,
       travelersNeedGeo: true,
       myCity: myCity,
       myIntent: myIntent,

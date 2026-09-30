@@ -1485,6 +1485,11 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       }
       // Cualquier búsqueda IA (foto o prompt) desactiva distancia/curación.
       final bool aiSearch = visualSearch || promptSearch;
+      // El radio elegido expresamente (onboarding o filtros) es estricto.
+      // El valor de respaldo para cuentas antiguas sin preferencia conserva
+      // el comportamiento de muestra hasta que elijan uno.
+      final bool strictRadius = !aiSearch &&
+          (filters.maxDistanceKm != null || widget.user?.maxDistanceKm != null);
       // Modo viajes (Tinder Passport): el feed se CENTRA en el destino: radio
       // alrededor del centro de la ciudad, país de destino y NUNCA las
       // coordenadas de casa. Solo si el viaje cuenta (vigente y con plan).
@@ -1532,6 +1537,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           myCountry: myCountry,
           myCountryIso2: myCountryIso2,
           defaultMaxKm: aiSearch ? null : widget.user?.maxDistanceKm,
+          enforceRadius: strictRadius,
           // Viajeros publicados SIN centro (apps antiguas, ciudades que no se
           // pudieron situar): se saltaban el radio y salían en todo el país.
           // Solo entran para quien está en su ciudad de destino. La búsqueda
@@ -1590,12 +1596,11 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           countryFallback = true;
         }
       }
-      // RESPALDO DE MUESTRA: sigue vacío (ni tu país ni tu zona tienen a nadie).
-      // Pasaba a toda cuenta nueva fuera de España, y al revisor de App Review
-      // que se crea la suya: Descubrir vacío, que es el rechazo 2.1(a). Se
-      // rellena SOLO con perfiles semilla, ignorando únicamente país y radio;
-      // nunca con personas reales de otro país. Ni viajando (el destino manda)
-      // ni en búsqueda IA (ya es global).
+      // RESPALDO DE MUESTRA: solo perfiles semilla dentro del radio conocido.
+      // Se puede ignorar el país declarado (por ejemplo, tras cruzar una
+      // frontera), pero no la distancia: una semilla de Málaga no debe entrar
+      // en un feed de Madrid de 25 km. Nunca se mezclan personas reales ni se
+      // aplica viajando o durante una búsqueda IA global.
       //
       // En la segunda vuelta NO entra nadie nuevo: solo vuelven las semillas
       // que pasaste, que es lo que promete esa pantalla. Sin esto, quien había
@@ -1611,6 +1616,10 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
           excludedUids: excluded,
           filters: filters,
           myCity: widget.user?.city ?? '',
+          myLat: _loadedLat,
+          myLng: _loadedLng,
+          maxKm: _effectiveRadiusKm.round(),
+          enforceRadius: strictRadius,
           myIntent: widget.user?.intentMode ?? IntentMode.dating,
           myAge: myAge,
         );
