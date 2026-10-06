@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../widgets/attra_loader.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import 'group_avatar.dart';
 import 'group_chat_screen.dart';
@@ -759,16 +760,25 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
     if (choice == null || !mounted) return;
     setState(() => _uploadingPhoto = true);
     try {
-      if (choice.isPreset) {
-        await widget.service.setGroupPreset(g.id, choice.presetValue!);
-      } else if (choice.bytes != null) {
-        await widget.service.updateGroupPhoto(
-          g.id,
-          uid: widget.uid,
-          bytes: choice.bytes!,
-          contentType: choice.contentType,
-        );
-      }
+      // Mismo loader de marca que el resto de subidas de foto (perfil, intro):
+      // antes esto solo oscurecía el avatar con un spinner blanco suelto, la
+      // única foto de la app que cambiaba de sitio sin el logo respirando.
+      await runWithAttraLoader(
+        context,
+        () async {
+          if (choice.isPreset) {
+            await widget.service.setGroupPreset(g.id, choice.presetValue!);
+          } else if (choice.bytes != null) {
+            await widget.service.updateGroupPhoto(
+              g.id,
+              uid: widget.uid,
+              bytes: choice.bytes!,
+              contentType: choice.contentType,
+            );
+          }
+        },
+        message: 'Actualizando foto del grupo…',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Foto del grupo actualizada')));
@@ -843,23 +853,9 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                         size: 60,
                         circle: true,
                       ),
-                      if (_uploadingPhoto)
-                        const Positioned.fill(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Color(0x99000000),
-                            ),
-                            child: Center(
-                              child: SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ),
+                      // El spinner suelto sobre el avatar se quitó: la subida
+                      // ya la cubre runWithAttraLoader a pantalla completa, y
+                      // tenerlo aquí también era el mismo "cargando" dos veces.
                       if (admin && !_uploadingPhoto)
                         Positioned(
                           right: -2,
