@@ -132,6 +132,95 @@ class AttraLoadingOverlay extends StatelessWidget {
   }
 }
 
+/// Franja de carga compacta y NO bloqueante.
+///
+/// Para tareas en curso que no deben tapar la pantalla: por ejemplo, enviar
+/// una foto en el chat mientras se puede seguir escribiendo o mandando otra
+/// cosa. Antes esto era un `LinearProgressIndicator` suelto, la única subida
+/// de la app que no llevaba la marca: un hilo gris sin nombre ni logo, frente
+/// al logo respirando del resto de subidas. Mismo lenguaje visual que
+/// [AttraLogoLoader] (punto con halo que respira) a escala de banner.
+class AttraInlineLoader extends StatefulWidget {
+  const AttraInlineLoader({super.key, required this.label});
+
+  /// Qué se está enviando, por ejemplo "Enviando foto…".
+  final String label;
+
+  @override
+  State<AttraInlineLoader> createState() => _AttraInlineLoaderState();
+}
+
+class _AttraInlineLoaderState extends State<AttraInlineLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  late final Animation<double> _breath = CurvedAnimation(
+    parent: _c,
+    curve: Curves.easeInOut,
+  );
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.28),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AnimatedBuilder(
+              animation: _breath,
+              builder: (BuildContext context, Widget? child) {
+                final double t = _breath.value;
+                final double scale = lerpDouble(0.7, 1.0, t)!;
+                final double glow = lerpDouble(4, 10, t)!;
+                final double glowAlpha = lerpDouble(0.35, 0.75, t)!;
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.attraRed,
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color:
+                              AppColors.attraRed.withValues(alpha: glowAlpha),
+                          blurRadius: glow,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 10),
+            Text(
+              widget.label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Ejecuta [task] mostrando el overlay de marca encima de todo y lo retira al
 /// terminar, tambien si lanza. Devuelve el resultado de la tarea.
 ///

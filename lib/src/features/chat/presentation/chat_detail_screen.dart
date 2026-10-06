@@ -9,6 +9,7 @@ import 'package:record/record.dart';
 
 import '../../../../core/config/app_store_validation_config.dart';
 import '../../../widgets/attra_image.dart';
+import '../../../widgets/attra_loader.dart';
 import '../../chat_game/domain/chat_game.dart';
 import '../../connection_lab/presentation/ai_compatibility_screen.dart';
 import '../../connection_lab/presentation/anti_ghosting_coach_screen.dart';
@@ -183,6 +184,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final VoiceNotePlayerController _voicePlayer = VoiceNotePlayerController();
 
   bool _uploadingMedia = false;
+
+  /// Qué se está enviando ahora mismo (foto, nota de voz…), para la franja de
+  /// [AttraInlineLoader]. Sin esto decía siempre lo mismo o nada.
+  String _uploadingLabel = 'Enviando…';
   bool _recording = false;
 
   /// Mensajes de texto salientes mostrados de forma OPTIMISTA: aparecen al
@@ -400,7 +405,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final bool confirmed = await _previewImage(bytes, bomb: bomb);
     if (!confirmed || !mounted) return;
 
-    setState(() => _uploadingMedia = true);
+    setState(() {
+      _uploadingMedia = true;
+      _uploadingLabel = bomb ? 'Enviando foto bomba…' : 'Enviando foto…';
+    });
     try {
       if (bomb) {
         await widget.chatService.sendBombImage(
@@ -555,7 +563,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       return;
     }
 
-    setState(() => _uploadingMedia = true);
+    setState(() {
+      _uploadingMedia = true;
+      _uploadingLabel = 'Enviando nota de voz…';
+    });
     try {
       final Uint8List bytes = await XFile(path).readAsBytes();
       await widget.chatService.sendVoiceNote(
@@ -1718,7 +1729,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   currentUid: widget.currentUid,
                   service: widget.datePlanService!,
                 ),
-              if (_uploadingMedia) const LinearProgressIndicator(minHeight: 2),
+              if (_uploadingMedia) AttraInlineLoader(label: _uploadingLabel),
               if (!canSend)
                 _ClosedBanner(chat: chat, currentUid: widget.currentUid)
               else if (_recording)
