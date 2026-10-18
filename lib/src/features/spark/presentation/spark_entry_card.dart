@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
@@ -149,53 +150,58 @@ class _SparkBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-      padding: const EdgeInsets.only(left: 12, right: 4),
-      height: 42,
-      decoration: BoxDecoration(
-        color: context.colors.surfaceHigh,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: <Widget>[
-          const Icon(Icons.bolt_rounded, size: 18, color: AppColors.attraRed),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.colors.textSecondary,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+    return AttraStateTransition(
+        value: (label, ctaLabel),
+        duration: const Duration(milliseconds: 160),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+          padding: const EdgeInsets.only(left: 12, right: 4),
+          height: 42,
+          decoration: BoxDecoration(
+            color: context.colors.surfaceHigh,
+            borderRadius: BorderRadius.circular(999),
+            border:
+                Border.all(color: AppColors.attraRed.withValues(alpha: 0.35)),
           ),
-          if (ctaLabel != null && onCta != null)
-            TextButton(
-              onPressed: onCta,
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.attraRed,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.bolt_rounded,
+                  size: 18, color: AppColors.attraRed),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.colors.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-              child: Text(ctaLabel!,
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
-            ),
-          if (onClose != null)
-            IconButton(
-              icon: Icon(Icons.close_rounded,
-                  size: 18, color: context.colors.textMuted),
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Ocultar',
-              onPressed: onClose,
-            ),
-        ],
-      ),
-    );
+              if (ctaLabel != null && onCta != null)
+                TextButton(
+                  onPressed: onCta,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.attraRed,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(ctaLabel!,
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              if (onClose != null)
+                IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      size: 18, color: context.colors.textMuted),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Ocultar',
+                  onPressed: onClose,
+                ),
+            ],
+          ),
+        ));
   }
 }

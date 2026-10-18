@@ -371,22 +371,15 @@ class _LikesReceivedScreenState extends State<LikesReceivedScreen>
   }
 
   SliverGridDelegateWithFixedCrossAxisCount _gridDelegateFor(double width) {
-    final int columns = width >= 620
-        ? 3
-        : width < 330
-            ? 1
-            : 2;
+    final double scale = MediaQuery.textScalerOf(context).scale(17) / 17;
+    final int columns = scale > 1.4 || width < 330 ? 1 : (width >= 620 ? 3 : 2);
     final double gap = width < 380 ? AppSpacing.sm : AppSpacing.md;
-    final double ratio = columns == 1
-        ? 0.86
-        : width < 380
-            ? 0.56
-            : 0.62;
+    final double tileWidth = (width - (columns - 1) * gap) / columns;
     return SliverGridDelegateWithFixedCrossAxisCount(
       crossAxisCount: columns,
       crossAxisSpacing: gap,
       mainAxisSpacing: gap,
-      childAspectRatio: ratio,
+      mainAxisExtent: tileWidth * 4 / 3 + 260 * scale,
     );
   }
 
@@ -1000,176 +993,73 @@ class _ProfileCardShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final TextTheme text = Theme.of(context).textTheme;
     final String nameLine = age != null ? '$name, $age' : name;
     final bool compactBadges = MediaQuery.sizeOf(context).width < 700;
     final String badgeText =
         compactBadges ? _compactBadgeText(topBadge.$2) : topBadge.$2;
-
-    return ClipRRect(
+    return Material(
+      color: context.colors.surface,
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-      child: Material(
-        color: context.colors.surface,
-        child: InkWell(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
           onTap: onTap,
-          child: Stack(
-            fit: StackFit.expand,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              // Foto (caché en disco + downscaling).
-              Positioned.fill(
-                child: AttraImage(url: photoUrl, fallbackInitial: name),
-              ),
-
-              // Velo inferior para legibilidad.
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: <Color>[
-                      Colors.transparent,
-                      Colors.transparent,
-                      Colors.black87,
-                    ],
-                    stops: <double>[0.0, 0.45, 1.0],
-                  ),
-                ),
-              ),
-
-              // Badges superiores: en pantallas estrechas se compactan para no
-              // pisarse entre si.
-              Positioned(
-                top: 10,
-                left: 10,
-                right: 10,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: compactBadges ? 7 : 8,
-                              vertical: compactBadges ? 4 : 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.45),
-                              borderRadius:
-                                  BorderRadius.circular(AppSpacing.radiusPill),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                Icon(topBadge.$1,
-                                    size: compactBadges ? 12 : 13,
-                                    color: topBadge.$3),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(
-                                    badgeText,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: compactBadges ? 10 : 10.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (premiumBadge != null) ...<Widget>[
-                            const SizedBox(height: 6),
-                            AttraPremiumBadge(premiumBadge!, compact: true),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (compatibility != null) ...<Widget>[
-                      SizedBox(width: compactBadges ? 5 : 8),
-                      _CompatibilityChip(
-                        pct: compatibility!,
-                        compact: compactBadges,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // Bloque inferior: nombre + datos + footer.
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 10,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Flexible(
-                          child: Text(
-                            nameLine,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              shadows: const <Shadow>[
-                                Shadow(blurRadius: 6, color: Colors.black54),
-                              ],
-                            ),
-                          ),
-                        ),
+              Expanded(child: AttraImage(url: photoUrl, fallbackInitial: name)),
+              Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                        AttraLabel(
+                            label: badgeText, icon: topBadge.$1, compact: true),
+                        if (premiumBadge != null)
+                          AttraPremiumBadge(premiumBadge!, compact: true),
+                        if (compatibility != null)
+                          _CompatibilityChip(
+                              pct: compatibility!, compact: compactBadges),
+                      ]),
+                      const SizedBox(height: 12),
+                      Row(children: <Widget>[
+                        Expanded(
+                            child: Text(nameLine,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: text.titleMedium)),
                         if (verified) ...<Widget>[
                           const SizedBox(width: 5),
-                          const Icon(Icons.verified_rounded,
-                              size: 16, color: AppColors.attraRed),
+                          Icon(Icons.verified_rounded,
+                              size: 16, color: context.colors.textSecondary)
                         ],
+                      ]),
+                      if (headline.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(headline,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall),
                       ],
-                    ),
-                    if (headline.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 2),
-                      Text(headline,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85))),
+                      if (location.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall),
+                      ],
+                      if (_hasComment) ...<Widget>[
+                        const SizedBox(height: 12),
+                        _CommentBubble(text: comment!.trim()),
+                      ],
+                      const SizedBox(height: 12),
+                      footer,
                     ],
-                    if (location.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 3),
-                      Row(
-                        children: <Widget>[
-                          const Icon(Icons.location_on_rounded,
-                              size: 13, color: AppColors.attraRed),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(location,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.85))),
-                          ),
-                        ],
-                      ),
-                    ],
-                    if (_hasComment) ...<Widget>[
-                      const SizedBox(height: 8),
-                      _CommentBubble(text: comment!.trim()),
-                    ],
-                    const SizedBox(height: 10),
-                    footer,
-                  ],
-                ),
-              ),
+                  )),
             ],
-          ),
-        ),
-      ),
+          )),
     );
   }
 }
@@ -1182,36 +1072,13 @@ class _CommentBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const Icon(Icons.format_quote_rounded,
-              size: 14, color: AppColors.attraRed),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12.5,
-                height: 1.25,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return Text(text,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: context.colors.textPrimary));
   }
 }
 
@@ -1224,32 +1091,9 @@ class _CompatibilityChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 7 : 9,
-        vertical: compact ? 4 : 5,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text('$pct%',
-              style: TextStyle(
-                  color: AppColors.attraRed,
-                  fontSize: compact ? 12 : 14,
-                  fontWeight: FontWeight.w900,
-                  height: 1.0)),
-          Text(compact ? 'comp.' : 'compatibilidad',
-              style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: compact ? 7.5 : 8,
-                  height: 1.1)),
-        ],
-      ),
+    return AttraLabel(
+      label: '$pct% ${compact ? 'comp.' : 'compatibilidad'}',
+      compact: compact,
     );
   }
 }
@@ -1273,9 +1117,10 @@ class _RespondFooter extends StatelessWidget {
               onTap: onRespond,
               borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
               child: Container(
+                constraints: const BoxConstraints(minHeight: 48),
                 padding: const EdgeInsets.symmetric(vertical: 9),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: AppColors.action),
+                  color: AppColors.brandGraphite,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
                 ),
                 child: const Row(
@@ -1283,11 +1128,14 @@ class _RespondFooter extends StatelessWidget {
                   children: <Widget>[
                     Icon(Icons.favorite_rounded, size: 15, color: Colors.white),
                     SizedBox(width: 6),
-                    Text('Responder',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700)),
+                    Flexible(
+                      child: Text('Responder',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700)),
+                    ),
                   ],
                 ),
               ),
@@ -1295,18 +1143,15 @@ class _RespondFooter extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Material(
-          color: Colors.white.withValues(alpha: 0.12),
-          shape: const CircleBorder(),
-          child: InkWell(
-            onTap: onDiscard,
-            customBorder: const CircleBorder(),
-            child: const SizedBox(
-              width: 38,
-              height: 38,
-              child: Icon(Icons.close_rounded, size: 18, color: Colors.white),
-            ),
+        IconButton(
+          tooltip: 'Descartar like',
+          onPressed: onDiscard,
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.12),
+            foregroundColor: Colors.white,
           ),
+          icon: const Icon(Icons.close_rounded, size: 18),
         ),
       ],
     );
@@ -1356,7 +1201,7 @@ class _ChatFooter extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 9),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: AppColors.action),
+        color: AppColors.brandGraphite,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       ),
       child: const Row(
@@ -1389,7 +1234,6 @@ class _ImproveProfileBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Row(
         children: <Widget>[
@@ -1464,14 +1308,7 @@ class _LockedLikeCard extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
               border: Border.all(color: context.colors.surfaceLine),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[
-                  context.colors.surfaceHigh,
-                  context.colors.surfaceHigh.withValues(alpha: 0.55),
-                ],
-              ),
+              color: context.colors.surfaceHigh,
             ),
             child: Center(
               child: Column(

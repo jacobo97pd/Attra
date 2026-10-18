@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 
 import '../../home/presentation/home_shell.dart';
 import '../../onboarding/presentation/onboarding_screen.dart';
@@ -143,7 +144,9 @@ class SessionGate extends StatelessWidget {
         };
 
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
+          layoutBuilder: AttraMotion.switcherLayout,
+          duration: AttraMotion.durationOf(
+              context, const Duration(milliseconds: 220)),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
           transitionBuilder: (Widget child, Animation<double> animation) {

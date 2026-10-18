@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 
 import '../../../../l10n/app_localizations.dart';
@@ -8,6 +9,7 @@ import '../../../security/screen_guard.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_destination_bar.dart';
 
 import '../../ai_visual/data/ai_visual_service.dart';
 import '../../ai_visual/presentation/ai_visual_screen.dart';
@@ -270,7 +272,6 @@ class _HomeShellState extends State<HomeShell> {
 
   /// El feed ha plegado su cabecera porque se está bajando por una ficha: la
   /// barra de navegación se esconde con ella para dejar sitio a las fotos.
-  bool _feedChromeHidden = false;
   int _feedReloadToken = 0;
   int _visualSearchToken = 0;
 
@@ -556,11 +557,6 @@ class _HomeShellState extends State<HomeShell> {
                 onTap: _openNotifications,
               ),
           ],
-          onChromeHiddenChanged: (bool hidden) {
-            if (hidden != _feedChromeHidden) {
-              setState(() => _feedChromeHidden = hidden);
-            }
-          },
           user: widget.user,
           onLoadSeedProfiles: widget.onLoadSeedProfiles,
           matchService: widget.matchService,
@@ -631,11 +627,12 @@ class _HomeShellState extends State<HomeShell> {
     final Widget likesTab = Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
+        backgroundColor: context.colors.bg,
+        foregroundColor: context.colors.textPrimary,
+        systemOverlayStyle:
+            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         titleTextStyle: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
-              color: Colors.white,
+              color: context.colors.textPrimary,
             ),
         title: Text(l10n.likesTitle),
       ),
@@ -665,11 +662,12 @@ class _HomeShellState extends State<HomeShell> {
     final Widget chatsTab = Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
+        backgroundColor: context.colors.bg,
+        foregroundColor: context.colors.textPrimary,
+        systemOverlayStyle:
+            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         titleTextStyle: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
-              color: Colors.white,
+              color: context.colors.textPrimary,
             ),
         title: Text(l10n.chatsTitle),
       ),
@@ -817,46 +815,46 @@ class _HomeShellState extends State<HomeShell> {
       ),
     ];
 
+    final bool useRail = Theme.of(context).platform == TargetPlatform.android &&
+        MediaQuery.sizeOf(context).width >= 840 &&
+        _tourStep < 0;
     return Scaffold(
-      body: AttraAppShellBackground(
-        child: Stack(
-          children: <Widget>[
-            IndexedStack(index: _destination.index, children: tabs),
-            // Tour guiado (obligatorio): superpuesto sobre el cuerpo; la barra de
-            // navegación queda visible abajo, con la pestaña del paso resaltada.
-            if (_tourStep >= 0)
-              _TourOverlay(
-                step: _tourStep,
-                total: _tourSteps.length,
-                stepData: _tourSteps[_tourStep],
-                onNext: _tourNext,
-              ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: _AutoHideBar(
-        // Solo en Discover y mientras se baja por una ficha. Nunca durante el
-        // tour (señala pestañas de esta barra) ni con lector de pantalla, que
-        // navega por la barra y no tendría gesto de "subir" para recuperarla.
-        hidden: _destination == _HomeDestination.discover &&
-            interestGate == null &&
-            _feedChromeHidden &&
-            _tourStep < 0 &&
-            !MediaQuery.accessibleNavigationOf(context),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: context.colors.surfaceLine),
-            ),
-          ),
-          child: NavigationBar(
+      body: Row(children: <Widget>[
+        if (useRail)
+          SafeArea(
+              child: AttraDestinationBar(
+            rail: true,
             selectedIndex: _destination.index,
             onDestinationSelected: (int index) =>
                 goTo(_HomeDestination.values[index]),
             destinations: destinations,
+          )),
+        Expanded(
+            child: AttraAppShellBackground(
+          child: Stack(
+            children: <Widget>[
+              IndexedStack(index: _destination.index, children: tabs),
+              // Tour guiado (obligatorio): superpuesto sobre el cuerpo; la barra de
+              // navegación queda visible abajo, con la pestaña del paso resaltada.
+              if (_tourStep >= 0)
+                _TourOverlay(
+                  step: _tourStep,
+                  total: _tourSteps.length,
+                  stepData: _tourSteps[_tourStep],
+                  onNext: _tourNext,
+                ),
+            ],
           ),
-        ),
-      ),
+        )),
+      ]),
+      bottomNavigationBar: useRail
+          ? null
+          : AttraDestinationBar(
+              selectedIndex: _destination.index,
+              onDestinationSelected: (int index) =>
+                  goTo(_HomeDestination.values[index]),
+              destinations: destinations,
+            ),
     );
   }
 
@@ -1177,50 +1175,6 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
-/// Barra de navegación que se esconde deslizándose hacia abajo.
-///
-/// Al esconderse NO baja a cero: deja el hueco del indicador de inicio, para
-/// que la ficha no acabe debajo de él ni recortada por las esquinas redondas
-/// de la pantalla.
-class _AutoHideBar extends StatelessWidget {
-  const _AutoHideBar({required this.hidden, required this.child});
-
-  final bool hidden;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final double bottomInset = MediaQuery.paddingOf(context).bottom;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: hidden ? 0 : 1),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      child: child,
-      builder: (BuildContext context, double shown, Widget? child) {
-        // La barra se recorta desde abajo (se ve su parte de arriba, que es lo
-        // que parece deslizarse fuera) y el hueco del indicador crece a la vez,
-        // así que el alto total pasa de uno a otro sin saltos.
-        return ColoredBox(
-          color: AttraAppShellBackground.contentColorOf(context),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ClipRect(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  heightFactor: shown,
-                  child: child,
-                ),
-              ),
-              SizedBox(height: bottomInset * (1 - shown)),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 /// Un paso del tour guiado: qué pestaña resalta y qué explica.
 class _TourStep {
   const _TourStep(this.destination, this.icon, this.title, this.body);
@@ -1263,7 +1217,6 @@ class _TourOverlay extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: context.colors.surface,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                  border: Border.all(color: context.colors.surfaceLine),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1305,7 +1258,8 @@ class _TourOverlay extends StatelessWidget {
                       children: <Widget>[
                         for (int i = 0; i < total; i++)
                           AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
+                            duration: AttraMotion.durationOf(
+                                context, const Duration(milliseconds: 200)),
                             margin: const EdgeInsets.only(right: 5),
                             width: i == step ? 20 : 7,
                             height: 7,

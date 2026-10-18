@@ -1,0 +1,21 @@
+ATTRA - Fase 2D - 2026-10-18
+
+flutter analyze --no-pub
+Analyzing Attra...                                              
+No issues found! (ran in 235.4s)
+
+flutter test --no-pub --reporter expanded
+01:09 +1236: All tests passed!
+
+Baseline match frame fixture (temporary source copy, removed after capture)
+00:01 +2: All tests passed!
+
+git diff --check
+Exit code: 0
+
+
+Evidence: 10 before and 10 after PNG frames; Flutter widget engine and test clock.
+19 implementation Dart files, 7 test files; 15 added cases.
+No dependencies or theme file changes in this phase.
+No ADB device connected; Android emulator executable absent.
+No physical device frame-time, GPU, memory, 60 Hz or 120 Hz measurements.

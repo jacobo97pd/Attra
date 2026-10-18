@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_editorial.dart';
+import '../../../widgets/attra_motion.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../data/friend_group_service.dart';
 import '../domain/group_message.dart';
 import 'group_avatar.dart';
@@ -67,9 +70,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: context.colors.bg,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: context.colors.bg,
         titleSpacing: 0,
         title: Row(
           children: <Widget>[
@@ -103,21 +106,24 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   return _centered(
                       'Aún no hay mensajes.\n¡Rompe el hielo con tu grupo!');
                 }
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                  itemCount: msgs.length,
-                  itemBuilder: (BuildContext context, int i) {
-                    final GroupMessage m = msgs[i];
-                    final bool mine = m.senderId == widget.currentUid;
-                    final bool showName =
-                        !mine && (i == 0 || msgs[i - 1].senderId != m.senderId);
-                    return _Bubble(message: m, mine: mine, showName: showName);
-                  },
-                );
+                return AttraContentFrame(
+                    maxWidth: 960,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                      itemCount: msgs.length,
+                      itemBuilder: (BuildContext context, int i) {
+                        final GroupMessage m = msgs[i];
+                        final bool mine = m.senderId == widget.currentUid;
+                        final bool showName = !mine &&
+                            (i == 0 || msgs[i - 1].senderId != m.senderId);
+                        return _Bubble(
+                            message: m, mine: mine, showName: showName);
+                      },
+                    ));
               },
             ),
           ),
-          _composer(context),
+          AttraContentFrame(maxWidth: 960, child: _composer(context)),
         ],
       ),
     );
@@ -137,7 +143,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     return SafeArea(
       top: false,
       child: Container(
-        color: AppColors.surface,
+        color: context.colors.surface,
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -149,12 +155,12 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _send(),
-                style: const TextStyle(color: AppColors.textPrimary),
+                style: TextStyle(color: context.colors.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Escribe al grupo…',
-                  hintStyle: const TextStyle(color: AppColors.textSecondary),
+                  hintStyle: TextStyle(color: context.colors.textMuted),
                   filled: true,
-                  fillColor: AppColors.black,
+                  fillColor: context.colors.bg,
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   border: OutlineInputBorder(
@@ -165,26 +171,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               ),
             ),
             const SizedBox(width: 6),
-            Material(
-              color: Colors.transparent,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: _sending ? null : _send,
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: AppColors.action),
-                  ),
-                  child: _sending
-                      ? const Padding(
-                          padding: EdgeInsets.all(13),
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.send, color: Colors.white, size: 20),
-                ),
+            AttraPressFeedback(
+              enabled: !_sending,
+              child: IconButton.filled(
+                tooltip: _sending ? 'Enviando mensaje' : 'Enviar mensaje',
+                onPressed: _sending ? null : _send,
+                style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+                icon: _sending
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.send, size: 20),
               ),
             ),
           ],
@@ -213,9 +210,9 @@ class _Bubble extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 12, bottom: 2),
               child: Text(message.senderName,
-                  style: const TextStyle(
-                      color: AppColors.attraRed,
-                      fontSize: 12,
+                  style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600)),
             ),
           Container(
@@ -223,9 +220,7 @@ class _Bubble extends StatelessWidget {
                 maxWidth: MediaQuery.of(context).size.width * 0.75),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              gradient:
-                  mine ? const LinearGradient(colors: AppColors.action) : null,
-              color: mine ? null : AppColors.surface,
+              color: mine ? context.colors.accent : context.colors.surface,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
@@ -236,7 +231,9 @@ class _Bubble extends StatelessWidget {
             ),
             child: Text(message.text,
                 style: TextStyle(
-                    color: mine ? Colors.white : AppColors.textPrimary,
+                    color: mine
+                        ? context.colors.onAccent
+                        : context.colors.textPrimary,
                     fontSize: 15)),
           ),
         ],

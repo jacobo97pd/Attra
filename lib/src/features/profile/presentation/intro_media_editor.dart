@@ -289,7 +289,6 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
       decoration: BoxDecoration(
         color: context.colors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,9 +298,11 @@ class _IntroMediaEditorState extends State<IntroMediaEditor> {
               const Icon(Icons.auto_awesome_motion_rounded,
                   size: 18, color: AppColors.attraRed),
               const SizedBox(width: 8),
-              Text('Audio y vídeo de presentación',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+              Expanded(
+                child: Text('Audio y vídeo de presentación',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ),
             ],
           ),
           const SizedBox(height: 4),

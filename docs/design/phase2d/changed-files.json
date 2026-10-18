@@ -1,0 +1,37 @@
+{
+  "phase": "2D",
+  "skill": "emil-design-eng",
+  "comparison": "Estado de entrada de Fase 2D, incluyendo cambios sin confirmar de las fases anteriores.",
+  "implementation": [
+    "lib/src/features/ai_visual/presentation/ai_visual_screen.dart",
+    "lib/src/features/auth/presentation/login_screen.dart",
+    "lib/src/features/auth/presentation/session_gate.dart",
+    "lib/src/features/chat/presentation/chat_detail_screen.dart",
+    "lib/src/features/chat/presentation/voice_note_bubble.dart",
+    "lib/src/features/connection_lab/presentation/lab_widgets.dart",
+    "lib/src/features/feed/presentation/feed_screen.dart",
+    "lib/src/features/feed/presentation/feed_top_bar.dart",
+    "lib/src/features/home/presentation/home_shell.dart",
+    "lib/src/features/match/presentation/match_created_dialog.dart",
+    "lib/src/features/monetization/presentation/paywall_screen.dart",
+    "lib/src/features/onboarding/presentation/onboarding_screen.dart",
+    "lib/src/features/onboarding/presentation/voice_profile_setup.dart",
+    "lib/src/features/spark/presentation/spark_entry_card.dart",
+    "lib/src/features/stories/presentation/blind_story_viewer_screen.dart",
+    "lib/src/features/stories/presentation/profile_reveal_screen.dart",
+    "lib/src/features/tutorial/presentation/tutorial_screen.dart",
+    "lib/src/widgets/attra_buttons.dart",
+    "lib/src/widgets/attra_motion.dart"
+  ],
+  "tests": [
+    "test/src/features/chat/presentation/chat_accessibility_recovery_test.dart",
+    "test/src/features/feed/presentation/feed_action_dock_test.dart",
+    "test/src/features/onboarding/presentation/onboarding_motion_test.dart",
+    "test/src/features/onboarding/presentation/voice_profile_setup_test.dart",
+    "test/src/features/stories/profile_reveal_motion_test.dart",
+    "test/src/widgets/attra_motion_test.dart",
+    "test/visual/phase2d_motion_test.dart"
+  ],
+  "runtimeDependenciesUnchanged": true,
+  "themeUnchanged": true
+}

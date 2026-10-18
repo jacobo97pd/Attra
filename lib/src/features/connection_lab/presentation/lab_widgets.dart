@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 
-import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
+import '../../../widgets/attra_badges.dart';
+import '../../../widgets/attra_backgrounds.dart';
 
 /// Small "AI" pill used across the Connection Lab.
 class LabAiChip extends StatelessWidget {
@@ -14,27 +16,7 @@ class LabAiChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: <Color>[AppColors.aiPurpleDark, AppColors.aiViolet],
-          ),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 13, color: Colors.white),
-            const SizedBox(width: 5),
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800)),
-          ],
-        ),
-      ),
+      child: AttraLabel(label: label, icon: icon),
     );
   }
 }
@@ -55,15 +37,8 @@ class LabCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color a = accent ?? context.colors.surfaceLine;
-    return Container(
-      width: double.infinity,
+    return AttraCard(
       padding: padding,
-      decoration: BoxDecoration(
-        color: context.colors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: a.withValues(alpha: 0.45)),
-      ),
       child: child,
     );
   }
@@ -92,75 +67,42 @@ class LabBigCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: context.colors.surface,
-      borderRadius: BorderRadius.circular(20),
+    final TextTheme text = Theme.of(context).textTheme;
+    return AttraPressFeedback(
+        child: Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accent.withValues(alpha: 0.4)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                accent.withValues(alpha: 0.16),
-                context.colors.surface,
-              ],
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: accent.withValues(alpha: 0.2),
-                    ),
-                    child: Icon(icon, color: accent, size: 22),
-                  ),
-                  const Spacer(),
-                  if (trailingLabel != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(trailingLabel!,
-                          style: TextStyle(
-                              color: accent,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(subtitle,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: context.colors.textSecondary,
-                      fontSize: 12.5,
-                      height: 1.3)),
-            ],
-          ),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(icon,
+                        color: context.colors.textSecondary, size: 24)),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                      Text(title, style: text.titleMedium),
+                      const SizedBox(height: 8),
+                      Text(subtitle, style: text.bodySmall),
+                      if (trailingLabel != null) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(trailingLabel!, style: text.labelMedium),
+                      ],
+                    ])),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right,
+                    color: context.colors.textMuted, size: 20),
+              ]),
         ),
       ),
-    );
+    ));
   }
 }

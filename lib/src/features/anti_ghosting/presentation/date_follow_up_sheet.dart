@@ -46,21 +46,10 @@ class DateFollowUpSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: context.colors.surfaceLine,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
               Text('¿Cómo fue la cita?',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+                      ?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 14),
               for (final DateFollowUpAnswer a in DateFollowUpAnswer.values)
                 _Option(

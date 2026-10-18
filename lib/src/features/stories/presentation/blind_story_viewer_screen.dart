@@ -544,6 +544,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
   Widget build(BuildContext context) {
     final BlindWallPerson? person = _person;
     _screenWidth = MediaQuery.of(context).size.width;
+    final double visualDx = MediaQuery.disableAnimationsOf(context) ? 0 : _dx;
     return Scaffold(
       backgroundColor: Colors.black,
       body: person == null
@@ -555,7 +556,7 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
                 fit: StackFit.expand,
                 children: <Widget>[
                   Transform.translate(
-                    offset: Offset(_dx, 0),
+                    offset: Offset(visualDx, 0),
                     child: Stack(
                       fit: StackFit.expand,
                       children: <Widget>[
@@ -593,12 +594,14 @@ class _BlindStoryViewerScreenState extends State<BlindStoryViewerScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           _SwipeStamp(
-                            progress: (-_dx / _swipeThreshold).clamp(0.0, 1.0),
+                            progress:
+                                (-visualDx / _swipeThreshold).clamp(0.0, 1.0),
                             icon: Icons.close_rounded,
                             label: 'Paso',
                           ),
                           _SwipeStamp(
-                            progress: (_dx / _swipeThreshold).clamp(0.0, 1.0),
+                            progress:
+                                (visualDx / _swipeThreshold).clamp(0.0, 1.0),
                             icon: Icons.favorite_rounded,
                             label: 'Me gusta',
                           ),

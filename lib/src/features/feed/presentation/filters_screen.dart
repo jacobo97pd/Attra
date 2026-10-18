@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../domain/feed_filter.dart';
 import '../domain/feed_filters.dart';
@@ -235,7 +236,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
             'Es recíproco: ves a quien está en tu rango y además te incluye '
             'en el suyo.',
             style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.outline),
+                ?.copyWith(color: context.colors.textMuted),
           ),
           const SizedBox(height: 8),
           Text('Mostrarme', style: theme.textTheme.bodyMedium),
@@ -426,7 +427,7 @@ class _FiltersScreenState extends State<FiltersScreen> {
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(color: Theme.of(context).colorScheme.outline)),
+                  ?.copyWith(color: context.colors.textMuted)),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,

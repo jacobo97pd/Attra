@@ -129,7 +129,7 @@ class _MeterCard extends StatelessWidget {
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+                      ?.copyWith(fontWeight: FontWeight.w600)),
               const Spacer(),
               Text('$score%',
                   style: TextStyle(color: accent, fontWeight: FontWeight.w800)),

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
+
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -111,7 +113,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
+    );
     _player.playerStateStream.listen((PlayerState state) {
       if (!mounted) return;
       final bool playing =
@@ -120,8 +122,30 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
     });
   }
 
+  bool _motionInForeground = true;
+
+  void _syncPulse() {
+    final bool active =
+        _phase == _VoicePhase.recording || _phase == _VoicePhase.processing;
+    final bool animate =
+        active && _motionInForeground && AttraMotion.enabledOf(context);
+    if (animate && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!animate) {
+      _pulseController.stop();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncPulse();
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _motionInForeground = state == AppLifecycleState.resumed;
+    _syncPulse();
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
@@ -427,7 +451,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                 Text(
                   'Tu voz, bajo tu control',
                   style: theme.textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 18),
                 const _PrivacyDetail(
@@ -590,6 +614,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
 
   @override
   Widget build(BuildContext context) {
+    _syncPulse();
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AttraGradientBackground(
@@ -598,7 +623,9 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 720),
               child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 260),
+                layoutBuilder: AttraMotion.switcherLayout,
+                duration: AttraMotion.durationOf(
+                    context, const Duration(milliseconds: 260)),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
                 child: switch (_phase) {
@@ -661,7 +688,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
               children: <Widget>[
                 Text('Puedes contarnos…',
                     style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 14),
                 const _BriefingPoint(
                   icon: Icons.sentiment_satisfied_alt_rounded,
@@ -702,7 +729,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                       child: Text(
                         'Para un audio limpio',
                         style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -789,11 +816,13 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                     Text(
                       'Te escuchamos',
                       style: theme.textTheme.headlineMedium
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
+                      layoutBuilder: AttraMotion.switcherLayout,
+                      duration: AttraMotion.durationOf(
+                          context, const Duration(milliseconds: 220)),
                       child: Text(
                         _recordingPromptFor(_elapsed),
                         key: ValueKey<int>(_elapsed.inSeconds ~/ 15),
@@ -871,7 +900,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
             'Tu audio está listo',
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w800),
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
@@ -942,11 +971,13 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                       'Creando algo que suene a ti',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 12),
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
+                      layoutBuilder: AttraMotion.switcherLayout,
+                      duration: AttraMotion.durationOf(
+                          context, const Duration(milliseconds: 300)),
                       child: Text(
                         _processingCopy[_processingCopyIndex],
                         key: ValueKey<int>(_processingCopyIndex),
@@ -965,7 +996,6 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                         color: context.colors.surface,
                         borderRadius:
                             BorderRadius.circular(AppSpacing.radiusMd),
-                        border: Border.all(color: context.colors.surfaceLine),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1018,7 +1048,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
           Text(
             'Esto es lo que hemos entendido de ti',
             style: theme.textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w800, height: 1.15),
+                ?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1078,7 +1108,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
               children: <Widget>[
                 Text('Tu energía',
                     style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 Text(
                   'Toca para añadir o quitar. Solo usamos opciones que hayas mencionado.',
@@ -1107,7 +1137,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                 const SizedBox(height: 18),
                 Text('Tu estilo',
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -1139,7 +1169,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
               children: <Widget>[
                 Text('Detalles que entendimos',
                     style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 14),
                 TextField(
                   controller: _jobController,
@@ -1235,7 +1265,7 @@ class _VoiceProfileSetupState extends State<VoiceProfileSetup>
                       child: Text(
                         'Puntos de conversación',
                         style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
                     if (_promptQuestionControllers.length < kMaxActivePrompts)
@@ -1541,15 +1571,17 @@ class _VoiceOrb extends StatelessWidget {
           child: Stack(
             alignment: Alignment.center,
             children: <Widget>[
-              Container(
-                width: haloSize,
-                height: haloSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color:
-                      context.colors.accent.withValues(alpha: 0.08 + t * 0.05),
-                ),
-              ),
+              Transform.scale(
+                  scale: haloSize / 150,
+                  child: Container(
+                    width: 150,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: context.colors.accent
+                          .withValues(alpha: 0.08 + t * 0.05),
+                    ),
+                  )),
               Material(
                 color: context.colors.accent,
                 shape: const CircleBorder(),
@@ -1571,18 +1603,17 @@ class _VoiceOrb extends StatelessWidget {
                       final double wave = reduceMotion
                           ? 0.5
                           : (math.sin((index * 0.8) + t * math.pi * 2) + 1) / 2;
-                      return AnimatedContainer(
-                        duration: reduceMotion
-                            ? Duration.zero
-                            : const Duration(milliseconds: 100),
-                        width: 3,
-                        height: 5 + wave * 12,
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
-                        decoration: BoxDecoration(
-                          color: context.colors.accent,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      );
+                      return Transform.scale(
+                          scaleY: (5 + wave * 12) / 17,
+                          child: Container(
+                            width: 3,
+                            height: 17,
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            decoration: BoxDecoration(
+                              color: context.colors.accent,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ));
                     }),
                   ),
                 ),
@@ -1631,7 +1662,7 @@ class _PrivacyDetail extends StatelessWidget {
                 Text(
                   title,
                   style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(

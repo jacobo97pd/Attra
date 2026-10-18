@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
@@ -12,17 +13,20 @@ import 'attra_colors.dart';
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData get dark =>
-      _build(AttraColors.dark, Brightness.dark, Typography.whiteMountainView);
+  static ThemeData get dark => _build(AttraColors.dark, Brightness.dark);
 
-  static ThemeData get light =>
-      _build(AttraColors.light, Brightness.light, Typography.blackMountainView);
+  static ThemeData get light => _build(AttraColors.light, Brightness.light);
 
   static ThemeData _build(
     AttraColors c,
     Brightness brightness,
-    TextTheme base,
   ) {
+    // Controls and reading text keep the platform font. Brand typography is
+    // reserved for names, personal responses and content headings.
+    final Typography typography =
+        Typography.material2021(platform: defaultTargetPlatform);
+    final TextTheme base =
+        brightness == Brightness.dark ? typography.white : typography.black;
     final ColorScheme scheme = ColorScheme.fromSeed(
       seedColor: c.accent,
       brightness: brightness,
@@ -30,19 +34,32 @@ class AppTheme {
       primary: c.accent,
       onPrimary: c.onAccent,
       secondary: c.accentDeep,
-      onSecondary: Colors.white,
+      onSecondary: brightness == Brightness.dark ? c.bg : Colors.white,
       surface: c.surface,
       onSurface: c.textPrimary,
+      onSurfaceVariant: c.textSecondary,
+      primaryContainer: c.surfaceHigh,
+      onPrimaryContainer: c.textPrimary,
+      secondaryContainer: c.surfaceHigh,
+      onSecondaryContainer: c.textPrimary,
+      surfaceContainerLow: c.bg,
+      surfaceContainer: c.surface,
+      surfaceContainerHigh: c.surfaceHigh,
       surfaceContainerHighest: c.surfaceHigh,
       outline: c.surfaceLine,
       outlineVariant: c.surfaceLine,
-      error: AppColors.danger,
-      onError: Colors.white,
+      error: brightness == Brightness.dark
+          ? AppColors.dangerOnDark
+          : AppColors.dangerOnLight,
+      onError: brightness == Brightness.dark ? c.bg : Colors.white,
     );
 
     final TextTheme text = _textTheme(base, c);
     final BorderRadius controlRadius =
         BorderRadius.circular(AppSpacing.radiusMd);
+    final RoundedRectangleBorder actionShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -53,7 +70,14 @@ class AppTheme {
       textTheme: text,
       primaryColor: c.accent,
       dividerColor: c.surfaceLine,
-      splashFactory: InkRipple.splashFactory,
+      // InkSplash en vez del InkRipple de serie: un halo fijo que se
+      // desvanece en el sitio, no un círculo que viaja desde el dedo hasta
+      // cubrir todo el control. Es la firma visual más reconocible de un
+      // Material por defecto sin pulir; aquí se nota en TODO lo que todavía
+      // no lleva el escalado de AttraPressFeedback (ese además la apaga del
+      // todo, ver attra_motion.dart) con un solo cambio, sin tocar pantalla
+      // por pantalla.
+      splashFactory: InkSplash.splashFactory,
       materialTapTargetSize: MaterialTapTargetSize.padded,
       extensions: <ThemeExtension<dynamic>>[c],
       focusColor: c.accentSoft,
@@ -63,20 +87,14 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        centerTitle: false,
+        centerTitle: defaultTargetPlatform == TargetPlatform.iOS,
         systemOverlayStyle: brightness == Brightness.dark
             ? SystemUiOverlayStyle.light
                 .copyWith(statusBarColor: Colors.transparent)
             : SystemUiOverlayStyle.dark
                 .copyWith(statusBarColor: Colors.transparent),
         foregroundColor: c.textPrimary,
-        titleTextStyle: TextStyle(
-          color: c.textPrimary,
-          fontSize: 21,
-          height: 1.15,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.35,
-        ),
+        titleTextStyle: text.titleMedium,
       ),
       cardTheme: CardThemeData(
         color: c.surface,
@@ -85,7 +103,6 @@ class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          side: BorderSide(color: c.surfaceLine),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -96,12 +113,8 @@ class AppTheme {
           disabledForegroundColor: c.textMuted,
           minimumSize: const Size(64, 52),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          shape: RoundedRectangleBorder(borderRadius: controlRadius),
-          textStyle: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.1,
-          ),
+          shape: actionShape,
+          textStyle: text.labelLarge,
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -113,9 +126,8 @@ class AppTheme {
           elevation: 0,
           minimumSize: const Size(64, 52),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          side: BorderSide(color: c.surfaceLine),
-          shape: RoundedRectangleBorder(borderRadius: controlRadius),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          shape: actionShape,
+          textStyle: text.labelLarge,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -124,8 +136,8 @@ class AppTheme {
           minimumSize: const Size(64, 52),
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
           side: BorderSide(color: c.surfaceLine),
-          shape: RoundedRectangleBorder(borderRadius: controlRadius),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          shape: actionShape,
+          textStyle: text.labelLarge,
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -133,7 +145,7 @@ class AppTheme {
           foregroundColor: c.accent,
           minimumSize: const Size(48, 48),
           shape: RoundedRectangleBorder(borderRadius: controlRadius),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: text.labelLarge,
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -164,13 +176,13 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: c.surfaceHigh,
         selectedColor: c.accentSoft,
-        side: BorderSide(color: c.surfaceLine),
-        labelStyle: TextStyle(
+        side: BorderSide.none,
+        labelStyle: text.labelMedium?.copyWith(
           color: c.textPrimary,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
-        secondaryLabelStyle: TextStyle(
+        secondaryLabelStyle: text.labelMedium?.copyWith(
           color: brightness == Brightness.dark ? c.accent : c.accentDeep,
           fontWeight: FontWeight.w700,
         ),
@@ -209,10 +221,11 @@ class AppTheme {
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
+        constraints: const BoxConstraints(maxWidth: AppSpacing.readingWidth),
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
         showDragHandle: true,
-        dragHandleColor: c.surfaceLine,
+        dragHandleColor: c.textMuted,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(AppSpacing.radiusXl),
@@ -225,7 +238,6 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          side: BorderSide(color: c.surfaceLine),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -258,6 +270,22 @@ class AppTheme {
         trackOutlineColor: WidgetStatePropertyAll<Color>(c.surfaceLine),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent),
+      tabBarTheme: TabBarThemeData(
+        labelColor: c.textPrimary,
+        unselectedLabelColor: c.textMuted,
+        labelStyle: text.labelLarge,
+        unselectedLabelStyle: text.labelLarge,
+        indicatorColor: c.accent,
+        dividerColor: Colors.transparent,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: c.surfaceHigh,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        textStyle: text.bodyLarge,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
+      ),
       dividerTheme: DividerThemeData(
         color: c.surfaceLine,
         thickness: 1,
@@ -284,56 +312,60 @@ class AppTheme {
     TextStyle withColor(TextStyle? style, Color color) =>
         (style ?? const TextStyle()).copyWith(color: color);
 
+    TextStyle display(TextStyle? style, double size) =>
+        withColor(style, c.textPrimary).copyWith(
+          fontFamily: 'Manrope',
+          fontSize: size,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.5,
+          height: 1.2,
+        );
+
     return base.copyWith(
-      displayLarge: withColor(base.displayLarge, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: -1.1,
-        height: 1.05,
-      ),
-      displayMedium: withColor(base.displayMedium, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.9,
-        height: 1.08,
-      ),
-      headlineLarge: withColor(base.headlineLarge, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.7,
-        height: 1.12,
-      ),
-      headlineMedium: withColor(base.headlineMedium, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.55,
-        height: 1.16,
-      ),
-      headlineSmall: withColor(base.headlineSmall, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.35,
-        height: 1.2,
-      ),
-      titleLarge: withColor(base.titleLarge, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.2,
-      ),
+      displayLarge: display(base.displayLarge, 40),
+      displayMedium: display(base.displayMedium, 32),
+      displaySmall: display(base.displaySmall, 32),
+      headlineLarge: display(base.headlineLarge, 32),
+      headlineMedium: display(base.headlineMedium, 32),
+      headlineSmall: display(base.headlineSmall, 24),
+      titleLarge: display(base.titleLarge, 24),
       titleMedium: withColor(base.titleMedium, c.textPrimary).copyWith(
+        fontSize: 17,
         fontWeight: FontWeight.w600,
+        height: 1.3,
       ),
       titleSmall: withColor(base.titleSmall, c.textPrimary).copyWith(
+        fontSize: 15,
         fontWeight: FontWeight.w600,
+        height: 1.3,
       ),
-      bodyLarge:
-          withColor(base.bodyLarge, c.textPrimary).copyWith(height: 1.45),
-      bodyMedium:
-          withColor(base.bodyMedium, c.textSecondary).copyWith(height: 1.42),
-      bodySmall: withColor(base.bodySmall, c.textMuted).copyWith(height: 1.35),
+      bodyLarge: withColor(base.bodyLarge, c.textPrimary).copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w400,
+        height: 1.45,
+      ),
+      bodyMedium: withColor(base.bodyMedium, c.textSecondary).copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w400,
+        height: 1.45,
+      ),
+      bodySmall: withColor(base.bodySmall, c.textMuted).copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        height: 1.4,
+      ),
       labelLarge: withColor(base.labelLarge, c.textPrimary).copyWith(
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.1,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0,
       ),
       labelMedium: withColor(base.labelMedium, c.textSecondary).copyWith(
+        fontSize: 13,
         fontWeight: FontWeight.w600,
       ),
       labelSmall: withColor(base.labelSmall, c.textMuted).copyWith(
-        fontWeight: FontWeight.w600,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
       ),
     );
   }

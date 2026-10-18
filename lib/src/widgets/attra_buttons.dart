@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
+import 'attra_motion.dart';
 
-/// Botón primario premium: degradado de acción (vino→rojo→coral), pill, con
-/// icono opcional y estado de carga. CTA principal de la app.
+/// Acción principal con estados Material, altura flexible y superficie tonal.
 class AttraPrimaryButton extends StatelessWidget {
   const AttraPrimaryButton({
     super.key,
@@ -31,77 +31,64 @@ class AttraPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool enabled = onPressed != null && !loading;
-    final List<Color> fill = gradient ??
-        <Color>[
-          context.colors.accent,
-          context.colors.accent,
-        ];
     final Color fg = foregroundColor ??
         (gradient == null ? context.colors.onAccent : Colors.white);
-    final Widget content = AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: enabled
-              ? fill
-              : <Color>[context.colors.surfaceHigh, context.colors.surfaceHigh],
+    final BorderRadius radius = BorderRadius.circular(AppSpacing.radiusPill);
+    final Widget button = FilledButton(
+      onPressed: enabled ? onPressed : null,
+      style: FilledButton.styleFrom(
+        backgroundColor:
+            gradient == null ? context.colors.accent : Colors.transparent,
+        foregroundColor: fg,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xl,
+          vertical: AppSpacing.md,
         ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: enabled
-              ? context.colors.accent.withValues(alpha: 0.32)
-              : context.colors.surfaceLine,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: radius),
       ),
       child: Row(
-        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
           if (loading)
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
-                color: context.colors.textSecondary,
-              ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: AppSpacing.sm),
+              child: MediaQuery.disableAnimationsOf(context)
+                  ? const Icon(Icons.more_horiz, size: 20)
+                  : SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: context.colors.textMuted,
+                      ),
+                    ),
             )
-          else ...<Widget>[
-            if (icon != null) ...<Widget>[
-              Icon(icon, size: 20, color: fg),
-              const SizedBox(width: AppSpacing.sm),
-            ],
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: enabled ? fg : context.colors.textMuted,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
+          else if (icon != null) ...<Widget>[
+            Icon(icon, size: 20),
+            const SizedBox(width: AppSpacing.sm),
           ],
+          Flexible(child: Text(label, textAlign: TextAlign.center)),
         ],
       ),
     );
 
     return Semantics(
-      button: true,
-      enabled: enabled,
-      label: label,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          child: content,
-        ),
-      ),
+      liveRegion: loading,
+      child: AttraPressFeedback(
+          enabled: enabled,
+          child: SizedBox(
+            width: expand ? double.infinity : null,
+            child: gradient == null || !enabled
+                ? button
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: gradient!.first,
+                      borderRadius: radius,
+                    ),
+                    child: button,
+                  ),
+          )),
     );
   }
 }
@@ -123,15 +110,65 @@ class AttraSecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: expand ? double.infinity : null,
-      child: icon == null
-          ? ElevatedButton(onPressed: onPressed, child: Text(label))
-          : ElevatedButton.icon(
-              onPressed: onPressed,
-              icon: Icon(icon, size: 20),
-              label: Text(label),
-            ),
+    return AttraPressFeedback(
+        enabled: onPressed != null,
+        child: SizedBox(
+          width: expand ? double.infinity : null,
+          child: icon == null
+              ? ElevatedButton(onPressed: onPressed, child: Text(label))
+              : ElevatedButton.icon(
+                  onPressed: onPressed,
+                  icon: Icon(icon, size: 20),
+                  label: Text(label),
+                ),
+        ));
+  }
+}
+
+/// Icono circular flotante sobre una foto o un vídeo: cerrar, más opciones,
+/// reportar... Antes cada pantalla (tarjeta del feed, historias, en vivo,
+/// cámara de perfil) repetía su propio `Material` + `IconButton` con el mismo
+/// 45% de negro, cada uno con su propio nivel de pulido — y ninguno con el
+/// escalado de [AttraPressFeedback]. Un solo sitio para los tres: el aro
+/// oscuro, el tamaño del área de toque y la respuesta al tacto.
+class AttraCircleIconButton extends StatelessWidget {
+  const AttraCircleIconButton({
+    super.key,
+    required this.icon,
+    this.onPressed,
+    this.tooltip,
+    this.size = 48,
+    this.background = const Color(0x73000000),
+  });
+
+  /// El contenido del botón: normalmente un `Icon`, pero admite cualquier
+  /// widget (p. ej. un `CircularProgressIndicator` mientras carga algo).
+  final Widget icon;
+  final VoidCallback? onPressed;
+  final String? tooltip;
+
+  /// Lado del círculo. El área de toque crece con él.
+  final double size;
+
+  /// Velo detrás del icono para que se lea sobre cualquier foto.
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return AttraPressFeedback(
+      enabled: onPressed != null,
+      child: Material(
+        color: background,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: icon,
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(width: size, height: size),
+        ),
+      ),
     );
   }
 }
@@ -153,15 +190,17 @@ class AttraGhostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: expand ? double.infinity : null,
-      child: icon == null
-          ? OutlinedButton(onPressed: onPressed, child: Text(label))
-          : OutlinedButton.icon(
-              onPressed: onPressed,
-              icon: Icon(icon, size: 20),
-              label: Text(label),
-            ),
-    );
+    return AttraPressFeedback(
+        enabled: onPressed != null,
+        child: SizedBox(
+          width: expand ? double.infinity : null,
+          child: icon == null
+              ? OutlinedButton(onPressed: onPressed, child: Text(label))
+              : OutlinedButton.icon(
+                  onPressed: onPressed,
+                  icon: Icon(icon, size: 20),
+                  label: Text(label),
+                ),
+        ));
   }
 }

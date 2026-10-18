@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
@@ -403,7 +404,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (!mounted) {
       return;
     }
-    await _pageController.animateToPage(
+    await AttraMotion.pageTo(
+      context,
+      _pageController,
       nextPosition,
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOut,
@@ -431,7 +434,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       return;
     }
 
-    await _pageController.animateToPage(
+    await AttraMotion.pageTo(
+      context,
+      _pageController,
       previousPosition,
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOut,
@@ -932,7 +937,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                           Text(
                             'Fecha de nacimiento',
                             style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -2345,7 +2350,7 @@ class _SetupModeCard extends StatelessWidget {
                           child: Text(
                             title,
                             style: theme.textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
                         if (recommended)
@@ -2438,7 +2443,7 @@ class _IntentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: context.colors.surface,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -2451,10 +2456,10 @@ class _IntentCard extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: AppColors.attraRed.withValues(alpha: 0.18),
+                  color: context.colors.surfaceHigh,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: AppColors.attraRed),
+                child: Icon(icon, color: context.colors.textSecondary),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -2498,57 +2503,53 @@ class _StepLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Widget content = SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (icon != null) ...<Widget>[
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: context.colors.surfaceHigh,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Icon(icon, color: context.colors.textPrimary, size: 26),
+            ),
+            const SizedBox(height: 16),
+          ],
+          Text(title,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w600,
+              )),
+          const SizedBox(height: 6),
+          Text(subtitle,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: context.colors.textSecondary, height: 1.4)),
+          const SizedBox(height: 22),
+          child,
+        ],
+      ),
+    );
+    if (MediaQuery.disableAnimationsOf(context)) return content;
     return TweenAnimationBuilder<double>(
+      key: const ValueKey<String>('onboarding-step-entrance'),
       tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 360),
+      duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
       builder: (BuildContext context, double t, Widget? c) {
         return Opacity(
           opacity: t,
           child: Transform.translate(
-            offset: Offset(0, (1 - t) * 16),
+            offset: Offset(0, (1 - t) * 8),
             child: c,
           ),
         );
       },
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (icon != null) ...<Widget>[
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: AppColors.action),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: AppColors.attraRed.withValues(alpha: 0.35),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Icon(icon, color: context.colors.textPrimary, size: 26),
-              ),
-              const SizedBox(height: 16),
-            ],
-            Text(title,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: context.colors.textPrimary,
-                  fontWeight: FontWeight.w800,
-                )),
-            const SizedBox(height: 6),
-            Text(subtitle,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                    color: context.colors.textSecondary, height: 1.4)),
-            const SizedBox(height: 22),
-            child,
-          ],
-        ),
-      ),
+      child: content,
     );
   }
 }
@@ -2570,14 +2571,13 @@ class _StepProgress extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.only(right: i == total - 1 ? 0 : 5),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
+              duration: AttraMotion.durationOf(
+                  context, const Duration(milliseconds: 180)),
               curve: Curves.easeOut,
               height: 5,
               decoration: BoxDecoration(
-                gradient: filled
-                    ? const LinearGradient(colors: AppColors.action)
-                    : null,
-                color: filled ? null : context.colors.surfaceHigh,
+                color:
+                    filled ? context.colors.accent : context.colors.surfaceHigh,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
               ),
             ),
@@ -2598,21 +2598,30 @@ class _CircleNavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool enabled = onPressed != null;
-    return Material(
-      color: context.colors.surfaceHigh,
-      shape: CircleBorder(
-        side: BorderSide(color: context.colors.surfaceLine),
-      ),
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 54,
-          height: 54,
-          child: Icon(icon,
-              color: enabled
-                  ? context.colors.textPrimary
-                  : context.colors.textMuted),
+    return Tooltip(
+      message: 'Atrás',
+      excludeFromSemantics: true,
+      child: Semantics(
+        button: true,
+        label: 'Atrás',
+        enabled: enabled,
+        child: Material(
+          color: context.colors.surfaceHigh,
+          shape: CircleBorder(
+            side: BorderSide(color: context.colors.surfaceLine),
+          ),
+          child: InkWell(
+            onTap: onPressed,
+            customBorder: const CircleBorder(),
+            child: SizedBox(
+              width: 54,
+              height: 54,
+              child: Icon(icon,
+                  color: enabled
+                      ? context.colors.textPrimary
+                      : context.colors.textMuted),
+            ),
+          ),
         ),
       ),
     );
@@ -2640,23 +2649,12 @@ class _SelfieRing extends StatelessWidget {
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: hasSelfie
-                ? AppColors.action
-                : <Color>[
-                    context.colors.surfaceLine,
-                    context.colors.surfaceHigh
-                  ],
-          ),
-          boxShadow: hasSelfie
-              ? <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.attraRed.withValues(alpha: 0.4),
-                    blurRadius: 28,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : null,
+          color: context.colors.surfaceHigh,
+          border: Border.all(
+              color: hasSelfie
+                  ? context.colors.accent
+                  : context.colors.surfaceLine,
+              width: 2),
         ),
         child: Container(
           width: 200,

@@ -67,7 +67,7 @@ class AiCompatibilityScreen extends StatelessWidget {
                     children: <Widget>[
                       Text('${r.score}%',
                           style: theme.textTheme.headlineMedium
-                              ?.copyWith(fontWeight: FontWeight.w900)),
+                              ?.copyWith(fontWeight: FontWeight.w600)),
                       Text('compatible',
                           style: TextStyle(color: context.colors.textMuted)),
                     ],
@@ -82,7 +82,7 @@ class AiCompatibilityScreen extends StatelessWidget {
                 ? 'Why you might click'
                 : 'Why you and $who might click',
             style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w800),
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           ...r.reasons.map((String reason) => Padding(

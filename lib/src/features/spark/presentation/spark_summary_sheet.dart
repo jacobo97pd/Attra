@@ -56,16 +56,6 @@ class _SparkSummaryBody extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: context.colors.surfaceLine,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
             const Icon(Icons.celebration_rounded,
                 color: AppColors.attraRed, size: 40),
@@ -73,7 +63,7 @@ class _SparkSummaryBody extends StatelessWidget {
             Text('¡Habéis completado Attra Spark!',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800)),
+                    ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text(summary.chatLine,
                 textAlign: TextAlign.center,

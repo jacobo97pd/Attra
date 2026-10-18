@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_motion.dart';
 import '../domain/intro_media.dart';
 
 /// Reproductor del AUDIO de presentación de un perfil (público): botón
@@ -74,23 +75,20 @@ class _IntroAudioPlayerState extends State<IntroAudioPlayer> {
             stream: _player.playerStateStream,
             builder: (BuildContext context, AsyncSnapshot<PlayerState> snap) {
               final bool playing = snap.data?.playing ?? false;
-              return InkWell(
-                onTap: !_ready
-                    ? null
-                    : () => playing ? _player.pause() : _player.play(),
-                customBorder: const CircleBorder(),
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: AppColors.action),
-                  ),
-                  child: Icon(
-                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 26,
-                  ),
+              return AttraPressFeedback(
+                enabled: _ready,
+                child: IconButton.filledTonal(
+                  tooltip: playing
+                      ? 'Pausar presentación'
+                      : 'Reproducir presentación',
+                  onPressed: !_ready
+                      ? null
+                      : () => playing ? _player.pause() : _player.play(),
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
+                  icon: Icon(
+                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      size: 26),
                 ),
               );
             },
@@ -217,74 +215,81 @@ class _IntroVideoPlayerState extends State<IntroVideoPlayer> {
       borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       child: AspectRatio(
         aspectRatio: 3 / 4,
-        child: GestureDetector(
-          onTap: _toggle,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              if (_ready && c != null)
-                FittedBox(
-                  fit: BoxFit.cover,
-                  clipBehavior: Clip.hardEdge,
-                  child: SizedBox(
-                    width: c.value.size.width,
-                    height: c.value.size.height,
-                    child: VideoPlayer(c),
-                  ),
-                )
-              else
-                ColoredBox(color: context.colors.surfaceHigh),
+        // El área entera del vídeo es el objetivo de toque (GestureDetector,
+        // no un IconButton): el escalado va alrededor de él para que tocar en
+        // cualquier punto, no solo sobre el círculo de play, confirme el
+        // toque antes de que cambie el icono.
+        child: AttraPressFeedback(
+          child: GestureDetector(
+            onTap: _toggle,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                if (_ready && c != null)
+                  FittedBox(
+                    fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox(
+                      width: c.value.size.width,
+                      height: c.value.size.height,
+                      child: VideoPlayer(c),
+                    ),
+                  )
+                else
+                  ColoredBox(color: context.colors.surfaceHigh),
 
-              // Botón play/pausa superpuesto (se oculta mientras reproduce).
-              if (!playing)
-                Center(
+                // Botón play/pausa superpuesto (se oculta mientras reproduce).
+                if (!playing)
+                  Center(
+                    child: Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            width: 2),
+                      ),
+                      child: Icon(
+                        _started
+                            ? Icons.play_arrow_rounded
+                            : Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 38,
+                      ),
+                    ),
+                  ),
+
+                // Etiqueta.
+                Positioned(
+                  left: 10,
+                  top: 10,
                   child: Container(
-                    width: 64,
-                    height: 64,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.45),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          width: 2),
+                      borderRadius:
+                          BorderRadius.circular(AppSpacing.radiusPill),
                     ),
-                    child: Icon(
-                      _started
-                          ? Icons.play_arrow_rounded
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 38,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(Icons.videocam_rounded,
+                            size: 13, color: Colors.white),
+                        SizedBox(width: 5),
+                        Text('Vídeo',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
+                      ],
                     ),
                   ),
                 ),
-
-              // Etiqueta.
-              Positioned(
-                left: 10,
-                top: 10,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(Icons.videocam_rounded,
-                          size: 13, color: Colors.white),
-                      SizedBox(width: 5),
-                      Text('Vídeo',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

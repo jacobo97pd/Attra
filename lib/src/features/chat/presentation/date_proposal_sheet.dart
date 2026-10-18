@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 /// Datos que devuelve el sheet de propuesta de cita.
 class DateProposalInput {
@@ -143,7 +144,7 @@ class _DateProposalSheetState extends State<DateProposalSheet> {
           const SizedBox(height: 4),
           Text('Sin reservas reales todavía: es una propuesta dentro del chat.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline)),
+                  ?.copyWith(color: context.colors.textMuted)),
           const SizedBox(height: 16),
           Row(
             children: <Widget>[

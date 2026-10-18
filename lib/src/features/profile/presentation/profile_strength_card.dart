@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../theme/attra_colors.dart';
+import '../../../widgets/attra_editorial.dart';
+
 /// Tarjeta de "fuerza del perfil": muestra el score de completitud y anima a
 /// completar (gratis). No penaliza por campos sensibles (los calcula el
 /// ProfileCompletionCalculator, que no los pondera).
@@ -14,8 +17,7 @@ class ProfileStrengthCard extends StatelessWidget {
   final int percent;
   final VoidCallback onEdit;
 
-  /// Tareas que faltan para el 100% (criterio explícito). Se muestran las más
-  /// relevantes para que el camino al 100% sea claro.
+  /// Todas las tareas pendientes, con el mismo criterio de completitud.
   final List<String> pendingTasks;
 
   String get _label {
@@ -28,89 +30,77 @@ class ProfileStrengthCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Text('Fuerza del perfil', style: theme.textTheme.titleMedium),
-                const Spacer(),
-                Text('$percent%  ·  $_label',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(color: theme.colorScheme.primary)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: (percent / 100).clamp(0.0, 1.0),
-                minHeight: 8,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Cuanto más completo esté tu perfil, más confianza y visibilidad '
-              'tendrá. Completar tu perfil es gratis.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
-            ),
-            if (percent < 100 && pendingTasks.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              Text('Para llegar al 100% te falta:',
-                  style: theme.textTheme.labelLarge),
-              const SizedBox(height: 4),
-              ...pendingTasks.take(4).map((String t) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Icon(Icons.radio_button_unchecked,
-                            size: 16, color: theme.colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: Text(t, style: theme.textTheme.bodySmall)),
-                      ],
-                    ),
-                  )),
-              if (pendingTasks.length > 4)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text('y ${pendingTasks.length - 4} más…',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline)),
-                ),
-            ],
-            if (percent >= 100) ...<Widget>[
-              const SizedBox(height: 10),
-              Row(
-                children: <Widget>[
-                  Icon(Icons.verified,
-                      size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 6),
-                  Text('Perfil completo al 100%',
-                      style: theme.textTheme.labelLarge
-                          ?.copyWith(color: theme.colorScheme.primary)),
-                ],
-              ),
-            ],
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonalIcon(
-                onPressed: onEdit,
-                icon: const Icon(Icons.tune, size: 18),
-                label: const Text('Completar perfil'),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const AttraSectionHeading(title: 'Fuerza del perfil'),
+        const SizedBox(height: 8),
+        Text('$percent% · $_label', style: theme.textTheme.bodyLarge),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: (percent / 100).clamp(0.0, 1.0),
+            minHeight: 6,
+            semanticsLabel: 'Completitud del perfil',
+            semanticsValue: '$percent',
+            backgroundColor: context.colors.surfaceHigh,
+          ),
         ),
-      ),
+        const SizedBox(height: 10),
+        Text(
+          'Cuanto más completo esté tu perfil, más confianza y visibilidad '
+          'tendrá. Completar tu perfil es gratis.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        if (pendingTasks.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 12),
+          Text('Para llegar al 100% te falta:',
+              style: theme.textTheme.labelLarge),
+          const SizedBox(height: 4),
+          ...pendingTasks.map((String t) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Icon(Icons.radio_button_unchecked,
+                          size: 18, color: context.colors.textSecondary),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(t, style: theme.textTheme.bodyMedium)),
+                  ],
+                ),
+              )),
+        ] else if (percent < 100) ...<Widget>[
+          const SizedBox(height: 12),
+          Text('No tienes tareas pendientes.',
+              style: theme.textTheme.bodyMedium),
+        ],
+        if (percent >= 100) ...<Widget>[
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Icon(Icons.verified, size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                  child: Text('Perfil completo al 100%',
+                      style: theme.textTheme.labelLarge
+                          ?.copyWith(color: theme.colorScheme.primary))),
+            ],
+          ),
+        ],
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.tonalIcon(
+            onPressed: onEdit,
+            icon: const Icon(Icons.tune, size: 18),
+            label: const Text('Completar perfil'),
+          ),
+        ),
+      ],
     );
   }
 }

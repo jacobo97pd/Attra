@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../data/safedate_service.dart';
 import '../domain/post_date_review.dart';
@@ -121,7 +122,7 @@ class _PostDateReviewSheetState extends State<PostDateReviewSheet> {
               'Esto es privado. ${widget.otherName} nunca lo verá y no hay '
               'puntuaciones públicas. Nos ayuda a cuidar de la comunidad.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
             const SizedBox(height: 12),
             _YesNo(

@@ -1,10 +1,50 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/attra_colors.dart';
+
+/// A readable, tonal label. Champagne is reserved for a meaningful distinction.
+class AttraLabel extends StatelessWidget {
+  const AttraLabel(
+      {super.key,
+      required this.label,
+      this.icon,
+      this.champagne = false,
+      this.compact = false});
+  final String label;
+  final IconData? icon;
+  final bool champagne;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color foreground =
+        champagne ? AppColors.brandInk : context.colors.textPrimary;
+    return Container(
+      padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 12, vertical: compact ? 4 : 6),
+      decoration: BoxDecoration(
+        color: champagne ? AppColors.gold : context.colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        if (icon != null) ...<Widget>[
+          Icon(icon, size: 16, color: foreground),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+            child: Text(label,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: foreground, fontWeight: FontWeight.w600))),
+      ]),
+    );
+  }
+}
 
 enum AttraBadgeKind { plus, pro, attra }
 
-/// Badge premium para Plus / Pro / Attra. Pequeño, elegante, con degradado.
+/// Membresía o tipo de interés; el distintivo no concede ningún derecho.
 class AttraPremiumBadge extends StatelessWidget {
   const AttraPremiumBadge(this.kind, {super.key, this.compact = false});
 
@@ -13,47 +53,25 @@ class AttraPremiumBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (String label, List<Color> grad, IconData icon) = switch (kind) {
+    final (String label, IconData icon) = switch (kind) {
       AttraBadgeKind.plus => (
           'PLUS',
-          <Color>[AppColors.attraRedDeep, AppColors.attraRed],
           Icons.workspace_premium,
         ),
       AttraBadgeKind.pro => (
           'PRO',
-          AppColors.pro,
           Icons.auto_awesome,
         ),
       AttraBadgeKind.attra => (
           'ATTRA',
-          <Color>[AppColors.wine, AppColors.attraRed, AppColors.gold],
           Icons.star,
         ),
     };
-    return Container(
-      padding: EdgeInsets.symmetric(
-          horizontal: compact ? 6 : 8, vertical: compact ? 2 : 3),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: grad),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: compact ? 10 : 12, color: Colors.white),
-          SizedBox(width: compact ? 3 : 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: compact ? 9 : 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ],
-      ),
-    );
+    return AttraLabel(
+        label: label,
+        icon: icon,
+        champagne: kind == AttraBadgeKind.attra,
+        compact: compact);
   }
 }
 
@@ -66,31 +84,38 @@ class AttraCoin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-                colors: <Color>[AppColors.wine, AppColors.attraRedDeep]),
+    return Semantics(
+      label: 'Attras disponibles: $balance',
+      button: onTap != null,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Material(
+          color: context.colors.surfaceHigh,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            excludeFromSemantics: true,
+            onTap: onTap,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.star, size: 15, color: AppColors.gold),
-              const SizedBox(width: 6),
-              Text('$balance',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-      ),
+            child: Container(
+              constraints: BoxConstraints(
+                  minHeight: onTap == null ? 0 : AppSpacing.touchTarget),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.star, size: 15, color: AppColors.gold),
+                  const SizedBox(width: 6),
+                  Flexible(
+                      child: Text('$balance',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(color: context.colors.textPrimary))),
+                ],
+              ),
+            ),
+          )),
     );
   }
 }

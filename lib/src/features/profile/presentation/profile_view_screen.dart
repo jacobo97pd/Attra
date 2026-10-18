@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../theme/app_colors.dart';
+import '../../../theme/app_spacing.dart';
+import '../../../theme/attra_colors.dart';
+import '../../../widgets/attra_editorial.dart';
 import '../../../widgets/attra_image.dart';
 import '../../match/data/match_service.dart';
 import '../../safety/presentation/safety_actions.dart';
@@ -58,6 +60,7 @@ class ProfileViewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final double inset = AppSpacing.pageInset(context);
     final List<AdditionalPhoto> photos = _photos;
     final List<PublicPrompt> prompts = profile.profilePrompts;
     final String ageText = profile.age != null ? ', ${profile.age}' : '';
@@ -76,19 +79,28 @@ class ProfileViewScreen extends StatelessWidget {
     if (photos.isNotEmpty) {
       items.add(AspectRatio(
         aspectRatio: 3 / 4,
-        child: AttraImage(url: photos.first.url),
+        child: Semantics(
+          image: true,
+          label: 'Foto principal de ${profile.displayName}',
+          child: ExcludeSemantics(
+              child: AttraImage(
+                  url: photos.first.url,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg))),
+        ),
       ));
     }
 
     // Bloque de información (nombre, lugar, trabajo, bio, intereses).
     items.add(Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      padding: EdgeInsets.fromLTRB(inset, 24, inset, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text('${profile.displayName}$ageText',
-              style: theme.textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold)),
+          Semantics(
+            header: true,
+            child: Text('${profile.displayName}$ageText',
+                style: theme.textTheme.headlineLarge),
+          ),
           // Modo Amigos: badge de intención (oculto en dating, que es lo normal).
           if (!profile.intentMode.isDating)
             Padding(
@@ -101,7 +113,7 @@ class ProfileViewScreen extends StatelessWidget {
               child: Row(children: <Widget>[
                 const Icon(Icons.place_outlined, size: 18),
                 const SizedBox(width: 6),
-                Text(place),
+                Expanded(child: Text(place, style: theme.textTheme.bodyMedium)),
               ]),
             ),
           if (work.isNotEmpty)
@@ -110,40 +122,35 @@ class ProfileViewScreen extends StatelessWidget {
               child: Row(children: <Widget>[
                 const Icon(Icons.work_outline, size: 18),
                 const SizedBox(width: 6),
-                Expanded(child: Text(work)),
+                Expanded(child: Text(work, style: theme.textTheme.bodyMedium)),
               ]),
             ),
           if (profile.instagram.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _openInstagram(profile.instagram),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                    const Icon(Icons.camera_alt_outlined,
-                        size: 18, color: AppColors.attraRed),
-                    const SizedBox(width: 6),
-                    Text('@${profile.instagram}',
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: AppColors.attraRed,
-                          fontWeight: FontWeight.w600,
-                        )),
-                  ]),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _openInstagram(profile.instagram),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    foregroundColor: context.colors.textPrimary,
+                  ),
+                  icon: const Icon(Icons.camera_alt_outlined, size: 20),
+                  label: Text('@${profile.instagram}'),
                 ),
               ),
             ),
           if (profile.bio.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 14),
-            Text('Sobre mí', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
+            const SizedBox(height: 32),
+            const AttraSectionHeading(title: 'Sobre mí'),
+            const SizedBox(height: 12),
             Text(profile.bio, style: theme.textTheme.bodyLarge),
           ],
           if (profile.interests.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 16),
-            Text('Intereses', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const SizedBox(height: 32),
+            const AttraSectionHeading(title: 'Intereses'),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -160,7 +167,7 @@ class ProfileViewScreen extends StatelessWidget {
     // Vídeo de presentación (debajo de la info/bio/intereses).
     if (profile.introVideo != null) {
       items.add(Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: EdgeInsets.fromLTRB(inset, 32, inset, 0),
         child: IntroVideoPlayer(video: profile.introVideo!),
       ));
     }
@@ -168,7 +175,7 @@ class ProfileViewScreen extends StatelessWidget {
     // Audio de presentación (tras el bloque de info).
     if (profile.introAudio != null) {
       items.add(Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        padding: EdgeInsets.fromLTRB(inset, 24, inset, 0),
         child: IntroAudioPlayer(
           audio: profile.introAudio!,
           label: 'Audio de presentación',
@@ -181,28 +188,32 @@ class ProfileViewScreen extends StatelessWidget {
     int promptIndex = 0;
     for (final AdditionalPhoto photo in rest) {
       items.add(Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: AspectRatio(
+        padding: const EdgeInsets.only(top: 32),
+        child: Semantics(
+          image: true,
+          label: 'Foto de ${profile.displayName}',
+          child: ExcludeSemantics(
+              child: AspectRatio(
             aspectRatio: 3 / 4,
-            child: AttraImage(url: photo.url),
-          ),
+            child: AttraImage(
+                url: photo.url,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
+          )),
         ),
       ));
       if (promptIndex < prompts.length) {
-        items.add(_PromptCard(prompt: prompts[promptIndex], theme: theme));
+        items.add(_promptNote(context, prompts[promptIndex]));
         promptIndex++;
       }
     }
 
     // Prompts sobrantes si hay más prompts que fotos adicionales.
     while (promptIndex < prompts.length) {
-      items.add(_PromptCard(prompt: prompts[promptIndex], theme: theme));
+      items.add(_promptNote(context, prompts[promptIndex]));
       promptIndex++;
     }
 
-    items.add(const SizedBox(height: 24));
+    items.add(SizedBox(height: 32 + MediaQuery.paddingOf(context).bottom));
 
     final MatchService? safetyService = matchService;
     return Scaffold(
@@ -222,42 +233,27 @@ class ProfileViewScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: ListView(padding: EdgeInsets.zero, children: items),
-    );
-  }
-}
-
-class _PromptCard extends StatelessWidget {
-  const _PromptCard({required this.prompt, required this.theme});
-
-  final PublicPrompt prompt;
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(prompt.question, style: theme.textTheme.bodySmall),
-            const SizedBox(height: 8),
-            Text(
-              prompt.answer,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700, height: 1.25),
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: SingleChildScrollView(
+          child: AttraContentFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: items,
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _promptNote(BuildContext context, PublicPrompt prompt) {
+    final double inset = AppSpacing.pageInset(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          inset - AppSpacing.lg, 8, inset - AppSpacing.lg, 0),
+      child: AttraPromptNote(question: prompt.question, answer: prompt.answer),
     );
   }
 }

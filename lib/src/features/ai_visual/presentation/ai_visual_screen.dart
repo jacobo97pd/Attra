@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
+
+import '../../../widgets/attra_editorial.dart';
 // PlatformException + Uint8List: el picker falla con PlatformException cuando
 // el usuario deniega el acceso a las fotos.
 import 'package:flutter/services.dart';
@@ -93,6 +96,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
   // Estado local de consentimiento: permite refrescar la pantalla al instante
   // tras conceder, sin tener que salir y volver a entrar.
   late bool _hasConsent;
+  String? _consentError;
 
   @override
   void initState() {
@@ -315,22 +319,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
     return Scaffold(
       backgroundColor: context.colors.bg,
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Text('IA visual · '),
-            ShaderMask(
-              shaderCallback: (Rect b) => const LinearGradient(colors: <Color>[
-                AppColors.attraRed,
-                AppColors.aiViolet,
-              ]).createShader(b),
-              child: const Text('Pro',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w900)),
-            ),
-            const Text(' ✨', style: TextStyle(fontSize: 14)),
-          ],
-        ),
+        title: const Text('IA visual · Pro'),
       ),
       body: !widget.isPro
           ? _upsell(context)
@@ -372,7 +361,8 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
 
   Widget _consent(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return ListView(
+    return AttraContentFrame(
+        child: ListView(
       padding: const EdgeInsets.all(20),
       children: <Widget>[
         Icon(Icons.privacy_tip_outlined,
@@ -390,28 +380,59 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
           'borrarlo cuando quieras.',
         ),
         const SizedBox(height: 20),
+        if (_consentError != null) ...<Widget>[
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              _consentError!,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.error),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (_busy) ...<Widget>[
+          Semantics(
+            liveRegion: true,
+            child: const AttraInlineLoader(label: 'Guardando consentimiento…'),
+          ),
+          const SizedBox(height: 12),
+        ],
         FilledButton(
-          onPressed: _busy
-              ? null
-              : () async {
-                  setState(() => _busy = true);
-                  await widget.onGiveConsent();
-                  if (mounted) {
-                    setState(() {
-                      _busy = false;
-                      _hasConsent = true; // refresca la pantalla al instante
-                    });
-                    _load();
-                  }
-                },
-          child: const Text('Doy mi consentimiento'),
+          onPressed: _busy ? null : _giveConsent,
+          child: Text(
+              _consentError != null ? 'Reintentar' : 'Doy mi consentimiento'),
         ),
       ],
-    );
+    ));
+  }
+
+  Future<void> _giveConsent() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _consentError = null;
+    });
+    try {
+      await widget.onGiveConsent();
+      if (!mounted) return;
+      setState(() => _hasConsent = true);
+    } catch (_) {
+      if (mounted) {
+        setState(
+            () => _consentError = 'No hemos podido guardar tu consentimiento. '
+                'Comprueba tu conexión y vuelve a intentarlo.');
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    await _load();
   }
 
   Widget _active(BuildContext context) {
-    return ListView(
+    return AttraContentFrame(
+        child: ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: <Widget>[
         if (_issue != null) ...<Widget>[
@@ -428,7 +449,11 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
         const SizedBox(height: 14),
         _ReferencePhoto(state: _reference, loading: _loading),
         const SizedBox(height: 12),
-        _AnalysisPanel(state: _reference, loading: _loading),
+        AttraStateTransition(
+          value: (_reference.status, _loading),
+          duration: const Duration(milliseconds: 180),
+          child: _AnalysisPanel(state: _reference, loading: _loading),
+        ),
         if (_traits != null) ...<Widget>[
           const SizedBox(height: 12),
           _TraitsPanel(traits: _traits!),
@@ -443,60 +468,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
           onTap: _busy ? null : _pickReference,
         ),
 
-        const SizedBox(height: 26),
-        // ── 02 Lo que la IA hará por ti ──────────────────────────────────
-        const _SectionHeader(number: '02', title: 'Lo que la IA hará por ti'),
-        const SizedBox(height: 14),
-        const Row(
-          children: <Widget>[
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.people_alt_rounded,
-                title: 'Perfiles parecidos',
-                body:
-                    'Te mostramos primero personas con una estética similar a tu referencia.',
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.insights_rounded,
-                title: 'Mejor foto principal',
-                body:
-                    'Analizamos tus fotos y te sugerimos cuál genera más interés.',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        const Row(
-          children: <Widget>[
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.edit_note_rounded,
-                title: 'Optimización de perfil',
-                body: 'Detectamos puntos débiles en tu bio y te damos mejoras.',
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: _FeatureCard(
-                icon: Icons.favorite_rounded,
-                title: 'Compatibilidad visual',
-                body: 'Indicamos el nivel de parecido visual de cada perfil.',
-              ),
-            ),
-          ],
-        ),
-
-        // Mejoras reales del perfil (insights del backend).
-        const SizedBox(height: 18),
-        const _SubHeader('Mejoras sugeridas para tu perfil'),
-        const SizedBox(height: 8),
-        ..._insightsSection(context),
-
-        const SizedBox(height: 26),
-        // ── 03 Buscar ────────────────────────────────────────────────────
+        const SizedBox(height: 24),
         const _SectionHeader(number: '03', title: 'Buscar parecidos'),
         const SizedBox(height: 14),
         _SearchButton(
@@ -514,6 +486,44 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
                 ?.copyWith(color: context.colors.textMuted),
           ),
         ],
+        const SizedBox(height: 26),
+        // ── 02 Lo que la IA hará por ti ──────────────────────────────────
+        const _SectionHeader(number: '02', title: 'Lo que la IA hará por ti'),
+        const SizedBox(height: 14),
+        const AttraAdaptiveGrid(minTileWidth: 240, children: <Widget>[
+          _FeatureCard(
+            icon: Icons.people_alt_rounded,
+            title: 'Perfiles parecidos',
+            body:
+                'Te mostramos primero personas con una estética similar a tu referencia.',
+          ),
+          _FeatureCard(
+            icon: Icons.insights_rounded,
+            title: 'Repaso de tu perfil',
+            body:
+                'Revisamos cuántas fotos tienes, la extensión de tu bio y tus prompts.',
+          ),
+          _FeatureCard(
+            icon: Icons.edit_note_rounded,
+            title: 'Optimización de perfil',
+            body: 'Detectamos puntos débiles en tu bio y te damos mejoras.',
+          ),
+          _FeatureCard(
+            icon: Icons.favorite_rounded,
+            title: 'Compatibilidad visual',
+            body: 'Indicamos el nivel de parecido visual de cada perfil.',
+          )
+        ]),
+
+        // Mejoras reales del perfil (insights del backend).
+        const SizedBox(height: 18),
+        const _SubHeader('Mejoras sugeridas para tu perfil'),
+        const SizedBox(height: 8),
+        ..._insightsSection(context),
+
+        const SizedBox(height: 26),
+        // ── 03 Buscar ────────────────────────────────────────────────────
+
         const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -544,7 +554,7 @@ class _AiVisualScreenState extends State<AiVisualScreen> {
           ),
         ),
       ],
-    );
+    ));
   }
 
   /// Sección de sugerencias: cargando / error / lista vacía / lista. Antes, si
@@ -739,33 +749,7 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: <Widget>[
-            Text(number,
-                style: const TextStyle(
-                    color: AppColors.attraRed,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900)),
-            const SizedBox(width: 8),
-            Text(title,
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w800)),
-          ],
-        ),
-        if (subtitle != null) ...<Widget>[
-          const SizedBox(height: 4),
-          Text(subtitle!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                  color: context.colors.textSecondary, height: 1.35)),
-        ],
-      ],
-    );
+    return AttraSectionHeading(title: title, subtitle: subtitle);
   }
 }
 
@@ -890,7 +874,6 @@ class _AnalysisPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -980,7 +963,6 @@ class _TraitsPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1110,36 +1092,18 @@ class _FeatureCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.colors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.surfaceLine),
-      ),
+    final TextTheme text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.attraRed.withValues(alpha: 0.14),
-            ),
-            child: Icon(icon, size: 19, color: AppColors.attraRed),
-          ),
-          const SizedBox(height: 10),
-          Text(title,
-              style: theme.textTheme.bodyLarge
-                  ?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(body,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: context.colors.textSecondary, height: 1.3)),
-        ],
-      ),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(icon, size: 22, color: context.colors.textSecondary),
+            const SizedBox(height: 12),
+            Text(title, style: text.titleMedium),
+            const SizedBox(height: 8),
+            Text(body, style: text.bodySmall),
+          ]),
     );
   }
 }
@@ -1184,37 +1148,20 @@ class _OutlinedAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: context.colors.surface,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          height: 50,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: context.colors.surfaceLine),
-          ),
-          child: loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.attraRed))
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(icon, size: 18, color: context.colors.textPrimary),
-                    const SizedBox(width: 8),
-                    Text(label,
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-        ),
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: loading ? null : onTap,
+        icon: loading
+            ? MediaQuery.disableAnimationsOf(context)
+                ? const Icon(Icons.more_horiz, size: 18)
+                : const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+            : Icon(icon, size: 18),
+        label: Text(label, textAlign: TextAlign.center),
       ),
     );
   }
@@ -1227,44 +1174,19 @@ class _SearchButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: enabled ? 1 : 0.5,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(999),
-        child: InkWell(
-          // Deshabilitado visualmente, pero sigue siendo pulsable para poder
-          // EXPLICAR por qué no se puede buscar (antes no se enteraba nadie).
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            height: 54,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              gradient: const LinearGradient(colors: AppColors.action),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: AppColors.attraRed.withValues(alpha: 0.4),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Text('Buscar perfiles similares',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        // Still tappable when not ready: the original callback explains why.
+        onPressed: onTap,
+        style: FilledButton.styleFrom(
+          backgroundColor:
+              enabled ? context.colors.accent : context.colors.surfaceHigh,
+          foregroundColor:
+              enabled ? context.colors.onAccent : context.colors.textSecondary,
         ),
+        icon: const Icon(Icons.search_rounded, size: 20),
+        label: const Text('Buscar perfiles similares'),
       ),
     );
   }

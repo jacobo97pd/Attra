@@ -89,7 +89,7 @@ class ConversationGamesScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Text('Juegos que convierten un match en una conversación',
               style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(
             'Attra va de jugar y hablar, no solo de deslizar. Prueba un reto '
@@ -110,7 +110,7 @@ class ConversationGamesScreen extends StatelessWidget {
                     Expanded(
                       child: Text('Prueba el Reto Demo',
                           style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w800)),
+                              ?.copyWith(fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -136,7 +136,7 @@ class ConversationGamesScreen extends StatelessWidget {
           const SizedBox(height: 18),
           Text('Todos los juegos de conversación',
               style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
             'Se lanzan desde el botón 🎮 dentro de cualquier chat con un match.',

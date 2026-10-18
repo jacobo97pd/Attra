@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 
 /// Longitud fija del PIN de la app.
@@ -15,25 +14,31 @@ class PinDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color on = error ? AppColors.danger : AppColors.attraRed;
+    final Color on =
+        error ? Theme.of(context).colorScheme.error : context.colors.accent;
     final Color off = context.colors.surfaceLine;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List<Widget>.generate(kPinLength, (int i) {
-        final bool active = i < filled;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: 16,
-          height: 16,
-          margin: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active ? on : Colors.transparent,
-            border: Border.all(color: active ? on : off, width: 2),
-          ),
-        );
-      }),
-    );
+    return Semantics(
+        label: '$filled de $kPinLength dígitos introducidos',
+        excludeSemantics: true,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List<Widget>.generate(kPinLength, (int i) {
+            final bool active = i < filled;
+            return AnimatedContainer(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 120),
+              width: 16,
+              height: 16,
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: active ? on : Colors.transparent,
+                border: Border.all(color: active ? on : off, width: 2),
+              ),
+            );
+          }),
+        ));
   }
 }
 
@@ -101,19 +106,24 @@ class PinPad extends StatelessWidget {
           color: context.colors.surfaceHigh,
           shape: const CircleBorder(),
           clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => onDigit(digit),
-            child: Center(
-              child: Text(
-                digit,
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w600,
-                  color: context.colors.textPrimary,
+          child: Semantics(
+              button: true,
+              label: digit,
+              onTap: () => onDigit(digit),
+              child: InkWell(
+                excludeFromSemantics: true,
+                onTap: () => onDigit(digit),
+                child: Center(
+                  child: Text(
+                    digit,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w600,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
+              )),
         ),
       ),
     );
@@ -126,11 +136,20 @@ class PinPad extends StatelessWidget {
       child: SizedBox(
         width: 76,
         height: 76,
-        child: InkResponse(
-          radius: 40,
-          onTap: onTap,
-          child: Center(child: child),
-        ),
+        child: Semantics(
+            button: onTap != null,
+            label: onTap == null
+                ? ''
+                : onTap == onBiometric && onBiometric != null
+                    ? 'Usar biometría'
+                    : 'Borrar último dígito',
+            onTap: onTap,
+            child: InkResponse(
+              excludeFromSemantics: true,
+              radius: 40,
+              onTap: onTap,
+              child: Center(child: child),
+            )),
       ),
     );
   }

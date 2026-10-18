@@ -57,6 +57,8 @@ void main() {
 
       await tester.tap(find.text('Aceptar'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Confirmar y continuar'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Confirmar y continuar'));
       await tester.pump();
 
@@ -91,6 +93,8 @@ void main() {
       await tester.tap(find.text('Seleccionar fecha'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Aceptar'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Confirmar y continuar'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Confirmar y continuar'));
       await tester.pumpAndSettle();

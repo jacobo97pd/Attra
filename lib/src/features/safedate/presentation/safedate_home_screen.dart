@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/safedate_service.dart';
@@ -104,7 +105,7 @@ class SafeDateHomeScreen extends StatelessWidget {
               onTap: null,
               trailing: Text('Desde el chat',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline)),
+                      ?.copyWith(color: context.colors.textMuted)),
             ),
             const SizedBox(height: 10),
           ],
@@ -158,7 +159,7 @@ class SafeDateHomeScreen extends StatelessWidget {
                 Text(
                   'SafeDate no sustituye a los servicios de emergencia.',
                   style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
+                      ?.copyWith(color: context.colors.textMuted),
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(

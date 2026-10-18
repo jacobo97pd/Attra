@@ -94,7 +94,7 @@ class AntiGhostingNudgeCard extends StatelessWidget {
               Expanded(
                 child: Text(_title,
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ),
             ],
           ),

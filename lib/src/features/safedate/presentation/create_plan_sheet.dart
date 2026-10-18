@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../data/safedate_service.dart';
 import '../domain/safe_place.dart';
@@ -173,7 +174,7 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
               'Solo para ti. ${widget.otherName} no verá este plan ni tus '
               'contactos. Recomendamos un lugar público para una primera cita.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
             const SizedBox(height: 16),
             if (widget.safePlacesEnabled) ...<Widget>[
@@ -247,7 +248,7 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
                 'Regreso previsto sobre las '
                 '${TimeOfDay.fromDateTime(when.add(Duration(minutes: _durationMinutes))).format(context)}.',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+                    ?.copyWith(color: context.colors.textMuted),
               ),
             ],
             const SizedBox(height: 16),
@@ -259,7 +260,7 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
               'Se les podrá avisar de forma prudente si no respondes a un '
               'check-in. Tú decides. Nunca se llama a nadie automáticamente.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
             const SizedBox(height: 8),
             StreamBuilder<List<TrustedContact>>(
@@ -273,7 +274,7 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
                     'No tienes contactos de confianza. Puedes añadirlos en el '
                     'centro de SafeDate.',
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
+                        ?.copyWith(color: context.colors.textMuted),
                   );
                 }
                 return Wrap(

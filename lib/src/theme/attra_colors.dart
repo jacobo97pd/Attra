@@ -62,7 +62,7 @@ class AttraColors extends ThemeExtension<AttraColors> {
     surfaceLine: Color(0xFFDEDEDE),
     textPrimary: Color(0xFF171717),
     textSecondary: Color(0xFF555555),
-    textMuted: Color(0xFF777777),
+    textMuted: Color(0xFF666666),
     accent: Color(0xFF171717),
     accentDeep: Color(0xFF000000),
     accentSoft: Color(0xFFECECEC),

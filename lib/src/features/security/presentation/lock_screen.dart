@@ -69,33 +69,47 @@ class _LockScreenState extends State<LockScreen> {
       child: Scaffold(
         backgroundColor: context.colors.bg,
         body: SafeArea(
-          child: Column(
-            children: <Widget>[
-              const Spacer(flex: 2),
-              const Icon(Icons.lock_rounded,
-                  size: 44, color: AppColors.attraRed),
-              const SizedBox(height: 18),
-              Text(
-                _error ? 'PIN incorrecto' : 'Introduce tu PIN',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: _error
-                          ? AppColors.danger
-                          : context.colors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 24),
-              PinDots(filled: _entry.length, error: _error),
-              const Spacer(flex: 2),
-              PinPad(
-                onDigit: _onDigit,
-                onBackspace: _onBackspace,
-                onBiometric:
-                    widget.controller.biometricEnabled ? _tryBiometric : null,
-              ),
-              const Spacer(),
-            ],
-          ),
+          child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) =>
+                  SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 16),
+                      child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                              minHeight: (constraints.maxHeight - 32)
+                                  .clamp(0, double.infinity)),
+                          child: IntrinsicHeight(
+                              child: Column(
+                            children: <Widget>[
+                              const Spacer(flex: 2),
+                              const Icon(Icons.lock_rounded,
+                                  size: 44, color: AppColors.attraRed),
+                              const SizedBox(height: 18),
+                              Text(
+                                _error ? 'PIN incorrecto' : 'Introduce tu PIN',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      color: _error
+                                          ? Theme.of(context).colorScheme.error
+                                          : context.colors.textPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                              const SizedBox(height: 24),
+                              PinDots(filled: _entry.length, error: _error),
+                              const Spacer(flex: 2),
+                              PinPad(
+                                onDigit: _onDigit,
+                                onBackspace: _onBackspace,
+                                onBiometric: widget.controller.biometricEnabled
+                                    ? _tryBiometric
+                                    : null,
+                              ),
+                              const Spacer(),
+                            ],
+                          ))))),
         ),
       ),
     );
@@ -143,37 +157,55 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
       appBar: AppBar(),
       backgroundColor: context.colors.bg,
       body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            const Spacer(),
-            Text(
-              widget.title,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: context.colors.textPrimary,
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            if (widget.subtitle.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  widget.subtitle,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: context.colors.textSecondary,
-                      ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 28),
-            PinDots(filled: _entry.length),
-            const Spacer(),
-            PinPad(onDigit: _onDigit, onBackspace: _onBackspace),
-            const Spacer(),
-          ],
-        ),
+        child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) =>
+                SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
+                    child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                            minHeight: (constraints.maxHeight - 32)
+                                .clamp(0, double.infinity)),
+                        child: IntrinsicHeight(
+                            child: Column(
+                          children: <Widget>[
+                            const Spacer(),
+                            Text(
+                              widget.title,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    color: context.colors.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            if (widget.subtitle.isNotEmpty) ...<Widget>[
+                              const SizedBox(height: 8),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 32),
+                                child: Text(
+                                  widget.subtitle,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: context.colors.textSecondary,
+                                      ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 28),
+                            PinDots(filled: _entry.length),
+                            const Spacer(),
+                            PinPad(
+                                onDigit: _onDigit, onBackspace: _onBackspace),
+                            const Spacer(),
+                          ],
+                        ))))),
       ),
     );
   }

@@ -5,6 +5,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('texto y controles conservan contraste en todas las superficies', () {
+    for (final AttraColors colors in <AttraColors>[
+      AttraColors.dark,
+      AttraColors.light
+    ]) {
+      for (final Color foreground in <Color>[
+        colors.textPrimary,
+        colors.textSecondary,
+        colors.textMuted
+      ]) {
+        for (final Color background in <Color>[
+          colors.bg,
+          colors.surface,
+          colors.surfaceHigh
+        ]) {
+          expect(_contrast(foreground, background), greaterThanOrEqualTo(4.5));
+        }
+      }
+      expect(
+          _contrast(colors.onAccent, colors.accent), greaterThanOrEqualTo(4.5));
+    }
+  });
+
   test('los acentos y aliases de marca son acromaticos', () {
     final Map<String, Color> colors = <String, Color>{
       'dark.accent': AttraColors.dark.accent,
@@ -61,6 +84,9 @@ void main() {
         in themes.entries) {
       final ThemeData theme = entry.value.theme;
       final AttraColors colors = entry.value.colors;
+      expect(
+          _contrast(theme.colorScheme.onSecondary, theme.colorScheme.secondary),
+          greaterThanOrEqualTo(4.5));
 
       expect(
         theme.colorScheme.primary,
@@ -73,7 +99,11 @@ void main() {
         reason: '${entry.key}.primary no debe recuperar un tinte rojo',
       );
       expect(theme.primaryColor, colors.accent);
-      expect(theme.colorScheme.error, AppColors.danger);
+      expect(
+          theme.colorScheme.error,
+          entry.key == 'dark'
+              ? AppColors.dangerOnDark
+              : AppColors.dangerOnLight);
 
       final InputBorder? errorBorder = theme.inputDecorationTheme.errorBorder;
       final InputBorder? focusedErrorBorder =
@@ -96,6 +126,30 @@ void main() {
     expect(AppColors.danger, isNot(AttraColors.dark.accent));
     expect(AppColors.loginVideoTint, const Color(0xFFB4375D));
   });
+
+  test('el error y su foreground mantienen contraste AA en ambos temas', () {
+    for (final ThemeData theme in <ThemeData>[AppTheme.dark, AppTheme.light]) {
+      final AttraColors colors = theme.extension<AttraColors>()!;
+      for (final Color background in <Color>[
+        colors.bg,
+        colors.surface,
+        colors.surfaceHigh,
+      ]) {
+        expect(_contrast(theme.colorScheme.error, background),
+            greaterThanOrEqualTo(4.5));
+      }
+      expect(_contrast(theme.colorScheme.onError, theme.colorScheme.error),
+          greaterThanOrEqualTo(4.5));
+    }
+  });
+}
+
+double _contrast(Color a, Color b) {
+  final double first = a.computeLuminance();
+  final double second = b.computeLuminance();
+  final double high = first > second ? first : second;
+  final double low = first > second ? second : first;
+  return (high + 0.05) / (low + 0.05);
 }
 
 bool _isAchromatic(Color color) {

@@ -4,6 +4,7 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/attra_image.dart';
+import '../../../widgets/attra_motion.dart';
 import '../../spark/data/spark_service.dart';
 import '../../spark/presentation/spark_game_screen.dart';
 import '../domain/like.dart';
@@ -77,16 +78,29 @@ Future<void> showMatchCreatedDialog(
       onPlaySpark: onPlaySpark,
       sparkOffer: sparkOffer,
     ),
-    transitionsBuilder: (_, Animation<double> animation, __, Widget child) {
+    transitionsBuilder:
+        (BuildContext context, Animation<double> animation, __, Widget child) {
       final Animation<double> curved =
-          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-      return FadeTransition(
+          animation.drive(CurveTween(curve: Curves.easeOutCubic));
+      final Widget content = FadeTransition(
         opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
-          child: child,
-        ),
+        child: MediaQuery.disableAnimationsOf(context)
+            ? child
+            : ScaleTransition(
+                scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
+                child: child,
+              ),
       );
+      return Stack(fit: StackFit.expand, children: <Widget>[
+        // Establish the new plane promptly: discovery controls should not
+        // remain legible through the people and message during the fade.
+        FadeTransition(
+          opacity: animation.drive(CurveTween(
+              curve: const Interval(0, .25, curve: AttraMotion.enter))),
+          child: ColoredBox(color: context.colors.bg),
+        ),
+        content,
+      ]);
     },
   ));
 }
@@ -178,7 +192,7 @@ class _MatchCelebrationScreen extends StatelessWidget {
                 text: TextSpan(
                   style: theme.textTheme.headlineMedium?.copyWith(
                       color: context.colors.textPrimary,
-                      fontWeight: FontWeight.w900),
+                      fontWeight: FontWeight.w600),
                   children: const <TextSpan>[
                     TextSpan(text: '¡Es un '),
                     TextSpan(
@@ -299,6 +313,23 @@ class _MatchPhotos extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Animation<double> entrance =
+        ModalRoute.of(context)?.animation ?? kAlwaysCompleteAnimation;
+    Widget approach(Widget child, double direction) => AnimatedBuilder(
+          animation: entrance,
+          child: child,
+          builder: (BuildContext context, Widget? child) => Transform.translate(
+            offset: Offset(
+                AttraMotion.enabledOf(context)
+                    ? direction *
+                        14 *
+                        (1 - AttraMotion.enter.transform(entrance.value))
+                    : 0,
+                0),
+            transformHitTests: false,
+            child: child,
+          ),
+        );
     const double d = 150;
     const double overlap = 26;
     return SizedBox(
@@ -309,16 +340,20 @@ class _MatchPhotos extends StatelessWidget {
         children: <Widget>[
           Positioned(
             left: 0,
-            child: _Bubble(url: currentUserPhotoUrl, fallback: 'Tú', size: d),
+            child: approach(
+                _Bubble(url: currentUserPhotoUrl, fallback: 'Tú', size: d), -1),
           ),
           Positioned(
             right: 0,
-            child: _Bubble(
-              url: matchedUserPhotoUrl,
-              fallback:
-                  matchedName.isNotEmpty ? matchedName[0].toUpperCase() : '?',
-              size: d,
-            ),
+            child: approach(
+                _Bubble(
+                  url: matchedUserPhotoUrl,
+                  fallback: matchedName.isNotEmpty
+                      ? matchedName[0].toUpperCase()
+                      : '?',
+                  size: d,
+                ),
+                1),
           ),
           // Badge de corazón al centro-abajo, entre las dos fotos.
           Positioned(
@@ -328,15 +363,8 @@ class _MatchPhotos extends StatelessWidget {
               height: 58,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(colors: AppColors.action),
+                color: AppColors.brandGraphite,
                 border: Border.all(color: context.colors.bg, width: 3),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.attraRed.withValues(alpha: 0.55),
-                    blurRadius: 20,
-                    spreadRadius: 1,
-                  ),
-                ],
               ),
               child: Icon(
                 hasAttra ? Icons.star_rounded : Icons.favorite_rounded,
@@ -368,13 +396,6 @@ class _Bubble extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: AppColors.attraRed, width: 3),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: AppColors.attraRed.withValues(alpha: 0.45),
-            blurRadius: 26,
-            spreadRadius: 1,
-          ),
-        ],
       ),
       child: ClipOval(
         child: AttraImage(url: u, fallbackInitial: fallback),

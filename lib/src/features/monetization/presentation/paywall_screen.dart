@@ -10,6 +10,9 @@ import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
 import '../../../widgets/attra_badges.dart';
 import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/attra_motion.dart';
+
+import '../../../widgets/attra_editorial.dart';
 import '../../../widgets/legal_links_row.dart';
 import '../data/iap_service.dart';
 import '../domain/monetization_feature_flags.dart';
@@ -552,7 +555,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
               ),
               Expanded(
-                child: ListView(
+                child: AttraContentFrame(
+                    child: ListView(
                   padding: const EdgeInsets.fromLTRB(
                       AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
                   children: <Widget>[
@@ -726,7 +730,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       ),
                     ),
                   ],
-                ),
+                )),
               ),
               // Guideline 3.1.2(c): los enlaces al EULA y a la privacidad van
               // FUERA de la lista, anclados abajo. Dentro de la lista solo se
@@ -813,24 +817,38 @@ class _PeriodToggle extends StatelessWidget {
 
   Widget _segment(
       BuildContext context, String label, bool active, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient:
-              active ? const LinearGradient(colors: AppColors.action) : null,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.white : context.colors.textSecondary,
-            fontWeight: FontWeight.w700,
-            fontSize: 13.5,
+    return MergeSemantics(
+      child: Semantics(
+        selected: active,
+        inMutuallyExclusiveGroup: true,
+        child: AttraPressFeedback(
+            child: TextButton(
+          onPressed: onTap,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(48, 48),
+            padding: EdgeInsets.zero,
+            shape: const StadiumBorder(),
           ),
-        ),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? context.colors.accent : null,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: active
+                    ? context.colors.onAccent
+                    : context.colors.textSecondary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13.5,
+              ),
+            ),
+          ),
+        )),
       ),
     );
   }
@@ -882,34 +900,17 @@ class _PlanCard extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     // Plus usa champagne (claro) => texto oscuro sobre sus acentos para que se lea.
     final bool onLight = kind == AttraBadgeKind.plus;
-    final Color accentText =
-        onLight ? context.colors.bg : context.colors.textPrimary;
+
     return AttraCard(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      borderColor: gradient.last.withValues(alpha: 0.55),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              AttraPremiumBadge(kind),
-              const Spacer(),
-              if (highlightLabel != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: gradient),
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                  ),
-                  child: Text(highlightLabel!,
-                      style: TextStyle(
-                          color: accentText,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700)),
-                ),
-            ],
-          ),
+          Wrap(spacing: 12, runSpacing: 8, children: <Widget>[
+            AttraPremiumBadge(kind),
+            if (highlightLabel != null)
+              AttraLabel(label: highlightLabel!, champagne: onLight),
+          ]),
           const SizedBox(height: AppSpacing.md),
           Text(title, style: theme.textTheme.headlineSmall),
           const SizedBox(height: 2),
@@ -937,7 +938,8 @@ class _PlanCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(Icons.check_circle, size: 18, color: gradient.last),
+                    Icon(Icons.check_circle,
+                        size: 18, color: context.colors.textSecondary),
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(child: Text(f, style: theme.textTheme.bodyMedium)),
                   ],
@@ -953,8 +955,6 @@ class _PlanCard extends StatelessWidget {
               : AttraPrimaryButton(
                   label: ctaLabel,
                   onPressed: onTap,
-                  gradient: gradient,
-                  foregroundColor: onLight ? context.colors.bg : null,
                 ),
         ],
       ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../theme/app_colors.dart';
+import '../../../theme/attra_colors.dart';
 import '../../social/data/friend_group_service.dart';
 import '../../social/data/social_discovery_service.dart';
 import '../../social/domain/friend_group.dart';
@@ -68,16 +69,7 @@ class HomeLandingScreen extends StatelessWidget {
           const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(1.0, -1.0),
-                  radius: 1.15,
-                  colors: <Color>[
-                    Color(0x66707070),
-                    Color(0x33D71945),
-                    Color(0x000E0E10),
-                  ],
-                  stops: <double>[0.0, 0.28, 0.62],
-                ),
+                color: AppColors.black,
               ),
             ),
           ),
@@ -464,7 +456,7 @@ class _AvatarStack extends StatelessWidget {
                 height: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const LinearGradient(colors: AppColors.action),
+                  color: AppColors.brandGraphite,
                   border: Border.all(color: AppColors.surface, width: 2),
                 ),
                 child: const Icon(Icons.person, size: 17, color: Colors.white),
@@ -511,7 +503,7 @@ class _GradientButton extends StatelessWidget {
           height: 46,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: AppColors.action),
+            color: AppColors.brandGraphite,
             borderRadius: BorderRadius.circular(14),
           ),
           child: Text(label,
@@ -599,7 +591,6 @@ class _RecommendationsSection extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 14),
                 itemBuilder: (BuildContext context, int i) => _PlanImageCard(
                   group: recs[i].group,
-                  index: i,
                   onTap: () => onOpenGroup?.call(recs[i].group),
                 ),
               ),
@@ -620,16 +611,6 @@ class _RecommendationsSection extends StatelessWidget {
     );
   }
 }
-
-/// Paleta de gradientes para las cabeceras de las tarjetas de planes (no hay
-/// fotos reales de grupo; se usa un gradiente premium + icono por categoría).
-const List<List<Color>> _cardGradients = <List<Color>>[
-  <Color>[Color(0xFF4A3B2A), Color(0xFF8A5A3A)], // atardecer/montaña
-  <Color>[Color(0xFF3A1420), Color(0xFF6E1E30)], // cine (rojo)
-  <Color>[Color(0xFF2E1E42), Color(0xFF5A2E62)], // vino/uva
-  <Color>[Color(0xFF16303E), Color(0xFF2E5A66)], // agua/azul
-  <Color>[Color(0xFF1E3A2A), Color(0xFF2E5A3E)], // naturaleza
-];
 
 IconData _iconForGroup(FriendGroup g) {
   final String s = '${g.name} ${g.interests.join(' ')}'.toLowerCase();
@@ -657,16 +638,13 @@ IconData _iconForGroup(FriendGroup g) {
 }
 
 class _PlanImageCard extends StatelessWidget {
-  const _PlanImageCard(
-      {required this.group, required this.index, required this.onTap});
+  const _PlanImageCard({required this.group, required this.onTap});
   final FriendGroup group;
-  final int index;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final int free = group.maxMembers - group.memberIds.length;
-    final List<Color> grad = _cardGradients[index % _cardGradients.length];
     return SizedBox(
       width: 186,
       child: Material(
@@ -686,11 +664,7 @@ class _PlanImageCard extends StatelessWidget {
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: grad,
-                          ),
+                          color: context.colors.surfaceHigh,
                         ),
                       ),
                     ),

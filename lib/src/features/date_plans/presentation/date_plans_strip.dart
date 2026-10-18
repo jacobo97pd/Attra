@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/date_plan_service.dart';
@@ -162,7 +163,7 @@ class _VotingCardState extends State<_VotingCard> {
               if (plan.zone.isNotEmpty)
                 Text(plan.zone,
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline)),
+                        ?.copyWith(color: context.colors.textMuted)),
             ],
           ),
           if (plan.generatedReason.isNotEmpty) ...<Widget>[
@@ -252,11 +253,11 @@ class _OptionVoteRow extends StatelessWidget {
                 if (option.placeName.isNotEmpty)
                   Text(option.placeName,
                       style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline)),
+                          ?.copyWith(color: context.colors.textMuted)),
                 if (meta.isNotEmpty)
                   Text(meta.join('  ·  '),
                       style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline)),
+                          ?.copyWith(color: context.colors.textMuted)),
                 if (chosenByOther)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -328,7 +329,7 @@ class _ConfirmedCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text('¡Plan confirmado!',
                   style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+                      ?.copyWith(fontWeight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: 6),
@@ -338,7 +339,7 @@ class _ConfirmedCard extends StatelessWidget {
           if (o != null && o.placeName.isNotEmpty)
             Text(o.placeName,
                 style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.outline)),
+                    ?.copyWith(color: context.colors.textMuted)),
           if (when.isNotEmpty || plan.zone.isNotEmpty)
             Text(
               <String>[
@@ -346,7 +347,7 @@ class _ConfirmedCard extends StatelessWidget {
                 if (plan.zone.isNotEmpty) plan.zone,
               ].join('  ·  '),
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
           if (o != null && o.mapsUrl.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),

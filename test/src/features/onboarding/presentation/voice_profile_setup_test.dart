@@ -5,6 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('briefing keeps no cosmetic ticker alive with reduced motion',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(_host());
+    await tester.pumpAndSettle();
+    expect(tester.binding.transientCallbackCount, 0);
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.binding.transientCallbackCount, 0);
+    expect(find.text('Grabar mi historia'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'el briefing explica el audio, el borrador editable y la privacidad',
     (WidgetTester tester) async {

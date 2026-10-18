@@ -218,16 +218,6 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: context.colors.surfaceLine,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
             Row(
               children: <Widget>[
@@ -236,7 +226,7 @@ class _TravelSheetBodyState extends State<_TravelSheetBody> {
                 const SizedBox(width: 10),
                 Text('Modo viajes',
                     style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
             const SizedBox(height: 6),
@@ -316,11 +306,7 @@ class _UpsellWall extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[AppColors.wine, context.colors.surface],
-        ),
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: context.colors.surfaceLine),
       ),

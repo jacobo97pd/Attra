@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_editorial.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_motion.dart';
+import '../../../widgets/attra_states.dart';
 import '../data/notification_service.dart';
 import '../domain/app_notification.dart';
 
@@ -55,6 +58,16 @@ class NotificationsScreen extends StatelessWidget {
           stream: service.watch(uid),
           builder: (BuildContext context,
               AsyncSnapshot<List<AppNotification>> snap) {
+            if (snap.hasError) {
+              return Semantics(
+                  liveRegion: true,
+                  child: const AttraEmptyState(
+                    icon: Icons.wifi_off_rounded,
+                    title: 'No se pudieron cargar las notificaciones',
+                    message:
+                        'Comprueba tu conexión y vuelve a abrir la pantalla.',
+                  ));
+            }
             if (snap.connectionState == ConnectionState.waiting) {
               return const Center(
                   child: CircularProgressIndicator(color: AppColors.attraRed));
@@ -62,7 +75,8 @@ class NotificationsScreen extends StatelessWidget {
             final List<AppNotification> items =
                 snap.data ?? <AppNotification>[];
             if (items.isEmpty) return const _Empty();
-            return ListView.separated(
+            return AttraContentFrame(
+                child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(
                   AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xl),
               itemCount: items.length,
@@ -75,7 +89,7 @@ class NotificationsScreen extends StatelessWidget {
                 },
                 onDismiss: () => service.delete(uid, items[i].id),
               ),
-            );
+            ));
           },
         ),
       ),
@@ -114,17 +128,12 @@ class _NotifTile extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          child: Container(
+          child: Ink(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: n.read
-                  ? context.colors.surface
-                  : accent.withValues(alpha: 0.10),
+              color:
+                  n.read ? context.colors.surface : context.colors.surfaceHigh,
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-              border: Border.all(
-                  color: n.read
-                      ? context.colors.surfaceLine
-                      : accent.withValues(alpha: 0.45)),
             ),
             child: Row(
               children: <Widget>[
@@ -146,13 +155,11 @@ class _NotifTile extends StatelessWidget {
                     children: <Widget>[
                       Text(n.title,
                           style: theme.textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                               color: context.colors.textPrimary)),
                       const SizedBox(height: 2),
                       Text(n.body,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium
+                          style: theme.textTheme.bodySmall
                               ?.copyWith(color: context.colors.textSecondary)),
                       if (n.createdAt != null) ...<Widget>[
                         const SizedBox(height: 4),
@@ -194,28 +201,10 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(Icons.notifications_none_rounded,
-                size: 56, color: AppColors.attraRed),
-            const SizedBox(height: 16),
-            Text('Sin novedades por ahora',
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(color: context.colors.textPrimary)),
-            const SizedBox(height: 8),
-            Text('Cuando alguien te dé like o te escriba, lo verás aquí 🔔',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: context.colors.textSecondary)),
-          ],
-        ),
-      ),
-    );
+    return const AttraEmptyState(
+        icon: Icons.notifications_none_rounded,
+        title: 'Sin novedades por ahora',
+        message: 'Cuando alguien te dé like o te escriba, lo verás aquí 🔔');
   }
 }
 
@@ -241,10 +230,12 @@ class NotificationBell extends StatelessWidget {
         return Stack(
           alignment: Alignment.center,
           children: <Widget>[
-            IconButton(
-              tooltip: 'Notificaciones',
-              icon: const Icon(Icons.notifications_none_rounded),
-              onPressed: onTap,
+            AttraPressFeedback(
+              child: IconButton(
+                tooltip: 'Notificaciones',
+                icon: const Icon(Icons.notifications_none_rounded),
+                onPressed: onTap,
+              ),
             ),
             if (n > 0)
               Positioned(

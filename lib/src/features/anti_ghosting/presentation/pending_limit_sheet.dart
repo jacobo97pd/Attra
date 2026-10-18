@@ -44,25 +44,11 @@ class PendingLimitBottomSheet extends StatelessWidget {
             children: <Widget>[
               Center(
                 child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 18),
-                  decoration: BoxDecoration(
-                    color: context.colors.surfaceLine,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-              Center(
-                child: Container(
                   width: 64,
                   height: 64,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: RadialGradient(colors: <Color>[
-                      AppColors.attraRed.withValues(alpha: 0.22),
-                      Colors.transparent,
-                    ]),
+                    color: context.colors.surfaceHigh,
                   ),
                   child: const Icon(Icons.forum_rounded,
                       size: 30, color: AppColors.attraRed),
@@ -73,7 +59,7 @@ class PendingLimitBottomSheet extends StatelessWidget {
                 'Tienes conversaciones esperando',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               Text(

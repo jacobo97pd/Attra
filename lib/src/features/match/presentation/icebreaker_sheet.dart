@@ -112,7 +112,7 @@ Future<void> showIcebreakerSheet(
                 const SizedBox(height: 28),
                 Text('Romped el hielo',
                     style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),

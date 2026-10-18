@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../widgets/attra_editorial.dart';
 
 import 'package:flutter/material.dart';
 
@@ -355,7 +356,8 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
             ?.onlineWithin(SparkService.presenceWindow) ??
         false;
 
-    return ListView(
+    return AttraContentFrame(
+        child: ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: <Widget>[
         if (!otherOnline) _pausedBanner(),
@@ -381,7 +383,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
         else
           _answerControls(round),
       ],
-    );
+    ));
   }
 
   Widget _pausedBanner() {
@@ -511,11 +513,7 @@ class _SparkGameScreenState extends State<SparkGameScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: coincide
-                  ? AppColors.match
-                  : <Color>[context.colors.surfaceHigh, context.colors.surface],
-            ),
+            color: context.colors.surfaceHigh,
             borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           ),
           child: Column(

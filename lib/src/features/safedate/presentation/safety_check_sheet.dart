@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../data/safedate_service.dart';
 import '../domain/conversation_risk.dart';
@@ -127,7 +128,7 @@ class SafetyCheckSheet {
                 'Esto son recordatorios de seguridad, no un juicio sobre la otra '
                 'persona. Tú decides qué hacer.',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+                    ?.copyWith(color: context.colors.textMuted),
               ),
               const SizedBox(height: 16),
               SizedBox(

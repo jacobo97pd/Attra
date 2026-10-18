@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../domain/intent_mode.dart';
 import '../domain/social_copy.dart';
@@ -55,7 +56,7 @@ class _IntentModeSelectorState extends State<IntentModeSelector> {
           Text(
             'Puedes cambiarlo cuando quieras. Ajusta a quién ves y el tono de la app.',
             style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.outline),
+                ?.copyWith(color: context.colors.textMuted),
           ),
           const SizedBox(height: 12),
           for (final IntentMode mode in IntentMode.values)
@@ -136,7 +137,7 @@ class _OptionTile extends StatelessWidget {
                             ?.copyWith(fontWeight: FontWeight.w700)),
                     Text(subtitle,
                         style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.outline)),
+                            ?.copyWith(color: context.colors.textMuted)),
                   ],
                 ),
               ),

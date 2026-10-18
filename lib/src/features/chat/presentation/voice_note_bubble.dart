@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
+
 import 'package:just_audio/just_audio.dart';
 
+import '../../../theme/app_spacing.dart';
+import '../../../theme/attra_colors.dart';
 import '../domain/chat_message.dart';
 
 /// Reproductor unico de notas de voz: garantiza que solo suena UN audio a la
@@ -77,80 +81,83 @@ class VoiceNoteBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color fg =
-        mine ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface;
+    final Color fg = context.colors.textPrimary;
     final Duration total = Duration(milliseconds: media.durationMs ?? 0);
 
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
-        decoration: BoxDecoration(
-          color: mine
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: StreamBuilder<PlayerState>(
-          stream: controller.playerStateStream,
-          builder:
-              (BuildContext context, AsyncSnapshot<PlayerState> stateSnap) {
-            final bool isCurrent = controller.isCurrent(media.downloadUrl);
-            final bool playing =
-                isCurrent && (stateSnap.data?.playing ?? false);
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  color: fg,
-                  icon: Icon(playing ? Icons.pause_circle : Icons.play_circle,
-                      size: 34),
-                  onPressed: () => controller.toggle(media.downloadUrl),
-                ),
-                const SizedBox(width: 4),
-                StreamBuilder<Duration>(
-                  stream: controller.positionStream,
-                  builder:
-                      (BuildContext context, AsyncSnapshot<Duration> posSnap) {
-                    final Duration pos = isCurrent
-                        ? (posSnap.data ?? Duration.zero)
-                        : Duration.zero;
-                    final Duration dur =
-                        isCurrent ? (controller.duration ?? total) : total;
-                    final double value = dur.inMilliseconds == 0
-                        ? 0
-                        : (pos.inMilliseconds / dur.inMilliseconds)
-                            .clamp(0.0, 1.0);
-                    return SizedBox(
-                      width: 130,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          LinearProgressIndicator(
-                            value: value,
-                            backgroundColor: fg.withValues(alpha: 0.25),
-                            color: fg,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            isCurrent && pos > Duration.zero
-                                ? _fmt(pos)
-                                : _fmt(dur),
-                            style: TextStyle(color: fg, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ],
-            );
-          },
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) => Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          width: constraints.maxWidth * 0.86,
+          decoration: BoxDecoration(
+            color: mine ? context.colors.surfaceHigh : context.colors.surface,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          ),
+          child: StreamBuilder<PlayerState>(
+            stream: controller.playerStateStream,
+            builder:
+                (BuildContext context, AsyncSnapshot<PlayerState> stateSnap) {
+              final bool isCurrent = controller.isCurrent(media.downloadUrl);
+              final bool playing =
+                  isCurrent && (stateSnap.data?.playing ?? false);
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  AttraPressFeedback(
+                      child: IconButton(
+                    tooltip: playing
+                        ? 'Pausar nota de voz'
+                        : 'Reproducir nota de voz',
+                    constraints:
+                        const BoxConstraints(minWidth: 48, minHeight: 48),
+                    color: fg,
+                    icon: Icon(playing ? Icons.pause_circle : Icons.play_circle,
+                        size: 34),
+                    onPressed: () => controller.toggle(media.downloadUrl),
+                  )),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: StreamBuilder<Duration>(
+                      stream: controller.positionStream,
+                      builder: (BuildContext context,
+                          AsyncSnapshot<Duration> posSnap) {
+                        final Duration pos = isCurrent
+                            ? (posSnap.data ?? Duration.zero)
+                            : Duration.zero;
+                        final Duration dur =
+                            isCurrent ? (controller.duration ?? total) : total;
+                        final double value = dur.inMilliseconds == 0
+                            ? 0
+                            : (pos.inMilliseconds / dur.inMilliseconds)
+                                .clamp(0.0, 1.0);
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            LinearProgressIndicator(
+                              value: value,
+                              backgroundColor: fg.withValues(alpha: 0.25),
+                              color: fg,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isCurrent && pos > Duration.zero
+                                  ? _fmt(pos)
+                                  : _fmt(dur),
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: fg),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../widgets/attra_loader.dart';
@@ -127,12 +128,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
           const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(-1.0, -1.0),
-                  radius: 1.2,
-                  colors: <Color>[Color(0x33707070), Color(0x00111111)],
-                  stops: <double>[0.0, 0.55],
-                ),
+                color: AppColors.black,
               ),
             ),
           ),
@@ -322,15 +318,9 @@ class _RoundAddButton extends StatelessWidget {
           Container(
             width: 62,
             height: 62,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(colors: AppColors.action),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                    color: AppColors.attraRed.withValues(alpha: 0.45),
-                    blurRadius: 18,
-                    spreadRadius: 1),
-              ],
+              color: AppColors.brandGraphite,
             ),
             child: Material(
               color: Colors.transparent,
@@ -357,12 +347,6 @@ class _CreateGroupButton extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(30),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-              color: AppColors.attraRed.withValues(alpha: 0.45),
-              blurRadius: 22,
-              spreadRadius: 1),
-        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -373,7 +357,7 @@ class _CreateGroupButton extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: AppColors.action),
+              color: AppColors.brandGraphite,
               borderRadius: BorderRadius.circular(30),
             ),
             child: const Row(
@@ -585,7 +569,7 @@ class _MetaLine extends StatelessWidget {
               style: TextStyle(
                   color: AppColors.attraRed,
                   fontSize: 15,
-                  fontWeight: FontWeight.w900)),
+                  fontWeight: FontWeight.w600)),
         );
     return Row(
       children: <Widget>[
@@ -653,7 +637,7 @@ class _MiniAvatars extends StatelessWidget {
                 height: 30,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: const LinearGradient(colors: AppColors.action),
+                  color: AppColors.brandGraphite,
                   border: Border.all(color: AppColors.surface, width: 2),
                 ),
                 child: const Icon(Icons.person, size: 16, color: Colors.white),
@@ -892,7 +876,7 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                             g.status.wireName,
                           ].join('  ·  '),
                           style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.outline),
+                              ?.copyWith(color: context.colors.textMuted),
                         ),
                         if (admin) ...<Widget>[
                           const SizedBox(height: 6),
@@ -982,7 +966,7 @@ class _GroupDetailSheetState extends State<_GroupDetailSheet> {
                       : (memberUid == widget.uid
                           ? Text('Tú',
                               style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.colorScheme.outline))
+                                  ?.copyWith(color: context.colors.textMuted))
                           : null),
                 ),
               // Chat del grupo: disponible para miembros.

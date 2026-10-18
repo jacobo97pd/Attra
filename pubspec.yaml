@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.91+99
+version: 1.0.92+100
 
 environment:
   sdk: ^3.5.4
@@ -149,7 +149,12 @@ flutter:
   uses-material-design: true
   # Genera AppLocalizations desde los .arb de lib/l10n (ver l10n.yaml).
   generate: true
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/manrope/Manrope-Variable.ttf
   assets:
+    - assets/fonts/manrope/OFL.txt
     - assets/images/
     - assets/geo/countries.json
     - assets/geo/country_names.json

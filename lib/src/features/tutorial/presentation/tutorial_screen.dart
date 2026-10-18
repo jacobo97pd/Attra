@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 
 import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
@@ -87,6 +88,10 @@ class _TutorialScreenState extends State<TutorialScreen> {
       _finish();
       return;
     }
+    if (!AttraMotion.enabledOf(context)) {
+      _controller.jumpToPage(_index + 1);
+      return;
+    }
     _controller.nextPage(
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
@@ -137,7 +142,8 @@ class _TutorialScreenState extends State<TutorialScreen> {
                 children: <Widget>[
                   for (int i = 0; i < _pages.length; i++)
                     AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
+                      duration: AttraMotion.durationOf(
+                          context, const Duration(milliseconds: 220)),
                       margin: const EdgeInsets.symmetric(horizontal: 3),
                       width: i == _index ? 22 : 7,
                       height: 7,
@@ -220,17 +226,8 @@ class _TutorialPageView extends StatelessWidget {
                 const SizedBox(height: 16),
                 ExcludeSemantics(
                   child: Container(
-                    width: 132,
-                    height: 132,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: <Color>[
-                          page.accent.withValues(alpha: 0.26),
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
+                    width: 112,
+                    height: 80,
                     alignment: Alignment.center,
                     child: page.isWelcome
                         ? Image.asset(
@@ -239,7 +236,8 @@ class _TutorialPageView extends StatelessWidget {
                             fit: BoxFit.contain,
                             filterQuality: FilterQuality.high,
                           )
-                        : Icon(page.icon, size: 62, color: page.accent),
+                        : Icon(page.icon,
+                            size: 40, color: context.colors.textSecondary),
                   ),
                 ),
                 const SizedBox(height: 28),
@@ -249,7 +247,7 @@ class _TutorialPageView extends StatelessWidget {
                     page.title,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w600,
                       color: context.colors.textPrimary,
                     ),
                   ),

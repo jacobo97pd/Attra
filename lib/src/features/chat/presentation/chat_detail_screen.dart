@@ -8,12 +8,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../../../../core/config/app_store_validation_config.dart';
+import '../../../theme/app_spacing.dart';
+import '../../../widgets/attra_editorial.dart';
 import '../../../widgets/attra_image.dart';
 import '../../../widgets/attra_loader.dart';
+import '../../../widgets/attra_motion.dart';
+
 import '../../chat_game/domain/chat_game.dart';
 import '../../connection_lab/presentation/ai_compatibility_screen.dart';
 import '../../connection_lab/presentation/anti_ghosting_coach_screen.dart';
-import '../../connection_lab/presentation/chat_ai_challenge_card.dart';
 import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../connection_lab/presentation/date_planner_screen.dart';
 import '../../connection_lab/presentation/demo_challenge_screen.dart';
@@ -182,6 +185,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final ImagePicker _picker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
   final VoiceNotePlayerController _voicePlayer = VoiceNotePlayerController();
+  int _messagesAttempt = 0;
 
   bool _uploadingMedia = false;
 
@@ -354,6 +358,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     super.initState();
     // Marca leidos al abrir (best-effort).
     widget.chatService.markAsRead(widget.chatId).catchError((_) {});
+  }
+
+  void _retryMessages() {
+    setState(() => _messagesAttempt++);
   }
 
   @override
@@ -1601,7 +1609,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             children: <Widget>[
               CircleAvatar(
                 radius: 18,
-                backgroundColor: const Color(0xFFE0E0E0),
+                backgroundColor: context.colors.surfaceHigh,
+                foregroundColor: context.colors.textPrimary,
                 backgroundImage: widget.other.photoUrl.isNotEmpty
                     ? CachedNetworkImageProvider(widget.other.photoUrl)
                     : null,
@@ -1614,7 +1623,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(widget.other.displayName,
-                    overflow: TextOverflow.ellipsis),
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium),
               ),
               if (_canOpenProfile) const Icon(Icons.chevron_right, size: 20),
             ],
@@ -1657,122 +1667,169 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<Chat?>(
-        stream: widget.chatService.observeChatById(widget.chatId),
-        builder: (BuildContext context, AsyncSnapshot<Chat?> chatSnap) {
-          final Chat? chat = chatSnap.data;
-          _trackChat(chatSnap);
-          final bool canSend = chat?.status.canSendMessages ?? true;
-          return Column(
-            children: <Widget>[
-              // Reto de IA arriba de la conversación. El chat normal sigue
-              // entero debajo.
-              if (kAppStoreValidationExperience && canSend)
-                ChatAiChallengeCard(
-                  onStartChallenge: _openAiDemoChallenge,
-                  onSuggestOpener: _suggestReplies,
-                  onPlayGame: () => _openIcebreaker(canSend),
-                ),
-              // Match Journey (Fase 8): card de recorrido guiado. Opt-in, cerrable.
-              if (widget.journeyEnabled &&
-                  canSend &&
-                  !_journeyDismissed &&
-                  _journey != null)
-                MatchJourneyCard(
-                  journey: _journey!,
-                  otherName: widget.other.displayName,
-                  onIcebreaker: widget.icebreakersEnabled
-                      ? () => _openIcebreaker(canSend)
-                      : null,
-                  onQuickGame:
-                      (widget.sparkEnabled && widget.sparkService != null)
-                          ? _inviteSparkFromJourney
-                          : (widget.doubleAnswerEnabled ||
-                                  widget.twoTruthsEnabled ||
-                                  widget.icebreakersEnabled
-                              ? () => _openIcebreaker(canSend)
-                              : null),
-                  onProposePlan:
-                      canSend ? () => _proposePlanFlow(canSend) : null,
-                  onReactivate: widget.matchReactivationEnabled &&
-                          widget.icebreakersEnabled
-                      ? () => _openIcebreaker(canSend)
-                      : null,
-                  onDismiss: () => setState(() => _journeyDismissed = true),
-                ),
-              // Attra Spark (opcional, tras la feature flag). No bloquea el chat.
-              if (widget.sparkEnabled &&
-                  widget.sparkService != null &&
-                  canSend &&
-                  !_sparkDismissed)
-                SparkEntryCard(
-                  service: widget.sparkService!,
-                  matchId: widget.chatId,
-                  currentUid: widget.currentUid,
-                  otherUid: widget.other.uid,
-                  otherName: widget.other.displayName,
-                  onReport: () => _report(),
-                  onUseQuestion: _useSparkQuestion,
-                  onDismiss: () => setState(() => _sparkDismissed = true),
-                ),
-              // Attra Clear §6: follow-up post-cita "¿Cómo fue la cita?".
-              _buildFollowUp(chat, canSend),
-              // Attra Clear §5: nudge in-chat si llevas tiempo sin responder.
-              _buildNudge(chat, canSend),
-              Expanded(
-                  child: _messageList(persistedStatus: chat?.journeyStatus)),
-              // Attra Plans: propuesta activa del match sobre el composer.
-              if (_datePlansActive && canSend && chat != null)
-                DatePlansStrip(
-                  matchId: chat.matchId,
-                  chatId: widget.chatId,
-                  currentUid: widget.currentUid,
-                  service: widget.datePlanService!,
-                ),
-              if (_uploadingMedia) AttraInlineLoader(label: _uploadingLabel),
-              if (!canSend)
-                _ClosedBanner(chat: chat, currentUid: widget.currentUid)
-              else if (_recording)
-                _RecordingBar(
-                  elapsed: _recordElapsed,
-                  onCancel: _cancelRecording,
-                  onSend: _stopAndSend,
-                )
-              else ...<Widget>[
-                if (_ofrecerSugerencias || _suggestions.isNotEmpty)
-                  _SuggestionBar(
-                    suggestions: _suggestions,
-                    loading: _loadingSuggestions,
-                    onAsk: _suggestReplies,
-                    onPick: _usarSugerencia,
-                    onDismiss: () =>
-                        setState(() => _suggestions = const <String>[]),
+      body: AttraContentFrame(
+        child: StreamBuilder<Chat?>(
+          stream: widget.chatService.observeChatById(widget.chatId),
+          builder: (BuildContext context, AsyncSnapshot<Chat?> chatSnap) {
+            final Chat? chat = chatSnap.data;
+            _trackChat(chatSnap);
+            final bool canSend = chat?.status.canSendMessages ?? true;
+            return LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints bodyConstraints) =>
+                  Column(
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                        maxHeight: bodyConstraints.maxHeight * 0.3),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          // Reto de IA arriba de la conversación. El chat normal sigue
+                          // entero debajo.
+                          if (kAppStoreValidationExperience && canSend)
+                            _ChatGuidedActions(
+                              onStartChallenge: _openAiDemoChallenge,
+                              onSuggestOpener: _suggestReplies,
+                              onPlayGame: () => _openIcebreaker(canSend),
+                            ),
+                          // Match Journey (Fase 8): card de recorrido guiado. Opt-in, cerrable.
+                          if (widget.journeyEnabled &&
+                              canSend &&
+                              !_journeyDismissed &&
+                              _journey != null)
+                            MatchJourneyCard(
+                              journey: _journey!,
+                              otherName: widget.other.displayName,
+                              onIcebreaker: widget.icebreakersEnabled
+                                  ? () => _openIcebreaker(canSend)
+                                  : null,
+                              onQuickGame: (widget.sparkEnabled &&
+                                      widget.sparkService != null)
+                                  ? _inviteSparkFromJourney
+                                  : (widget.doubleAnswerEnabled ||
+                                          widget.twoTruthsEnabled ||
+                                          widget.icebreakersEnabled
+                                      ? () => _openIcebreaker(canSend)
+                                      : null),
+                              onProposePlan: canSend
+                                  ? () => _proposePlanFlow(canSend)
+                                  : null,
+                              onReactivate: widget.matchReactivationEnabled &&
+                                      widget.icebreakersEnabled
+                                  ? () => _openIcebreaker(canSend)
+                                  : null,
+                              onDismiss: () =>
+                                  setState(() => _journeyDismissed = true),
+                            ),
+                          // Attra Spark (opcional, tras la feature flag). No bloquea el chat.
+                          if (widget.sparkEnabled &&
+                              widget.sparkService != null &&
+                              canSend &&
+                              !_sparkDismissed)
+                            SparkEntryCard(
+                              service: widget.sparkService!,
+                              matchId: widget.chatId,
+                              currentUid: widget.currentUid,
+                              otherUid: widget.other.uid,
+                              otherName: widget.other.displayName,
+                              onReport: () => _report(),
+                              onUseQuestion: _useSparkQuestion,
+                              onDismiss: () =>
+                                  setState(() => _sparkDismissed = true),
+                            ),
+                          // Attra Clear §6: follow-up post-cita "¿Cómo fue la cita?".
+                          _buildFollowUp(chat, canSend),
+                          // Attra Clear §5: nudge in-chat si llevas tiempo sin responder.
+                          _buildNudge(chat, canSend),
+                        ],
+                      ),
+                    ),
                   ),
-                _Composer(
-                  controller: _input,
-                  focusNode: _inputFocus,
-                  sending: false,
-                  onSend: () => _send(canSend),
-                  onPropose: () => _proposePlanFlow(canSend),
-                  onPhoto: () => _pickAndSendImage(canSend),
-                  onBombPhoto: () => _pickAndSendImage(canSend, bomb: true),
-                  showGames: _gamesAvailable,
-                  onGames: () => _openIcebreaker(canSend),
-                  onMic: () => _startRecording(canSend),
-                ),
-              ],
-            ],
-          );
-        },
+                  Expanded(
+                      child:
+                          _messageList(persistedStatus: chat?.journeyStatus)),
+                  // Attra Plans: propuesta activa del match sobre el composer.
+                  if (_datePlansActive && canSend && chat != null)
+                    DatePlansStrip(
+                      matchId: chat.matchId,
+                      chatId: widget.chatId,
+                      currentUid: widget.currentUid,
+                      service: widget.datePlanService!,
+                    ),
+                  if (_uploadingMedia)
+                    AttraInlineLoader(label: _uploadingLabel),
+                  if (!canSend)
+                    _ClosedBanner(chat: chat, currentUid: widget.currentUid)
+                  else if (_recording)
+                    _RecordingBar(
+                      elapsed: _recordElapsed,
+                      onCancel: _cancelRecording,
+                      onSend: _stopAndSend,
+                    )
+                  else ...<Widget>[
+                    if (_ofrecerSugerencias || _suggestions.isNotEmpty)
+                      _SuggestionBar(
+                        suggestions: _suggestions,
+                        loading: _loadingSuggestions,
+                        onAsk: _suggestReplies,
+                        onPick: _usarSugerencia,
+                        onDismiss: () =>
+                            setState(() => _suggestions = const <String>[]),
+                      ),
+                    _Composer(
+                      maxLines: bodyConstraints.maxHeight < 500 ? 2 : 4,
+                      controller: _input,
+                      focusNode: _inputFocus,
+                      sending: false,
+                      onSend: () => _send(canSend),
+                      onPropose: () => _proposePlanFlow(canSend),
+                      onPhoto: () => _pickAndSendImage(canSend),
+                      onBombPhoto: () => _pickAndSendImage(canSend, bomb: true),
+                      showGames: _gamesAvailable,
+                      onGames: () => _openIcebreaker(canSend),
+                      onMic: () => _startRecording(canSend),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
 
   Widget _messageList({String? persistedStatus}) {
     return StreamBuilder<List<ChatMessage>>(
+      key: ValueKey<int>(_messagesAttempt),
       stream: widget.chatService.observeMessages(widget.chatId),
       builder:
           (BuildContext context, AsyncSnapshot<List<ChatMessage>> snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Semantics(
+                    liveRegion: true,
+                    child: Text('No se pudieron cargar los mensajes.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: _retryMessages,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -1826,7 +1883,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
         if (messages.isEmpty && pending.isEmpty) {
           return const Center(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: EdgeInsets.all(32),
               child: Text('Aún no hay mensajes. Saluda 👋',
                   textAlign: TextAlign.center),
@@ -1835,7 +1892,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         }
         return ListView.builder(
           reverse: true,
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.symmetric(
+            horizontal: AppSpacing.pageInset(context),
+            vertical: AppSpacing.lg,
+          ),
           itemCount: messages.length + pending.length,
           itemBuilder: (BuildContext context, int index) {
             // Bloque optimista al fondo (índices 0..pending.length-1).
@@ -1866,7 +1926,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               );
             }
             if (m.type.isImage && m.media != null) {
-              return _ImageBubble(media: m.media!, mine: mine);
+              return _ImageBubble(
+                  media: m.media!,
+                  mine: mine,
+                  heroTag: 'chat-photo-${widget.chatId}-${m.id}');
             }
             if (m.type.isVoiceNote && m.media != null) {
               return VoiceNoteBubble(
@@ -1911,6 +1974,66 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           },
         );
       },
+    );
+  }
+}
+
+class _ChatGuidedActions extends StatelessWidget {
+  const _ChatGuidedActions({
+    required this.onStartChallenge,
+    required this.onSuggestOpener,
+    required this.onPlayGame,
+  });
+
+  final VoidCallback onStartChallenge;
+  final VoidCallback onSuggestOpener;
+  final VoidCallback onPlayGame;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return ExpansionTile(
+      key: const ValueKey<String>('chat-guided-actions'),
+      tilePadding:
+          EdgeInsets.symmetric(horizontal: AppSpacing.pageInset(context)),
+      childrenPadding: EdgeInsets.fromLTRB(AppSpacing.pageInset(context), 0,
+          AppSpacing.pageInset(context), AppSpacing.md),
+      shape: const RoundedRectangleBorder(),
+      collapsedShape: const RoundedRectangleBorder(),
+      iconColor: context.colors.textSecondary,
+      collapsedIconColor: context.colors.textSecondary,
+      leading: Icon(Icons.auto_awesome_outlined,
+          color: context.colors.textSecondary, size: 20),
+      title: Text('AI Challenge', style: theme.textTheme.titleMedium),
+      children: <Widget>[
+        Text(
+          'Start an AI-guided challenge to break the ice and keep the '
+          'conversation flowing.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: <Widget>[
+            TextButton.icon(
+              onPressed: onStartChallenge,
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Start Challenge'),
+            ),
+            TextButton.icon(
+              onPressed: onSuggestOpener,
+              icon: const Icon(Icons.lightbulb_outline_rounded),
+              label: const Text('Suggest opener'),
+            ),
+            TextButton.icon(
+              onPressed: onPlayGame,
+              icon: const Icon(Icons.sports_esports_rounded),
+              label: const Text('Play quick game'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -1995,17 +2118,8 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                AppColors.attraRed.withValues(alpha: 0.18),
-                context.colors.surface,
-              ],
-            ),
+            color: context.colors.surfaceHigh,
             borderRadius: BorderRadius.circular(18),
-            border:
-                Border.all(color: AppColors.attraRed.withValues(alpha: 0.4)),
           ),
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, children: children),
@@ -2020,7 +2134,7 @@ class _ChatGameBubbleState extends State<_ChatGameBubble> {
                 ? 'Reto Café · Duelo de Química'
                 : 'Duelo de Química',
             style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.w800)),
+                ?.copyWith(fontWeight: FontWeight.w600)),
       ],
     );
 
@@ -2144,7 +2258,7 @@ class _ChatGameResult extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: AppColors.action),
+        color: AppColors.brandGraphite,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -2154,9 +2268,11 @@ class _ChatGameResult extends StatelessWidget {
             const Icon(Icons.auto_awesome_rounded,
                 color: Colors.white, size: 20),
             const SizedBox(width: 8),
-            Text(headline,
-                style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white, fontWeight: FontWeight.w900)),
+            Expanded(
+              child: Text(headline,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
           ]),
           const SizedBox(height: 8),
           if (r.reason.isNotEmpty)
@@ -2248,59 +2364,57 @@ class _TextBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Widget bubble = Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 1),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      constraints:
-          BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
-      decoration: BoxDecoration(
-        color: mine
-            ? theme.colorScheme.primary
-            : theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(text,
-          style: TextStyle(color: mine ? theme.colorScheme.onPrimary : null)),
-    );
-
-    // Estado del optimista (reloj = enviando, error = fallido + reintentar).
-    Widget? status;
-    if (failed) {
-      status = GestureDetector(
-        onTap: onRetry,
-        child: Padding(
-          padding: const EdgeInsets.only(right: 4, bottom: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.error_outline_rounded,
-                  size: 13, color: AppColors.danger),
-              const SizedBox(width: 3),
-              Text('Reintentar',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: AppColors.danger, fontSize: 11)),
-            ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget bubble = Container(
+          margin:
+              const EdgeInsets.only(top: AppSpacing.sm, bottom: AppSpacing.xs),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+          constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.86),
+          decoration: BoxDecoration(
+            color: mine ? context.colors.surfaceHigh : context.colors.surface,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           ),
-        ),
-      );
-    } else if (pending) {
-      status = Padding(
-        padding: const EdgeInsets.only(right: 4, bottom: 4),
-        child: Icon(Icons.schedule_rounded,
-            size: 12, color: context.colors.textMuted),
-      );
-    }
+          child: Text(text,
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(color: context.colors.textPrimary)),
+        );
 
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Opacity(
-        opacity: pending ? 0.85 : 1,
-        child: Column(
-          crossAxisAlignment:
-              mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-          children: <Widget>[bubble, if (status != null) status],
-        ),
-      ),
+        // Estado del optimista (reloj = enviando, error = fallido + reintentar).
+        Widget? status;
+        if (failed) {
+          status = TextButton.icon(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.error,
+              minimumSize: const Size(48, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              textStyle: theme.textTheme.bodySmall,
+            ),
+            icon: const Icon(Icons.error_outline_rounded, size: 16),
+            label: const Text('Reintentar'),
+          );
+        } else if (pending) {
+          status = Padding(
+            padding: const EdgeInsets.only(right: 4, bottom: 4),
+            child: Icon(Icons.schedule_rounded,
+                size: 12, color: context.colors.textMuted),
+          );
+        }
+
+        return Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: Opacity(
+            opacity: pending ? 0.85 : 1,
+            child: Column(
+              crossAxisAlignment:
+                  mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: <Widget>[bubble, if (status != null) status],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -2335,7 +2449,6 @@ class _DoubleAnswerBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.45)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2348,7 +2461,7 @@ class _DoubleAnswerBubble extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text('Doble respuesta',
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
             const SizedBox(height: 8),
@@ -2415,7 +2528,6 @@ class _TwoTruthsBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.gold.withValues(alpha: 0.5)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2428,7 +2540,7 @@ class _TwoTruthsBubble extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text('Dos verdades y una mentira',
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
             const SizedBox(height: 8),
@@ -2499,7 +2611,6 @@ class _MiniReveal extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.colors.surfaceLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2523,78 +2634,42 @@ class _ContextBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final bool isAttra = message.type == MessageType.attraContext;
     final String url = message.relatedPhotoUrlSnapshot ?? '';
     final bool photoGone = message.relatedPhotoDeleted || url.isEmpty;
 
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.all(10),
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: theme.colorScheme.primary.withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: photoGone
-                  ? Container(
-                      width: 64,
-                      height: 84,
-                      color: const Color(0xFFE0E0E0),
-                      child: const Icon(Icons.image_not_supported_outlined,
-                          size: 24))
-                  : GestureDetector(
-                      onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                              builder: (_) => _FullScreenImage(url: url))),
-                      child: AttraImage(url: url, width: 64, height: 84),
-                    ),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Icon(isAttra ? Icons.star : Icons.favorite,
-                          size: 14, color: theme.colorScheme.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        isAttra ? 'Te envió un Attra' : 'Respondió a tu foto',
-                        style: theme.textTheme.labelMedium
-                            ?.copyWith(color: theme.colorScheme.primary),
-                      ),
-                    ],
-                  ),
-                  if (photoGone)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        'Respondió a una foto que ya no está disponible',
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.outline),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) => Align(
+        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+          child: SizedBox(
+            width: constraints.maxWidth * 0.9,
+            child: AttraPhotoNote(
+              eyebrow: isAttra ? 'Te envió un Attra' : 'Respondió a tu foto',
+              body: message.text.trim().isEmpty ? null : message.text,
+              photo: photoGone
+                  ? null
+                  : Semantics(
+                      button: true,
+                      label: 'Abrir la foto de esta respuesta',
+                      child: InkWell(
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                                builder: (_) => _FullScreenImage(url: url))),
+                        child: AspectRatio(
+                          aspectRatio: 4 / 3,
+                          child: AttraImage(
+                              url: url, width: constraints.maxWidth * 0.9),
+                        ),
                       ),
                     ),
-                  if (message.text.trim().isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 2),
-                    Text(message.text),
-                  ],
-                ],
-              ),
+              footer: photoGone
+                  ? Text('Respondió a una foto que ya no está disponible',
+                      style: Theme.of(context).textTheme.bodySmall)
+                  : null,
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -2643,7 +2718,6 @@ class _DateProposalBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.colorScheme.primary),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2781,7 +2855,7 @@ class _TwoTruthsComposerSheetState extends State<_TwoTruthsComposerSheet> {
             const SizedBox(height: 14),
             Text('Dos verdades y una mentira',
                 style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800)),
+                    ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text('Escribe tres frases y marca cual es la mentira.',
                 style: theme.textTheme.bodySmall
@@ -2832,6 +2906,7 @@ class _TwoTruthsComposerSheetState extends State<_TwoTruthsComposerSheet> {
 
 class _Composer extends StatelessWidget {
   const _Composer({
+    required this.maxLines,
     required this.controller,
     required this.focusNode,
     required this.sending,
@@ -2844,6 +2919,7 @@ class _Composer extends StatelessWidget {
     required this.onMic,
   });
 
+  final int maxLines;
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool sending;
@@ -2904,56 +2980,104 @@ class _Composer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 8, 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: <Widget>[
-            // Acción PRINCIPAL de Attra: proponer un plan (cita o quedada).
-            IconButton.filledTonal(
-              tooltip: 'Proponer plan',
-              onPressed: onPropose,
-              icon: const Icon(Icons.event_available_outlined),
-            ),
-            // Resto de acciones (foto, foto bomba, juegos/rompehielos) en "+".
-            IconButton(
-              tooltip: 'Más',
-              onPressed: () => _openActions(context),
-              icon: const Icon(Icons.add_circle_outline_rounded),
-            ),
-            Expanded(
-              child: TextField(
+    final ThemeData theme = Theme.of(context);
+    return ColoredBox(
+      key: const ValueKey<String>('chat-composer'),
+      color: context.colors.surface,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(AppSpacing.pageInset(context),
+              AppSpacing.md, AppSpacing.pageInset(context), AppSpacing.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              TextField(
                 controller: controller,
                 focusNode: focusNode,
                 minLines: 1,
-                maxLines: 4,
+                maxLines: maxLines,
+                style: theme.textTheme.bodyLarge,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => onSend(),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   hintText: 'Escribe un mensaje…',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+                  filled: true,
+                  fillColor: context.colors.surfaceHigh,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    borderSide:
+                        BorderSide(color: theme.colorScheme.primary, width: 2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: 'Grabar nota de voz',
-              onPressed: onMic,
-              icon: const Icon(Icons.mic_none),
-            ),
-            IconButton.filled(
-              onPressed: sending ? null : onSend,
-              icon: sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.send),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: <Widget>[
+                  AttraPressFeedback(
+                      enabled: !sending,
+                      child: IconButton.filledTonal(
+                        tooltip: 'Proponer plan',
+                        onPressed: onPropose,
+                        constraints: const BoxConstraints(
+                            minWidth: AppSpacing.touchTarget,
+                            minHeight: AppSpacing.touchTarget),
+                        icon: const Icon(Icons.event_available_outlined),
+                      )),
+                  const SizedBox(width: AppSpacing.xs),
+                  AttraPressFeedback(
+                      enabled: !sending,
+                      child: IconButton(
+                        tooltip: 'Más',
+                        onPressed: () => _openActions(context),
+                        constraints: const BoxConstraints(
+                            minWidth: AppSpacing.touchTarget,
+                            minHeight: AppSpacing.touchTarget),
+                        icon: const Icon(Icons.add_rounded),
+                      )),
+                  const Spacer(),
+                  AttraPressFeedback(
+                      enabled: !sending,
+                      child: IconButton(
+                        tooltip: 'Grabar nota de voz',
+                        onPressed: onMic,
+                        constraints: const BoxConstraints(
+                            minWidth: AppSpacing.touchTarget,
+                            minHeight: AppSpacing.touchTarget),
+                        icon: const Icon(Icons.mic_none),
+                      )),
+                  const SizedBox(width: AppSpacing.xs),
+                  AttraPressFeedback(
+                      enabled: !sending,
+                      child: IconButton.filled(
+                        tooltip: 'Enviar mensaje',
+                        onPressed: sending ? null : onSend,
+                        constraints: const BoxConstraints(
+                            minWidth: AppSpacing.touchTarget,
+                            minHeight: AppSpacing.touchTarget),
+                        icon: sending
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.send),
+                      )),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2981,20 +3105,38 @@ class _RecordingBar extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 6, 10),
-        child: Row(
+        padding: EdgeInsets.fromLTRB(AppSpacing.pageInset(context),
+            AppSpacing.md, AppSpacing.pageInset(context), AppSpacing.sm),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.fiber_manual_record,
-                color: theme.colorScheme.error, size: 16),
-            const SizedBox(width: 8),
-            Text('Grabando…  $mm:$ss'),
-            const Spacer(),
-            TextButton(onPressed: onCancel, child: const Text('Cancelar')),
-            const SizedBox(width: 4),
-            IconButton.filled(
-              tooltip: 'Enviar',
-              onPressed: onSend,
-              icon: const Icon(Icons.send),
+            Row(
+              children: <Widget>[
+                Icon(Icons.fiber_manual_record,
+                    color: theme.colorScheme.error, size: 16),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: Text('Grabando…  $mm:$ss')),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                AttraPressFeedback(
+                    child: TextButton(
+                        onPressed: onCancel, child: const Text('Cancelar'))),
+                const SizedBox(width: AppSpacing.sm),
+                AttraPressFeedback(
+                  child: IconButton.filled(
+                    tooltip: 'Enviar',
+                    onPressed: onSend,
+                    constraints: const BoxConstraints(
+                        minWidth: AppSpacing.touchTarget,
+                        minHeight: AppSpacing.touchTarget),
+                    icon: const Icon(Icons.send),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -3100,7 +3242,7 @@ class _BombImageBubbleState extends State<_BombImageBubble> {
                           color: widget.mine
                               ? theme.colorScheme.onPrimary
                                   .withValues(alpha: 0.8)
-                              : theme.colorScheme.outline,
+                              : context.colors.textMuted,
                         ),
                       ),
                     ],
@@ -3118,10 +3260,12 @@ class _BombImageBubbleState extends State<_BombImageBubble> {
 /// Burbuja de imagen: miniatura con loader; al tocar abre el visor a pantalla
 /// completa.
 class _ImageBubble extends StatelessWidget {
-  const _ImageBubble({required this.media, required this.mine});
+  const _ImageBubble(
+      {required this.media, required this.mine, required this.heroTag});
 
   final MediaInfo media;
   final bool mine;
+  final Object heroTag;
 
   @override
   Widget build(BuildContext context) {
@@ -3132,15 +3276,21 @@ class _ImageBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: GestureDetector(
           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => _FullScreenImage(url: media.downloadUrl),
+            builder: (_) =>
+                _FullScreenImage(url: media.downloadUrl, heroTag: heroTag),
           )),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxW, maxHeight: 320),
-              child: AttraImage(url: media.downloadUrl, width: maxW),
-            ),
-          ),
+          child: HeroMode(
+              enabled: !MediaQuery.disableAnimationsOf(context),
+              child: Hero(
+                  tag: heroTag,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(maxWidth: maxW, maxHeight: 320),
+                      child: AttraImage(url: media.downloadUrl, width: maxW),
+                    ),
+                  ))),
         ),
       ),
     );
@@ -3149,12 +3299,16 @@ class _ImageBubble extends StatelessWidget {
 
 /// Visor de imagen a pantalla completa con zoom.
 class _FullScreenImage extends StatelessWidget {
-  const _FullScreenImage({required this.url});
+  const _FullScreenImage({required this.url, this.heroTag});
 
   final String url;
+  final Object? heroTag;
 
   @override
   Widget build(BuildContext context) {
+    final Widget photo = Image.network(url,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined,
+            color: Colors.white, size: 64));
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -3165,11 +3319,12 @@ class _FullScreenImage extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 1,
           maxScale: 4,
-          child: Image.network(url,
-              errorBuilder: (_, __, ___) => const Icon(
-                  Icons.broken_image_outlined,
-                  color: Colors.white,
-                  size: 64)),
+          child: heroTag == null
+              ? photo
+              : HeroMode(
+                  enabled: !MediaQuery.disableAnimationsOf(context),
+                  child: Hero(tag: heroTag!, child: photo),
+                ),
         ),
       ),
     );
@@ -3286,14 +3441,14 @@ class _ClosedBanner extends StatelessWidget {
           children: <Widget>[
             if (graceful) ...<Widget>[
               Icon(Icons.verified_outlined,
-                  size: 16, color: theme.colorScheme.outline),
+                  size: 16, color: context.colors.textMuted),
               const SizedBox(width: 6),
             ],
             Flexible(
               child: Text(
                 label,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: theme.colorScheme.outline),
+                style: theme.textTheme.bodySmall,
               ),
             ),
           ],
@@ -3324,7 +3479,7 @@ class _SystemLine extends StatelessWidget {
                 text,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+                    ?.copyWith(color: context.colors.textMuted),
               ),
             ),
           ),
@@ -3395,11 +3550,13 @@ class _SuggestionBar extends StatelessWidget {
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                tooltip: 'Cerrar sugerencias',
-                onPressed: onDismiss,
-                visualDensity: VisualDensity.compact,
+              AttraPressFeedback(
+                child: IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Cerrar sugerencias',
+                  onPressed: onDismiss,
+                  visualDensity: VisualDensity.compact,
+                ),
               ),
             ],
           ),
@@ -3420,7 +3577,6 @@ class _SuggestionBar extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
                   child: Text(s, style: theme.textTheme.bodyMedium),
                 ),

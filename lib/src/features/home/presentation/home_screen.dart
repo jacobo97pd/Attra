@@ -1,10 +1,11 @@
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image_picker/image_picker.dart';
 
+import '../../../theme/app_spacing.dart';
+import '../../../theme/attra_colors.dart';
+import '../../../widgets/attra_editorial.dart';
 import '../../../widgets/attra_loader.dart';
 import '../../../widgets/attra_image.dart';
 import '../../anti_ghosting/presentation/reliability_badge.dart';
@@ -360,8 +361,8 @@ class _HomeScreenState extends State<HomeScreen> {
             FilledButton.tonal(
               onPressed: () => Navigator.of(context).pop(true),
               style: FilledButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: Colors.red,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
               child: const Text('Eliminar cuenta'),
             ),
@@ -422,11 +423,6 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        titleTextStyle: theme.appBarTheme.titleTextStyle?.copyWith(
-          color: Colors.white,
-        ),
         title: const _AttraTitleLogo(),
         actions: <Widget>[
           IconButton(
@@ -438,76 +434,75 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _buildHeaderCard(theme, profile),
-                  const SizedBox(height: 12),
-                  if (widget.onOpenUpgrade != null) ...<Widget>[
-                    _buildUpgradeCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onOpenFriendMode != null) ...<Widget>[
-                    _buildFriendModeCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onOpenGroups != null) ...<Widget>[
-                    _buildGroupsCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onOpenBoostStore != null) ...<Widget>[
-                    _buildBoostStoreCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onOpenSafeDate != null) ...<Widget>[
-                    _buildSafeDateCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onOpenAiVisual != null) ...<Widget>[
-                    _buildAiVisualCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onOpenSettings != null) ...<Widget>[
-                    _buildSettingsCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  if (widget.onSetSlowDating != null) ...<Widget>[
-                    _buildSlowDatingCard(theme),
-                    const SizedBox(height: 12),
-                  ],
-                  _buildChecklistCard(theme, profile),
-                  const SizedBox(height: 12),
-                  _buildAdditionalPhotosCard(theme, profile),
-                  const SizedBox(height: 12),
-                  _buildPromptsCard(theme, profile),
-                  const SizedBox(height: 12),
-                  IntroMediaEditor(
-                    loadMedia: widget.onLoadIntroMedia,
-                    onUploadAudio: widget.onUploadIntroAudio,
-                    onDeleteAudio: widget.onDeleteIntroAudio,
-                    onUploadVideo: widget.onUploadIntroVideo,
-                    onDeleteVideo: widget.onDeleteIntroVideo,
+          padding: EdgeInsets.fromLTRB(AppSpacing.pageInset(context), 12,
+              AppSpacing.pageInset(context), 32),
+          child: AttraContentFrame(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _buildHeaderCard(theme),
+                const SizedBox(height: 32),
+                _buildAdditionalPhotosCard(theme, profile),
+                const SizedBox(height: 32),
+                _buildPromptsCard(theme, profile),
+                const SizedBox(height: 32),
+                IntroMediaEditor(
+                  loadMedia: widget.onLoadIntroMedia,
+                  onUploadAudio: widget.onUploadIntroAudio,
+                  onDeleteAudio: widget.onDeleteIntroAudio,
+                  onUploadVideo: widget.onUploadIntroVideo,
+                  onDeleteVideo: widget.onDeleteIntroVideo,
+                ),
+                const SizedBox(height: 32),
+                ProfileStrengthCard(
+                  percent: profile.percent,
+                  onEdit: _openEditTraits,
+                  pendingTasks: profile.pendingTasks,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Completa más datos para mejorar la relevancia del matching y desbloquear recompensas.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 32),
+                const AttraSectionHeading(title: 'Tu experiencia'),
+                const SizedBox(height: 12),
+                Material(
+                  color: context.colors.surface,
+                  child: Column(
+                    children: <Widget>[
+                      if (widget.onOpenFriendMode != null)
+                        _buildFriendModeCard(theme),
+                      if (widget.onSetSlowDating != null)
+                        _buildSlowDatingCard(theme),
+                      if (widget.onOpenGroups != null) _buildGroupsCard(theme),
+                      if (widget.onOpenSafeDate != null)
+                        _buildSafeDateCard(theme),
+                      if (widget.onOpenAiVisual != null)
+                        _buildAiVisualCard(theme),
+                      if (widget.onOpenBoostStore != null)
+                        _buildBoostStoreCard(theme),
+                      if (widget.onOpenUpgrade != null)
+                        _buildUpgradeCard(theme),
+                      if (widget.onOpenSettings != null)
+                        _buildSettingsCard(theme),
+                    ],
                   ),
+                ),
+                const SizedBox(height: 32),
+                _buildLogoutButton(theme),
+                const SizedBox(height: 24),
+                _buildDangerZoneCard(theme),
+                if (_error != null || widget.errorMessage != null) ...<Widget>[
                   const SizedBox(height: 12),
-                  _buildLogoutButton(theme),
-                  const SizedBox(height: 12),
-                  _buildDangerZoneCard(theme),
-                  if (_error != null ||
-                      widget.errorMessage != null) ...<Widget>[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error ?? widget.errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.colorScheme.error),
-                    ),
-                  ],
+                  Text(
+                    _error ?? widget.errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.error),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
         ),
@@ -515,126 +510,72 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHeaderCard(ThemeData theme, ProfileCompletionState profile) {
+  Widget _buildHeaderCard(ThemeData theme) {
     final String displayName = widget.user?.displayName ?? 'Usuario';
     final String email = widget.user?.email ?? 'Sin email';
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                CircleAvatar(
-                  radius: 28,
-                  backgroundImage: (widget.user?.photoUrl?.isNotEmpty ?? false)
-                      ? CachedNetworkImageProvider(widget.user!.photoUrl!)
-                      : null,
-                  child: (widget.user?.photoUrl?.isNotEmpty ?? false)
-                      ? null
-                      : const Icon(Icons.person, size: 28),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(displayName,
-                          style: theme.textTheme.titleLarge,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      Text(email,
-                          style: theme.textTheme.bodyMedium,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      // Attra Clear §8: badge positivo (lo escribe el backend).
-                      if (widget.user?.hasReliabilityBadge ??
-                          false) ...<Widget>[
-                        const SizedBox(height: 6),
-                        const ReliabilityBadge(compact: true),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _previewProfile,
-                icon: const Icon(Icons.visibility_outlined, size: 18),
-                label: const Text('Ver mi perfil'),
+    final String photoUrl = widget.user?.photoUrl ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Semantics(
+          header: true,
+          child: Text(displayName, style: theme.textTheme.headlineLarge),
+        ),
+        const SizedBox(height: 6),
+        Text(email, style: theme.textTheme.bodyMedium),
+        // Attra Clear §8: badge positivo (lo escribe el backend).
+        if (widget.user?.hasReliabilityBadge ?? false) ...<Widget>[
+          const SizedBox(height: 6),
+          const ReliabilityBadge(compact: true),
+        ],
+        if (photoUrl.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 20),
+          Semantics(
+            image: true,
+            label: 'Tu foto principal',
+            child: ExcludeSemantics(
+              child: AspectRatio(
+                aspectRatio: 3 / 4,
+                child: AttraImage(
+                    url: photoUrl,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
               ),
             ),
-            const SizedBox(height: 16),
-            ProfileStrengthCard(
-              percent: profile.percent,
-              onEdit: _openEditTraits,
-              pendingTasks: profile.pendingTasks,
+          ),
+        ],
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: <Widget>[
+            FilledButton.icon(
+              onPressed: _busy ? null : _previewProfile,
+              icon: const Icon(Icons.visibility_outlined, size: 18),
+              label: const Text('Ver mi perfil'),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Completa mas datos para mejorar la relevancia del matching y desbloquear recompensas.',
-              style: theme.textTheme.bodySmall,
+            TextButton.icon(
+              onPressed: _busy ? null : _openEditTraits,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Editar información'),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 
   Widget _buildUpgradeCard(ThemeData theme) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: widget.onOpenUpgrade,
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[Color(0xFF303030), Color(0xFF707070)],
-            ),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.workspace_premium,
-                  color: Colors.white, size: 32),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      widget.isProUser
-                          ? 'Tu plan: ${widget.currentPlanLabel}'
-                          : 'Mejora a Attra Plus o Pro',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      widget.isProUser
-                          ? 'Gestiona tu suscripción y compara los planes.'
-                          : 'Plan actual: ${widget.currentPlanLabel}. Ve todos tus '
-                              'likes, filtros avanzados y la IA visual de Pro.',
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: Colors.white),
-            ],
-          ),
-        ),
-      ),
+    return _serviceRow(
+      icon: Icons.workspace_premium_outlined,
+      title: widget.isProUser
+          ? 'Tu plan: ${widget.currentPlanLabel}'
+          : 'Mejora a Attra Plus o Pro',
+      subtitle: widget.isProUser
+          ? 'Gestiona tu suscripción y compara los planes.'
+          : 'Plan actual: ${widget.currentPlanLabel}. Ve todos tus '
+              'likes, filtros avanzados y la IA visual de Pro.',
+      onTap: widget.onOpenUpgrade,
     );
   }
 
@@ -642,31 +583,21 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFriendModeCard(ThemeData theme) {
     final IntentMode mode = widget.user?.intentMode ?? IntentMode.dating;
     final IntentModeVisual v = IntentModeVisual.of(mode);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: Icon(v.icon, color: theme.colorScheme.primary),
-        title: const Text('Qué buscas'),
-        subtitle: Text('Ahora: ${v.label}. Toca para cambiar.'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: widget.onOpenFriendMode,
-      ),
+    return _serviceRow(
+      icon: v.icon,
+      title: 'Qué buscas',
+      subtitle: 'Ahora: ${v.label}. Toca para cambiar.',
+      onTap: widget.onOpenFriendMode,
     );
   }
 
   /// Attra SafeDate: acceso al centro de seguridad en citas.
   Widget _buildSafeDateCard(ThemeData theme) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading:
-            Icon(Icons.shield_moon_outlined, color: theme.colorScheme.primary),
-        title: const Text('SafeDate'),
-        subtitle:
-            const Text('Queda con más tranquilidad y avisa a quien confías.'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: widget.onOpenSafeDate,
-      ),
+    return _serviceRow(
+      icon: Icons.shield_moon_outlined,
+      title: 'SafeDate',
+      subtitle: 'Queda con más tranquilidad y avisa a quien confías.',
+      onTap: widget.onOpenSafeDate,
     );
   }
 
@@ -676,59 +607,62 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBoostStoreCard(ThemeData theme) {
     final int boosts = widget.user?.boostBalance ?? 0;
     final int swipes = widget.user?.swipeBalance ?? 0;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        key: const ValueKey<String>('profile-boost-store'),
-        leading: Icon(Icons.rocket_launch_outlined,
-            color: theme.colorScheme.primary),
-        title: const Text('Boosts y Swipes'),
-        subtitle: Text('Tienes $boosts boosts y $swipes swipes.'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: widget.onOpenBoostStore,
-      ),
+    return _serviceRow(
+      key: const ValueKey<String>('profile-boost-store'),
+      icon: Icons.rocket_launch_outlined,
+      title: 'Boosts y Swipes',
+      subtitle: 'Tienes $boosts boosts y $swipes swipes.',
+      onTap: widget.onOpenBoostStore,
     );
   }
 
   /// Modo Amigos: acceso a grupos y planes.
   Widget _buildGroupsCard(ThemeData theme) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: Icon(Icons.groups_rounded, color: theme.colorScheme.primary),
-        title: const Text('Grupos y planes'),
-        subtitle: const Text('Únete o crea grupos por ciudad e intereses.'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: widget.onOpenGroups,
-      ),
+    return _serviceRow(
+      icon: Icons.groups_outlined,
+      title: 'Grupos y planes',
+      subtitle: 'Únete o crea grupos por ciudad e intereses.',
+      onTap: widget.onOpenGroups,
     );
   }
 
   Widget _buildAiVisualCard(ThemeData theme) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: Icon(Icons.auto_awesome, color: theme.colorScheme.primary),
-        title: const Text('IA visual · Pro'),
-        subtitle: const Text(
-            'Encuentra parecidos a una foto de referencia y mejora tu perfil.'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: widget.onOpenAiVisual,
-      ),
+    return _serviceRow(
+      icon: Icons.auto_awesome_outlined,
+      title: 'IA visual · Pro',
+      subtitle:
+          'Encuentra parecidos a una foto de referencia y mejora tu perfil.',
+      onTap: widget.onOpenAiVisual,
     );
   }
 
   Widget _buildSettingsCard(ThemeData theme) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading:
-            Icon(Icons.settings_outlined, color: theme.colorScheme.primary),
-        title: const Text('Ajustes'),
-        subtitle: const Text('Privacidad, notificaciones, cuenta…'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: widget.onOpenSettings,
-      ),
+    return _serviceRow(
+      icon: Icons.settings_outlined,
+      title: 'Ajustes',
+      subtitle: 'Privacidad, notificaciones, cuenta…',
+      onTap: widget.onOpenSettings,
+    );
+  }
+
+  Widget _serviceRow({
+    Key? key,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    return ListTile(
+      key: key,
+      minTileHeight: 72,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      leading: Icon(icon, size: 22, color: context.colors.textSecondary),
+      title: Text(title, style: theme.textTheme.bodyLarge),
+      subtitle: Text(subtitle, style: theme.textTheme.bodyMedium),
+      trailing: Icon(Icons.chevron_right,
+          size: 20, color: context.colors.textSecondary),
+      onTap: onTap,
     );
   }
 
@@ -736,46 +670,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// consiste; al confirmar, persiste el ajuste y el feed cambia su lógica.
   Widget _buildSlowDatingCard(ThemeData theme) {
     final bool active = widget.user?.slowDatingEnabled ?? false;
-    final Color accent = theme.colorScheme.primary;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-            color: active
-                ? accent.withValues(alpha: 0.6)
-                : theme.colorScheme.outline.withValues(alpha: 0.4)),
+    return SwitchListTile.adaptive(
+      value: active,
+      onChanged: _busy ? null : _toggleSlowDating,
+      secondary: Icon(Icons.spa_outlined,
+          size: 22, color: context.colors.textSecondary),
+      title: Text('Slow Dating', style: theme.textTheme.bodyLarge),
+      subtitle: Text(
+        '${active ? 'Activo. ' : ''}Citas con calma: menos perfiles pero más afines a ti.',
+        style: theme.textTheme.bodyMedium,
       ),
-      child: SwitchListTile(
-        value: active,
-        onChanged: _busy ? null : _toggleSlowDating,
-        secondary: CircleAvatar(
-          backgroundColor: accent.withValues(alpha: 0.16),
-          child: Icon(Icons.spa_rounded, color: accent),
-        ),
-        title: Row(
-          children: <Widget>[
-            const Flexible(child: Text('Slow Dating')),
-            const SizedBox(width: 8),
-            if (active)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text('Activo',
-                    style: TextStyle(
-                        color: accent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
-              ),
-          ],
-        ),
-        subtitle:
-            const Text('Citas con calma: menos perfiles pero más afines a ti.'),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     );
   }
 
@@ -844,154 +749,100 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildChecklistCard(ThemeData theme, ProfileCompletionState profile) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Completa tu perfil', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (profile.pendingTasks.isEmpty)
-              Text('No tienes tareas pendientes.',
-                  style: theme.textTheme.bodyMedium)
-            else
-              ...profile.pendingTasks.map((String task) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(Icons.check_circle_outline, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(task)),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildAdditionalPhotosCard(
     ThemeData theme,
     ProfileCompletionState profile,
   ) {
     final int remaining = 5 - profile.additionalPhotos.length;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Fotos adicionales', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              'Puedes subir hasta 5 fotos adicionales aparte de tu selfie principal.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                FilledButton.icon(
-                  onPressed: _busy || remaining <= 0
-                      ? null
-                      : () => _uploadPhoto(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('Subir de galeria'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _busy || remaining <= 0
-                      ? null
-                      : () => _uploadPhoto(ImageSource.camera),
-                  icon: const Icon(Icons.camera_alt_outlined),
-                  label: const Text('Tomar foto'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Restantes: $remaining',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            if (profile.additionalPhotos.isEmpty)
-              Text('Aun no has subido fotos adicionales.',
-                  style: theme.textTheme.bodyMedium)
-            else ...<Widget>[
-              if (widget.onReorderPhotos != null &&
-                  profile.additionalPhotos.length > 1)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    'Mantén pulsada una foto y arrástrala para cambiar el orden.',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
-                  ),
-                ),
-              _ReorderablePhotos(
-                key: ValueKey<String>(profile.additionalPhotos
-                    .map((AdditionalPhoto p) => p.storagePath)
-                    .join(',')),
-                photos: profile.additionalPhotos,
-                busy: _busy,
-                onDelete: _deletePhoto,
-                onReorder: widget.onReorderPhotos,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const AttraSectionHeading(
+          title: 'Fotos adicionales',
+          subtitle: 'Hasta 5 fotos, además de tu selfie principal.',
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Restantes: $remaining',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 10),
+        if (profile.additionalPhotos.isEmpty)
+          Text('Aún no has subido fotos adicionales.',
+              style: theme.textTheme.bodyMedium)
+        else ...<Widget>[
+          if (widget.onReorderPhotos != null &&
+              profile.additionalPhotos.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Mantén pulsada una foto y arrástrala para cambiar el orden.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: context.colors.textMuted),
               ),
-            ],
+            ),
+          _ReorderablePhotos(
+            key: ValueKey<String>(profile.additionalPhotos
+                .map((AdditionalPhoto p) => p.storagePath)
+                .join(',')),
+            photos: profile.additionalPhotos,
+            busy: _busy,
+            onDelete: _deletePhoto,
+            onReorder: widget.onReorderPhotos,
+          ),
+        ],
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: <Widget>[
+            FilledButton.icon(
+              onPressed: _busy || remaining <= 0
+                  ? null
+                  : () => _uploadPhoto(ImageSource.gallery),
+              icon: const Icon(Icons.photo_library_outlined, size: 20),
+              label: const Text('Subir de galería'),
+            ),
+            TextButton.icon(
+              onPressed: _busy || remaining <= 0
+                  ? null
+                  : () => _uploadPhoto(ImageSource.camera),
+              icon: const Icon(Icons.camera_alt_outlined, size: 20),
+              label: const Text('Tomar foto'),
+            ),
           ],
         ),
-      ),
+      ],
     );
   }
 
   Widget _buildPromptsCard(ThemeData theme, ProfileCompletionState profile) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Preguntas de perfil', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              'Añade respuestas que ayuden a empezar una conversación.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            if (profile.prompts.isEmpty)
-              const Text('Añade una respuesta para que tu perfil no parezca '
-                  'un contrato de alquiler.')
-            else
-              ...profile.prompts.take(3).map((String prompt) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Icon(Icons.chat_bubble_outline, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: Text(prompt,
-                                maxLines: 2, overflow: TextOverflow.ellipsis)),
-                      ],
-                    ),
-                  )),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _busy ? null : _openPromptsEditor,
-                icon: const Icon(Icons.add_comment_outlined, size: 18),
-                label: const Text('Gestionar preguntas'),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const AttraSectionHeading(
+          title: 'Preguntas de perfil',
+          subtitle: 'Respuestas para empezar una conversación.',
         ),
-      ),
+        const SizedBox(height: 8),
+        if (profile.prompts.isEmpty)
+          const Text('Añade una respuesta para que tu perfil no parezca '
+              'un contrato de alquiler.')
+        else
+          ...profile.prompts.map((String prompt) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(prompt, style: theme.textTheme.bodyLarge),
+              )),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _busy ? null : _openPromptsEditor,
+            icon: const Icon(Icons.add_comment_outlined, size: 18),
+            label: const Text('Gestionar preguntas'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1038,32 +889,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDangerZoneCard(ThemeData theme) {
-    return Card(
-      color: theme.colorScheme.errorContainer.withValues(alpha: 0.25),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('Zona de riesgo', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              'Eliminar tu cuenta borrara tu acceso y tus datos principales.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _confirmDeleteAccount,
-              icon: const Icon(Icons.delete_forever_outlined),
-              label: const Text('Eliminar cuenta'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const AttraSectionHeading(title: 'Cuenta y datos'),
+        const SizedBox(height: 8),
+        Text(
+          'Eliminar tu cuenta borrara tu acceso y tus datos principales.',
+          style: theme.textTheme.bodySmall,
         ),
-      ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _confirmDeleteAccount,
+          icon: const Icon(Icons.delete_forever_outlined),
+          label: const Text('Eliminar cuenta'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            side: BorderSide(color: theme.colorScheme.error),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1081,8 +926,7 @@ class _AttraTitleLogo extends StatelessWidget {
         height: 28,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
-        // El wordmark conserva el blanco original sobre la cabecera oscura.
-        color: Colors.white,
+        color: context.colors.textPrimary,
       ),
     );
   }
@@ -1127,7 +971,7 @@ class _ReorderablePhotosState extends State<_ReorderablePhotos> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 112,
+      height: 200,
       child: ReorderableListView.builder(
         scrollDirection: Axis.horizontal,
         buildDefaultDragHandles: widget.onReorder != null && !widget.busy,
@@ -1149,9 +993,9 @@ class _ReorderablePhotosState extends State<_ReorderablePhotos> {
               children: <Widget>[
                 AttraImage(
                   url: photo.url,
-                  width: 96,
-                  height: 96,
-                  borderRadius: BorderRadius.circular(12),
+                  width: 144,
+                  height: 192,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
                 ),
                 // Nº de posición (1 = principal de las adicionales).
                 Positioned(
@@ -1161,32 +1005,30 @@ class _ReorderablePhotosState extends State<_ReorderablePhotos> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black54,
+                      color: const Color(0xCC111111),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text('${index + 1}',
                         style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700)),
                   ),
                 ),
                 Positioned(
                   right: 2,
                   top: 2,
-                  child: InkWell(
-                    onTap: widget.busy
+                  child: IconButton(
+                    tooltip: 'Eliminar foto ${index + 1}',
+                    onPressed: widget.busy
                         ? null
                         : () => widget.onDelete(photo.storagePath),
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black54,
-                      ),
-                      padding: const EdgeInsets.all(4),
-                      child: const Icon(Icons.close,
-                          size: 14, color: Colors.white),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                      backgroundColor: const Color(0xCC111111),
+                      foregroundColor: Colors.white,
                     ),
+                    icon: const Icon(Icons.close, size: 20),
                   ),
                 ),
               ],

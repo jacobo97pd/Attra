@@ -2,6 +2,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/config/app_store_validation_config.dart';
+import '../../../theme/app_spacing.dart';
+import '../../../theme/attra_colors.dart';
+import '../../../widgets/attra_editorial.dart';
 import '../../connection_lab/presentation/conversation_games_screen.dart';
 import '../../connection_lab/presentation/demo_challenge_screen.dart';
 import '../../match/data/match_service.dart';
@@ -233,31 +236,33 @@ class ChatsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Stream de stories vivas para mostrar el aro en los avatares (map dueño->story).
-    return StreamBuilder<Map<String, List<Story>>>(
-      stream: storyService?.observeLiveStoriesForMatches() ??
-          const Stream<Map<String, List<Story>>>.empty(),
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<Map<String, List<Story>>> storySnap,
-      ) {
-        final Map<String, List<Story>> storyByOwner =
-            storySnap.data ?? const <String, List<Story>>{};
-        // "Planes y grupos": chats de grupo arriba (si hay). Se rinde solo si no
-        // hay grupos. El resto de la pantalla (matches/conversaciones) va debajo.
-        if (friendGroupService != null && currentUid.isNotEmpty) {
-          return Column(
-            children: <Widget>[
-              _GroupsChatSection(
-                uid: currentUid,
-                userName: currentUserName,
-                service: friendGroupService!,
-              ),
-              Expanded(child: _buildList(context, storyByOwner)),
-            ],
-          );
-        }
-        return _buildList(context, storyByOwner);
-      },
+    return AttraContentFrame(
+      child: StreamBuilder<Map<String, List<Story>>>(
+        stream: storyService?.observeLiveStoriesForMatches() ??
+            const Stream<Map<String, List<Story>>>.empty(),
+        builder: (
+          BuildContext context,
+          AsyncSnapshot<Map<String, List<Story>>> storySnap,
+        ) {
+          final Map<String, List<Story>> storyByOwner =
+              storySnap.data ?? const <String, List<Story>>{};
+          // "Planes y grupos": chats de grupo arriba (si hay). Se rinde solo si no
+          // hay grupos. El resto de la pantalla (matches/conversaciones) va debajo.
+          if (friendGroupService != null && currentUid.isNotEmpty) {
+            return Column(
+              children: <Widget>[
+                _GroupsChatSection(
+                  uid: currentUid,
+                  userName: currentUserName,
+                  service: friendGroupService!,
+                ),
+                Expanded(child: _buildList(context, storyByOwner)),
+              ],
+            );
+          }
+          return _buildList(context, storyByOwner);
+        },
+      ),
     );
   }
 
@@ -265,8 +270,9 @@ class ChatsScreen extends StatelessWidget {
     BuildContext context,
     Map<String, List<Story>> storyByOwner,
   ) {
-    return StreamBuilder<List<Chat>>(
-      stream: chatService.observeChats(currentUid),
+    return _ChatsStreamView(
+      chatService: chatService,
+      currentUid: currentUid,
       builder: (BuildContext context, AsyncSnapshot<List<Chat>> snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -335,6 +341,7 @@ class ChatsScreen extends StatelessWidget {
             );
 
         return ListView(
+          padding: const EdgeInsets.only(bottom: AppSpacing.xl),
           children: <Widget>[
             // Entrada al hub de juegos. Antes solo existía en el estado vacío
             // de Chats y ni siquiera se pintaba, porque el callback que la
@@ -346,10 +353,11 @@ class ChatsScreen extends StatelessWidget {
             if (nuevos.isNotEmpty) ...<Widget>[
               const _SectionTitle('Matches nuevos'),
               SizedBox(
-                height: 104,
+                height: 88 + MediaQuery.textScalerOf(context).scale(13) * 1.4,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: EdgeInsets.symmetric(
+                      horizontal: AppSpacing.pageInset(context)),
                   itemCount: nuevos.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 12),
                   itemBuilder: (BuildContext context, int i) => _NewMatchAvatar(
@@ -363,12 +371,12 @@ class ChatsScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const Divider(height: 24),
+              const SizedBox(height: AppSpacing.md),
             ],
             if (antiGhostingEnabled && myTurn.isNotEmpty) ...<Widget>[
               const _SectionTitle('Tu turno'),
               ...myTurn.map((Chat c) => convoRow(c, yourTurn: true)),
-              const Divider(height: 24),
+              const SizedBox(height: AppSpacing.md),
             ],
             const _SectionTitle('Conversaciones'),
             if (rest.isEmpty)
@@ -390,6 +398,87 @@ class ChatsScreen extends StatelessWidget {
   }
 }
 
+class _ChatsStreamView extends StatefulWidget {
+  const _ChatsStreamView({
+    required this.chatService,
+    required this.currentUid,
+    required this.builder,
+  });
+
+  final ChatService chatService;
+  final String currentUid;
+  final AsyncWidgetBuilder<List<Chat>> builder;
+
+  @override
+  State<_ChatsStreamView> createState() => _ChatsStreamViewState();
+}
+
+class _ChatsStreamViewState extends State<_ChatsStreamView> {
+  late Stream<List<Chat>> _stream;
+  int _attempt = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = widget.chatService.observeChats(widget.currentUid);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatsStreamView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chatService != widget.chatService ||
+        oldWidget.currentUid != widget.currentUid) {
+      _stream = widget.chatService.observeChats(widget.currentUid);
+      _attempt++;
+    }
+  }
+
+  void _retry() {
+    setState(() {
+      _stream = widget.chatService.observeChats(widget.currentUid);
+      _attempt++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Chat>>(
+      key: ValueKey<int>(_attempt),
+      stream: _stream,
+      builder: (BuildContext context, AsyncSnapshot<List<Chat>> snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(Icons.cloud_off_rounded,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(height: 12),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text('No se pudieron cargar tus conversaciones.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: _retry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return widget.builder(context, snapshot);
+      },
+    );
+  }
+}
+
 /// Banda de acceso al hub de juegos, siempre visible sobre la lista de chats.
 class _PlayHubEntry extends StatelessWidget {
   const _PlayHubEntry({required this.onTap});
@@ -399,41 +488,19 @@ class _PlayHubEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Material(
-        color: theme.colorScheme.primary.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: <Widget>[
-                Icon(Icons.sports_esports_rounded,
-                    color: theme.colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text('Juegos de conversación',
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 2),
-                      Text('Duelo de Química, Spark, Dos verdades y más',
-                          style: theme.textTheme.bodySmall),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded),
-              ],
-            ),
-          ),
-        ),
+    return ListTile(
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: AppSpacing.pageInset(context),
+        vertical: AppSpacing.sm,
       ),
+      onTap: onTap,
+      leading: Icon(Icons.sports_esports_outlined,
+          size: 22, color: context.colors.textSecondary),
+      title: Text('Juegos de conversación', style: theme.textTheme.titleSmall),
+      subtitle: Text('Duelo de Química, Spark, Dos verdades y más',
+          style: theme.textTheme.bodySmall),
+      trailing: Icon(Icons.chevron_right_rounded,
+          color: context.colors.textSecondary),
     );
   }
 }
@@ -444,8 +511,9 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-      child: Text(text, style: Theme.of(context).textTheme.titleMedium),
+      padding: EdgeInsets.fromLTRB(AppSpacing.pageInset(context), AppSpacing.xl,
+          AppSpacing.pageInset(context), AppSpacing.md),
+      child: AttraSectionHeading(title: text),
     );
   }
 }
@@ -487,6 +555,9 @@ class _GroupsChatSection extends StatelessWidget {
                 itemBuilder: (BuildContext context, int i) {
                   final FriendGroup g = groups[i];
                   return ListTile(
+                    contentPadding: EdgeInsets.symmetric(
+                        horizontal: AppSpacing.pageInset(context),
+                        vertical: AppSpacing.sm),
                     leading: GroupAvatar(
                         photoUrl: g.photoUrl, size: 44, circle: true),
                     title: Text(g.name,
@@ -516,7 +587,7 @@ class _GroupsChatSection extends StatelessWidget {
                 },
               ),
             ),
-            const Divider(height: 16),
+            const SizedBox(height: AppSpacing.md),
           ],
         );
       },
@@ -548,32 +619,33 @@ class _RingAvatar extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final Widget avatar = CircleAvatar(
       radius: radius,
-      backgroundColor: const Color(0xFFE0E0E0),
+      backgroundColor: context.colors.surfaceHigh,
+      foregroundColor: context.colors.textPrimary,
       backgroundImage:
           photoUrl.isNotEmpty ? CachedNetworkImageProvider(photoUrl) : null,
       child: photoUrl.isEmpty ? Text(_initial(name)) : null,
     );
     final List<Story>? group = stories;
     if (group == null || group.isEmpty) return avatar;
-    return GestureDetector(
-      onTap: () => onOpenStory?.call(group),
-      child: Container(
-        padding: const EdgeInsets.all(2.5),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[
-              theme.colorScheme.primary,
-              theme.colorScheme.outline,
-            ],
+    return Semantics(
+      button: true,
+      label: 'Ver historias de $name',
+      excludeSemantics: true,
+      onTap: onOpenStory == null ? null : () => onOpenStory!(group),
+      child: GestureDetector(
+        excludeFromSemantics: true,
+        onTap: () => onOpenStory?.call(group),
+        child: Container(
+          padding: const EdgeInsets.all(2.5),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: theme.colorScheme.primary,
           ),
-        ),
-        child: CircleAvatar(
-          radius: radius + 2,
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          child: avatar,
+          child: CircleAvatar(
+            radius: radius + 2,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            child: avatar,
+          ),
         ),
       ),
     );
@@ -608,7 +680,7 @@ class _NewMatchAvatar extends StatelessWidget {
         return InkWell(
           onTap: onTap,
           child: SizedBox(
-            width: 72,
+            width: 92,
             child: Column(
               children: <Widget>[
                 Stack(
@@ -628,17 +700,18 @@ class _NewMatchAvatar extends StatelessWidget {
                           radius: 11,
                           backgroundColor:
                               Theme.of(context).colorScheme.primary,
-                          child: const Icon(Icons.star,
-                              size: 13, color: Colors.white),
+                          child: Icon(Icons.star,
+                              size: 13,
+                              color: Theme.of(context).colorScheme.onPrimary),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.sm),
                 Text(s.displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12)),
+                    style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),
@@ -683,6 +756,9 @@ class _ConversationRow extends StatelessWidget {
       builder: (BuildContext context, AsyncSnapshot<ProfileSummary> snap) {
         final ProfileSummary s = snap.data ?? ProfileSummary.unknown;
         return ListTile(
+          contentPadding: EdgeInsets.symmetric(
+              horizontal: AppSpacing.pageInset(context),
+              vertical: AppSpacing.sm),
           onTap: onTap,
           leading: _RingAvatar(
             photoUrl: s.photoUrl,
@@ -692,9 +768,10 @@ class _ConversationRow extends StatelessWidget {
             onOpenStory: onOpenStory,
           ),
           title: Text(s.displayName,
-              style: isUnread
-                  ? const TextStyle(fontWeight: FontWeight.bold)
-                  : null),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: isUnread ? FontWeight.w700 : FontWeight.w600)),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -707,13 +784,14 @@ class _ConversationRow extends StatelessWidget {
                 const SizedBox(height: 3),
               ],
               Text(chat.lastMessage ?? '',
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: isUnread
-                      ? TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.onSurface)
-                      : null),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: isUnread ? FontWeight.w500 : FontWeight.w400,
+                    color: isUnread
+                        ? context.colors.textPrimary
+                        : context.colors.textSecondary,
+                  )),
             ],
           ),
           trailing: !isUnread
@@ -721,11 +799,15 @@ class _ConversationRow extends StatelessWidget {
               : unread > 0
                   // Mensajes reales sin leer: contador.
                   ? CircleAvatar(
-                      radius: 11,
+                      radius: 6 +
+                          MediaQuery.textScalerOf(context).scale(13) *
+                              unread.toString().length /
+                              2,
                       backgroundColor: theme.colorScheme.primary,
                       child: Text('$unread',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.white)),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: theme.colorScheme.onPrimary)),
                     )
                   // Marcado manualmente como no leido: punto.
                   : CircleAvatar(
@@ -755,18 +837,16 @@ class _ChatsEmpty extends StatelessWidget {
       return ListView(
         padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
         children: <Widget>[
-          Icon(Icons.auto_awesome, size: 48, color: theme.colorScheme.primary),
+          Icon(Icons.auto_awesome, size: 32, color: theme.colorScheme.primary),
           const SizedBox(height: 14),
           Text('Aún no hay conversaciones. Empieza por un reto',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+              textAlign: TextAlign.center, style: theme.textTheme.titleLarge),
           const SizedBox(height: 8),
           Text(
             'Attra va de conversaciones mejores. Prueba el reto guiado, '
             'echa un vistazo a los juegos o busca a alguien con quien hablar.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: theme.colorScheme.outline),
+            style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 22),
           _EmptyAction(
@@ -795,8 +875,8 @@ class _ChatsEmpty extends StatelessWidget {
       );
     }
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(AppSpacing.pageInset(context)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -838,8 +918,8 @@ class _EmptyAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return SizedBox(
-      height: 52,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: AppSpacing.touchTarget),
       child: primary
           ? FilledButton.icon(
               onPressed: onTap, icon: Icon(icon), label: Text(label))

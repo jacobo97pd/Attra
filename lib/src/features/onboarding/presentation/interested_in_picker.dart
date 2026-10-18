@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../theme/attra_colors.dart';
 import '../../profile/domain/profile_trait.dart';
@@ -79,51 +78,48 @@ class SelectablePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding:
-            EdgeInsets.symmetric(horizontal: selected ? 14 : 16, vertical: 10),
-        decoration: BoxDecoration(
-          gradient:
-              selected ? const LinearGradient(colors: AppColors.action) : null,
-          color: selected ? null : context.colors.surfaceHigh,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-          border: Border.all(
-            color: selected ? Colors.transparent : context.colors.surfaceLine,
-          ),
-          boxShadow: selected
-              ? <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.attraRed.withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (selected) ...<Widget>[
-              Icon(Icons.check_rounded,
-                  size: 16, color: context.colors.textPrimary),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: selected
-                    ? context.colors.textPrimary
-                    : context.colors.textSecondary,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                fontSize: 14,
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? context.colors.accent : context.colors.surfaceHigh,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: EdgeInsets.symmetric(
+                  horizontal: selected ? 14 : 16, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                border: Border.all(
+                  color: selected
+                      ? Colors.transparent
+                      : context.colors.surfaceLine,
+                ),
               ),
-            ),
-          ],
-        ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (selected) ...<Widget>[
+                    Icon(Icons.check_rounded,
+                        size: 16, color: context.colors.onAccent),
+                    const SizedBox(width: 5),
+                  ],
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: selected
+                          ? context.colors.onAccent
+                          : context.colors.textSecondary,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )),
       ),
     );
   }

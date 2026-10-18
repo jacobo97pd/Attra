@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
 
 import '../../../widgets/attra_image.dart';
 
@@ -68,7 +69,19 @@ class _ProfileRevealScreenState extends State<ProfileRevealScreen>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..forward();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
+    } else if (!TickerMode.valuesOf(context).enabled) {
+      _controller.stop();
+    } else if (_controller.value < 1) {
+      _controller.forward();
+    }
   }
 
   @override
@@ -95,6 +108,7 @@ class _ProfileRevealScreenState extends State<ProfileRevealScreen>
             builder: (BuildContext context, Widget? child) {
               final double blur = _maxBlur *
                   (1 - Curves.easeOutCubic.transform(_controller.value));
+              if (!AttraMotion.enabledOf(context)) return child!;
               return ImageFiltered(
                 imageFilter: ui.ImageFilter.blur(
                   sigmaX: blur,

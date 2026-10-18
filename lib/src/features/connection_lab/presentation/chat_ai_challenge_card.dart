@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 
 /// Prominent card shown at the top of every match conversation, inviting the
@@ -25,29 +24,21 @@ class ChatAiChallengeCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            AppColors.aiViolet.withValues(alpha: 0.20),
-            context.colors.surface,
-          ],
-        ),
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.aiViolet.withValues(alpha: 0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.auto_awesome,
-                  size: 18, color: AppColors.aiViolet),
+              Icon(Icons.auto_awesome,
+                  size: 18, color: context.colors.textSecondary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text('AI Challenge',
                     style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ),
             ],
           ),
@@ -103,33 +94,10 @@ class _Btn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bg = primary ? AppColors.aiViolet : context.colors.surfaceHigh;
-    final Color fg = primary ? Colors.white : context.colors.textPrimary;
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border:
-                primary ? null : Border.all(color: context.colors.surfaceLine),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 15, color: fg),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: TextStyle(
-                      color: fg, fontSize: 12.5, fontWeight: FontWeight.w700)),
-            ],
-          ),
-        ),
-      ),
-    );
+    return primary
+        ? FilledButton.icon(
+            onPressed: onTap, icon: Icon(icon, size: 18), label: Text(label))
+        : TextButton.icon(
+            onPressed: onTap, icon: Icon(icon, size: 18), label: Text(label));
   }
 }

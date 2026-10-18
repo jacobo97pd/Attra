@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_badges.dart';
+import '../../../widgets/attra_editorial.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../../security/app_lock_controller.dart';
 import '../../../theme/app_colors.dart';
@@ -56,7 +60,8 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
               _buildActionTile(context, action),
           ];
 
-          return ListView(
+          return AttraContentFrame(
+              child: ListView(
             padding: EdgeInsets.fromLTRB(
                 16, 16, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
             children: <Widget>[
@@ -80,7 +85,7 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
                           ? section.description
                           : section.title,
                       style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.colorScheme.outline),
+                          ?.copyWith(color: context.colors.textMuted),
                     ),
                   ),
                 ],
@@ -94,7 +99,7 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
                 _SettingsCard(children: actionTiles),
               ],
             ],
-          );
+          ));
         },
       ),
     );
@@ -310,13 +315,13 @@ class _SettingsSectionScreenState extends State<SettingsSectionScreen> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Icon(Icons.lock_outline,
-                  size: 14, color: Theme.of(context).colorScheme.outline),
+                  size: 14, color: context.colors.textMuted),
               const SizedBox(width: 4),
               Flexible(
                 child: Text(
                   eff.lockedReason!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                        color: context.colors.textMuted,
                       ),
                 ),
               ),
@@ -590,16 +595,7 @@ class _SettingsCard extends StatelessWidget {
       }
       rows.add(children[i]);
     }
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border:
-            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: rows),
-    );
+    return AttraCard(padding: EdgeInsets.zero, child: Column(children: rows));
   }
 }
 
@@ -611,19 +607,7 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        label,
-        style:
-            TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
-      ),
-    );
+    return AttraLabel(label: label, compact: true);
   }
 }
 

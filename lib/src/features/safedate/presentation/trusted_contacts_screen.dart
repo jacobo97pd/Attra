@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_editorial.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../data/safedate_service.dart';
 import '../domain/trusted_contact.dart';
@@ -47,7 +49,8 @@ class TrustedContactsScreen extends StatelessWidget {
             (BuildContext context, AsyncSnapshot<List<TrustedContact>> snap) {
           final List<TrustedContact> contacts =
               snap.data ?? const <TrustedContact>[];
-          return ListView(
+          return AttraContentFrame(
+              child: ListView(
             padding: EdgeInsets.fromLTRB(
                 16, 12, 16, 90 + MediaQuery.of(context).viewPadding.bottom),
             children: <Widget>[
@@ -78,7 +81,7 @@ class TrustedContactsScreen extends StatelessWidget {
               if (contacts.isEmpty)
                 Text('Aún no has añadido contactos de confianza.',
                     style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.outline))
+                        ?.copyWith(color: context.colors.textMuted))
               else
                 for (final TrustedContact c in contacts)
                   Card(
@@ -141,7 +144,7 @@ class TrustedContactsScreen extends StatelessWidget {
                     ),
                   ),
             ],
-          );
+          ));
         },
       ),
     );

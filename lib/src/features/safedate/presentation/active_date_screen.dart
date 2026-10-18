@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../theme/attra_colors.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -232,7 +233,7 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
                         if ((widget.plan.placeAddress ?? '').isNotEmpty)
                           Text(widget.plan.placeAddress!,
                               style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.colorScheme.outline)),
+                                  ?.copyWith(color: context.colors.textMuted)),
                       ],
                     ),
                   ),
@@ -251,7 +252,7 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
                 secondary: Icon(Icons.my_location,
                     color: _sharing
                         ? theme.colorScheme.primary
-                        : theme.colorScheme.outline),
+                        : context.colors.textMuted),
                 title: const Text('Compartir ubicación en directo'),
                 subtitle: Text(_sharing
                     ? 'Compartiendo mientras esta pantalla esté abierta. Se '
@@ -318,7 +319,7 @@ class _ActiveDateScreenState extends State<ActiveDateScreen> {
                 const SizedBox(height: 4),
                 Text('SafeDate no sustituye a los servicios de emergencia.',
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline)),
+                        ?.copyWith(color: context.colors.textMuted)),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: _callEmergency,

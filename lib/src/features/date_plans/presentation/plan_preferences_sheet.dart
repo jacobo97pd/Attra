@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 /// Preferencias rápidas devueltas por el sheet (Estado 2 de la UX de Attra
 /// Plans). Todo opcional: si el usuario no toca nada, el backend decide.
@@ -86,7 +87,7 @@ class _PlanPreferencesSheetState extends State<PlanPreferencesSheet> {
               'Attra buscará sitios reales según intereses comunes. No '
               'compartiremos tu ubicación exacta con tu match.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
             const SizedBox(height: 16),
             TextField(

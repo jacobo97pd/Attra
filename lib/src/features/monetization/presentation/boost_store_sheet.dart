@@ -8,6 +8,7 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/attra_editorial.dart';
 import '../../auth/domain/app_user.dart';
 import '../data/boost_service.dart';
 import '../data/purchase_delivery_router.dart';
@@ -349,20 +350,10 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: context.colors.surfaceLine,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             const SizedBox(height: 16),
             Text('Boosts y Swipes',
                 style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800)),
+                    ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text('Más visibilidad y más likes cuando quieras.',
                 style: theme.textTheme.bodyMedium
@@ -381,28 +372,24 @@ class _BoostStoreBodyState extends State<_BoostStoreBody> {
               ),
 
             // Saldos.
-            Row(
-              children: <Widget>[
-                // El saldo de Attras se compra aquí, así que también se ve aquí.
-                Expanded(
-                    child: _BalanceTile(
-                        icon: Icons.auto_awesome_rounded,
-                        label: 'Attras',
-                        value: _attras)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _BalanceTile(
-                        icon: Icons.bolt_rounded,
-                        label: 'Boosts',
-                        value: _boosts)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _BalanceTile(
-                        icon: Icons.swipe_rounded,
-                        label: 'Swipes',
-                        value: _swipes)),
-              ],
-            ),
+            AttraAdaptiveGrid(
+                columns: 3,
+                minTileWidth: 150,
+                gap: 12,
+                children: <Widget>[
+                  _BalanceTile(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'Attras',
+                      value: _attras),
+                  _BalanceTile(
+                      icon: Icons.bolt_rounded,
+                      label: 'Boosts',
+                      value: _boosts),
+                  _BalanceTile(
+                      icon: Icons.swipe_rounded,
+                      label: 'Swipes',
+                      value: _swipes),
+                ]),
             const SizedBox(height: 18),
 
             // Activar. El COSTE va en la propia etiqueta: es una sola moneda
@@ -561,7 +548,7 @@ class _ActiveBoostCardState extends State<_ActiveBoostCard> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: AppColors.action),
+        color: AppColors.brandGraphite,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       ),
       child: Column(
@@ -747,7 +734,7 @@ class _PackBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: AppColors.action),
+        color: AppColors.brandGraphite,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       ),
       child: Text(

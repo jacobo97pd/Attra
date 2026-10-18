@@ -3,19 +3,22 @@ import 'dart:math' as math;
 import 'package:country_code_picker/country_code_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_motion.dart';
+
 import 'package:flutter/services.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../../theme/app_spacing.dart';
+import '../../../theme/app_colors.dart';
 import '../../../widgets/legal_links_row.dart';
 import 'login_video_background.dart';
 
-const Color _loginPaper = Color(0xFFF7F7F7);
-const Color _loginSurface = Colors.white;
-const Color _loginInk = Color(0xFF171717);
-const Color _loginMuted = Color(0xFF666666);
-const Color _loginLine = Color(0xFFDADADA);
-const Color _loginInkSoft = Color(0xFFECECEC);
+const Color _loginPaper = AppColors.surface;
+const Color _loginSurface = AppColors.surfaceHigh;
+const Color _loginInk = AppColors.textPrimary;
+const Color _loginMuted = AppColors.textSecondary;
+const Color _loginLine = AppColors.surfaceLine;
+const Color _loginInkSoft = AppColors.surfaceHigh;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -237,11 +240,11 @@ class _LoginScreenState extends State<LoginScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(
         statusBarColor: Colors.transparent,
-        systemNavigationBarColor: const Color(0xFF0C0D10),
+        systemNavigationBarColor: AppColors.black,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFF0C0D10),
+        backgroundColor: AppColors.black,
         resizeToAvoidBottomInset: true,
         body: LoginVideoBackground(
           child: SafeArea(
@@ -268,6 +271,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           constraints: const BoxConstraints(maxWidth: 440),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: <Widget>[
                               const Align(
                                 alignment: Alignment.center,
@@ -275,7 +279,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               const SizedBox(height: 24),
                               AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 220),
+                                layoutBuilder: AttraMotion.switcherLayout,
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 220),
                                 switchInCurve: Curves.easeOutCubic,
                                 switchOutCurve: Curves.easeInCubic,
                                 transitionBuilder: (
@@ -288,10 +296,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ).animate(animation);
                                   return FadeTransition(
                                     opacity: animation,
-                                    child: SlideTransition(
-                                      position: slide,
-                                      child: child,
-                                    ),
+                                    child:
+                                        MediaQuery.disableAnimationsOf(context)
+                                            ? child
+                                            : SlideTransition(
+                                                position: slide,
+                                                child: child,
+                                              ),
                                   );
                                 },
                                 child: switch (_stage) {
@@ -318,25 +329,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildMethods(bool showApple) {
     final ThemeData theme = Theme.of(context);
-    final double screenHeight = MediaQuery.sizeOf(context).height;
-    final bool compactHeight = screenHeight < 700;
-    final double actionGap = math.max(
-      44,
-      screenHeight - (showApple ? 566 : 500),
-    );
     return Column(
       key: const ValueKey<String>('login-methods'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SizedBox(height: compactHeight ? 28 : 90),
+        const SizedBox(height: 24),
         Text(
           'Menos ruido.\nMás conexión.',
           style: theme.textTheme.displaySmall?.copyWith(
             color: Colors.white,
-            fontSize: 46,
-            height: 0.98,
+            fontSize: 32,
+            height: 1.12,
             fontWeight: FontWeight.w700,
-            letterSpacing: -1.8,
+            letterSpacing: -0.5,
           ),
         ),
         const SizedBox(height: 18),
@@ -350,7 +355,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         // El gate del EULA ocupa el espacio que antes era aire, para que los
         // botones de acceso sigan cayendo en la misma zona de la pantalla.
-        SizedBox(height: math.max(20, actionGap - 168)),
+        const SizedBox(height: 32),
         // Guideline 1.2: la aceptacion del EULA se presenta ANTES de cualquier
         // metodo de registro/acceso y bloquea todos ellos hasta marcarla.
         _TermsGate(
@@ -585,14 +590,6 @@ class _LoginPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: _loginPaper,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.24),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
-          ),
-        ],
       ),
       child: child,
     );
@@ -694,12 +691,12 @@ class _TermsGate extends StatelessWidget {
                       value: accepted,
                       onChanged: enabled ? onChanged : null,
                       visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      materialTapTargetSize: MaterialTapTargetSize.padded,
                       side: BorderSide(
                         color: Colors.white.withValues(alpha: 0.75),
                         width: 1.6,
                       ),
-                      checkColor: const Color(0xFF0C0D10),
+                      checkColor: AppColors.black,
                       fillColor: WidgetStateProperty.resolveWith<Color>(
                         (Set<WidgetState> states) =>
                             states.contains(WidgetState.selected)
@@ -768,78 +765,33 @@ class _AuthButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool active = onPressed != null && !loading;
-    final (Color background, Color foreground, Color border) = switch (style) {
-      _AuthButtonStyle.light => (
-          Colors.white,
-          _loginInk,
-          Colors.white,
-        ),
-      _AuthButtonStyle.glass => (
-          const Color(0x660C0D10),
-          Colors.white,
-          Colors.white.withValues(alpha: 0.62),
-        ),
-      _AuthButtonStyle.dark => (
-          _loginInk,
-          _loginPaper,
-          _loginInk,
-        ),
+    final (Color background, Color foreground) = switch (style) {
+      _AuthButtonStyle.light => (AppColors.textPrimary, AppColors.brandInk),
+      _AuthButtonStyle.glass => (AppColors.surface, AppColors.textPrimary),
+      _AuthButtonStyle.dark => (AppColors.textPrimary, AppColors.brandInk),
     };
-
-    return Opacity(
-      opacity: (active && enabled) ? 1 : 0.48,
-      child: Material(
-        color: background,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        child: InkWell(
-          onTap: active ? onPressed : null,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          child: Container(
-            height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-              border: Border.all(color: border),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconTheme(
-                    data: IconThemeData(color: foreground),
-                    child: loading
-                        ? SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.2,
-                              color: foreground,
-                            ),
-                          )
-                        : leading,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 34),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.05,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    // The EULA guard remains the callback owner; enabled only changes emphasis.
+    return FilledButton(
+      onPressed: active ? onPressed : null,
+      style: FilledButton.styleFrom(
+        backgroundColor: enabled ? background : AppColors.surfaceHigh,
+        foregroundColor: enabled ? foreground : AppColors.textSecondary,
+        minimumSize: const Size(48, 56),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        if (loading)
+          MediaQuery.disableAnimationsOf(context)
+              ? const Icon(Icons.more_horiz, size: 20)
+              : const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+        else
+          leading,
+        const SizedBox(width: 12),
+        Flexible(child: Text(label, textAlign: TextAlign.center)),
+      ]),
     );
   }
 }
@@ -927,7 +879,7 @@ class _PhoneField extends StatelessWidget {
       textField: true,
       label: 'Número de teléfono',
       child: Container(
-        height: 60,
+        constraints: const BoxConstraints(minHeight: 60),
         decoration: BoxDecoration(
           color: _loginSurface,
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
@@ -954,7 +906,7 @@ class _PhoneField extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
               dialogBackgroundColor: _loginSurface,
-              barrierColor: _loginInk.withValues(alpha: 0.35),
+              barrierColor: Colors.black.withValues(alpha: 0.55),
               closeIcon: const Icon(
                 Icons.close_rounded,
                 color: _loginMuted,

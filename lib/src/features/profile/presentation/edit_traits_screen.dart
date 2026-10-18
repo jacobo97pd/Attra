@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../onboarding/domain/interested_in.dart';
 import '../../social/domain/intent_mode.dart';
@@ -312,7 +313,7 @@ class _EditTraitsScreenState extends State<EditTraitsScreen> {
               ? theme.colorScheme.error
               : summary.isNotEmpty
                   ? theme.colorScheme.primary
-                  : theme.colorScheme.outline,
+                  : context.colors.textMuted,
         ),
       ),
       trailing: const Icon(Icons.chevron_right),
@@ -361,7 +362,7 @@ class _EditTraitsScreenState extends State<EditTraitsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(left: 6),
                   child: Icon(Icons.lock_outline,
-                      size: 15, color: theme.colorScheme.outline),
+                      size: 15, color: context.colors.textMuted),
                 ),
             ],
           ),
@@ -369,7 +370,7 @@ class _EditTraitsScreenState extends State<EditTraitsScreen> {
               style: TextStyle(
                   color: isSet
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.outline)),
+                      : context.colors.textMuted)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _edit(def),
         ),

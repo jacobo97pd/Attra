@@ -38,6 +38,10 @@ class AppColors {
   static const Color success = Color(0xFF80A08B);
   static const Color nightBlue = Color(0xFF55706A);
   static const Color danger = Color(0xFFC53F4E);
+  static const Color dangerOnLight = Color(0xFFB93846);
+
+  /// Foreground de error legible sobre las superficies oscuras de Attra.
+  static const Color dangerOnDark = Color(0xFFFF9AA4);
 
   /// Tinte histórico del vídeo de acceso. Queda aislado para que neutralizar la
   /// aplicación no cambie ni el archivo ni la apariencia de ese fondo.

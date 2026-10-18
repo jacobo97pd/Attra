@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
 
-/// Fondo premium con degradado de marca (vino oscuro → carbón). Úsalo como base
-/// de pantallas destacadas (splash, login, paywall, IA…).
+/// Fondo tonal compartido. Conserva la API histórica de las pantallas.
 class AttraGradientBackground extends StatelessWidget {
   const AttraGradientBackground({
     super.key,
@@ -22,32 +20,11 @@ class AttraGradientBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<Color> resolvedColors = colors ??
-        <Color>[
-          context.colors.bg,
-          Color.lerp(
-            context.colors.bg,
-            context.colors.accentDeep,
-            Theme.of(context).brightness == Brightness.dark ? 0.10 : 0.05,
-          )!,
-          context.colors.bg,
-        ];
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient:
-            LinearGradient(begin: begin, end: end, colors: resolvedColors),
-      ),
-      child: child,
-    );
+    return ColoredBox(color: context.colors.bg, child: child);
   }
 }
 
-/// Fondo del shell principal: conserva la tinta de marca en la cabecera y
-/// transiciona enseguida a blanco para que el contenido respire sobre una base
-/// predominantemente clara.
-///
-/// Los cortes se calculan en píxeles lógicos para que el tramo oscuro termine
-/// bajo el wordmark de la AppBar tanto en móviles compactos como altos.
+/// Fondo continuo del shell. La fotografía aporta el color y la profundidad.
 class AttraAppShellBackground extends StatelessWidget {
   const AttraAppShellBackground({
     super.key,
@@ -56,59 +33,15 @@ class AttraAppShellBackground extends StatelessWidget {
 
   final Widget child;
 
-  static const Color _headerInk = AppColors.black;
-
-  /// Color del tramo de contenido (debajo de la tinta de la cabecera). Lo usan
-  /// las pestañas sin cabecera, como el feed, para pintarse encima de la tinta
-  /// sin que se note el corte.
-  static Color contentColorOf(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? context.colors.bg : Colors.white;
-  }
+  static Color contentColorOf(BuildContext context) => context.colors.bg;
 
   @override
   Widget build(BuildContext context) {
-    final Color contentColor = contentColorOf(context);
-    final double topInset = MediaQuery.paddingOf(context).top;
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double height = constraints.hasBoundedHeight
-            ? constraints.maxHeight
-            : MediaQuery.sizeOf(context).height;
-        final double safeHeight = height <= 0 ? 1 : height;
-
-        // La tinta se mantiene hasta el borde inferior del logo (28 px) y el
-        // fundido termina poco después de la AppBar. El resto queda en blanco.
-        final double darkStop =
-            ((topInset + (kToolbarHeight * 0.76)) / safeHeight)
-                .clamp(0.0, 0.28);
-        final double whiteStop = ((topInset + kToolbarHeight + 36) / safeHeight)
-            .clamp(darkStop + 0.04, 0.38);
-
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                _headerInk,
-                _headerInk,
-                contentColor,
-                contentColor,
-              ],
-              stops: <double>[0, darkStop, whiteStop, 1],
-            ),
-          ),
-          child: child,
-        );
-      },
-    );
+    return ColoredBox(color: contentColorOf(context), child: child);
   }
 }
 
-/// Tarjeta con glassmorphism controlado (blur + velo translúcido + borde sutil).
-/// Para overlays/cards sobre fondos con degradado.
+/// Superficie tonal opaca; conserva la API histórica sin simular cristal.
 class AttraGlassCard extends StatelessWidget {
   const AttraGlassCard({
     super.key,
@@ -127,28 +60,23 @@ class AttraGlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget card = ClipRRect(
+    final Widget content = Padding(padding: padding, child: child);
+    return Material(
+      color: context.colors.surface,
       borderRadius: BorderRadius.circular(radius),
-      child: Container(
-        padding: padding,
-        decoration: BoxDecoration(
-          color: context.colors.surface.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: context.colors.surfaceLine),
-        ),
-        child: child,
-      ),
-    );
-    if (onTap == null) return card;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(radius),
-      child: card,
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null
+          ? content
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(radius),
+              child: content,
+            ),
     );
   }
 }
 
-/// Tarjeta sólida grafito con borde y sombra elegante (premium, no exagerada).
+/// Superficie tonal. Solo dibuja un borde cuando expresa un estado explícito.
 class AttraCard extends StatelessWidget {
   const AttraCard({
     super.key,
@@ -169,36 +97,24 @@ class AttraCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Widget content = Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: gradient == null ? context.colors.surface : null,
-        gradient: gradient == null
-            ? null
-            : LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: gradient!),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: borderColor ?? context.colors.surfaceLine),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.14 : 0.07),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: child,
-    );
-    if (onTap == null) return content;
+    final Widget content = Padding(padding: padding, child: child);
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(radius),
-        child: content,
+      borderRadius: BorderRadius.circular(radius),
+      clipBehavior: Clip.antiAlias,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: gradient == null ? context.colors.surface : gradient!.first,
+          borderRadius: BorderRadius.circular(radius),
+          border: borderColor == null ? null : Border.all(color: borderColor!),
+        ),
+        child: onTap == null
+            ? content
+            : InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(radius),
+                child: content,
+              ),
       ),
     );
   }

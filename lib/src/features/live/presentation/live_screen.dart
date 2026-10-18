@@ -7,8 +7,10 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../theme/app_spacing.dart';
+import '../../../theme/app_colors.dart';
 import '../../../widgets/attra_buttons.dart';
 import '../../../widgets/attra_image.dart';
+import '../../../widgets/attra_motion.dart';
 import '../../match/data/match_service.dart';
 import '../../profile/data/profile_summary_repository.dart';
 import '../../safety/domain/report.dart';
@@ -706,19 +708,18 @@ class _SelfPreview extends StatelessWidget {
               bottom: 4,
               child: ValueListenableBuilder<bool>(
                 valueListenable: rtc.cameraEnabled,
-                builder: (BuildContext context, bool on, Widget? _) => InkWell(
-                  onTap: rtc.toggleCamera,
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      on ? Icons.videocam : Icons.videocam_off,
-                      size: 16,
-                      color: Colors.white,
-                    ),
+                builder: (BuildContext context, bool on, Widget? _) =>
+                    IconButton(
+                  onPressed: rtc.toggleCamera,
+                  tooltip: on ? 'Desactivar cámara' : 'Activar cámara',
+                  constraints:
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
+                  style:
+                      IconButton.styleFrom(backgroundColor: AppColors.brandInk),
+                  icon: Icon(
+                    on ? Icons.videocam : Icons.videocam_off,
+                    size: 20,
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -749,9 +750,7 @@ class _CountdownPill extends StatelessWidget {
         vertical: 6,
       ),
       decoration: BoxDecoration(
-        color: urgent
-            ? Colors.redAccent.withValues(alpha: 0.85)
-            : Colors.black.withValues(alpha: 0.45),
+        color: urgent ? AppColors.dangerOnLight : AppColors.brandInk,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       ),
       child: Row(
@@ -822,7 +821,7 @@ class _ModerationBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: Colors.redAccent.withValues(alpha: 0.9),
+        color: AppColors.dangerOnLight,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Text(
@@ -927,17 +926,20 @@ class _CircleButton extends StatelessWidget {
       label: tooltip,
       child: Tooltip(
         message: tooltip,
-        child: Material(
-          color:
-              danger ? Colors.redAccent : Colors.white.withValues(alpha: 0.16),
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: SizedBox(
-              width: 56,
-              height: 56,
-              child: Icon(icon, color: Colors.white, size: 24),
+        child: AttraPressFeedback(
+          child: Material(
+            color: danger
+                ? Colors.redAccent
+                : Colors.white.withValues(alpha: 0.16),
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onPressed,
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
             ),
           ),
         ),

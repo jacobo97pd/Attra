@@ -4,6 +4,7 @@ import 'package:attra/src/features/monetization/data/storekit_pending_transactio
 import 'package:attra/src/features/monetization/domain/subscription_tier.dart';
 import 'package:attra/src/features/monetization/domain/user_entitlements.dart';
 import 'package:attra/src/features/monetization/presentation/paywall_screen.dart';
+import 'package:attra/src/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -52,6 +53,52 @@ class _SubscriptionStore implements InAppPurchase {
 /// duración y precio de la suscripción, y enlaces FUNCIONALES al EULA y a la
 /// política de privacidad.
 void main() {
+  testWidgets('facturación anuncia selección y conserva objetivos táctiles',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.dark,
+        home: const PaywallScreen(currentTier: SubscriptionTier.free),
+      ));
+      await tester.pumpAndSettle();
+      final Finder monthly = find.widgetWithText(TextButton, 'Mensual');
+      final Finder yearly = find.widgetWithText(TextButton, 'Anual');
+      for (final Finder segment in <Finder>[monthly, yearly]) {
+        final Size size = tester.getSize(segment);
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+      }
+      expect(tester.getSemantics(monthly),
+          isSemantics(label: 'Mensual', isButton: true, isSelected: true));
+      expect(tester.getSemantics(yearly),
+          isSemantics(label: 'Anual', isSelected: false));
+      await tester.tap(yearly);
+      await tester.pumpAndSettle();
+      expect(tester.getSemantics(yearly),
+          isSemantics(label: 'Anual', isSelected: true));
+      expect(tester.getSemantics(monthly),
+          isSemantics(label: 'Mensual', isSelected: false));
+      // La tarjeta del plan puede quedar fuera del primer viewport compacto.
+      // Desplazar la lista también construye sus elementos aún virtualizados.
+      await tester.scrollUntilVisible(
+        find.textContaining('se renueva automáticamente cada año'),
+        160,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('se renueva automáticamente cada año'),
+          findsWidgets);
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   for (final (String name, Size size) in <(String, Size)>[
     ('iPad vertical', const Size(820, 1180)),
     ('iPad horizontal', const Size(1180, 820)),

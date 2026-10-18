@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../../theme/app_colors.dart';
 
@@ -48,7 +49,7 @@ class ReliabilityBadge extends StatelessWidget {
         Text(
           'Suele responder y cerrar conversaciones con respeto.',
           style: TextStyle(
-            color: Theme.of(context).colorScheme.outline,
+            color: context.colors.textMuted,
             fontSize: 12.5,
           ),
         ),

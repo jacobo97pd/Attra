@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../theme/attra_colors.dart';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -109,7 +110,7 @@ class _PlanCheckInsCard extends StatelessWidget {
                 ),
                 Text(_when(context),
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline)),
+                        ?.copyWith(color: context.colors.textMuted)),
               ],
             ),
             StreamBuilder<List<SafeDateCheckIn>>(
@@ -129,7 +130,7 @@ class _PlanCheckInsCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text('Sin check-ins pendientes.',
                         style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.outline)),
+                            ?.copyWith(color: context.colors.textMuted)),
                   );
                 }
                 return Column(
@@ -248,7 +249,7 @@ class _CheckInRowState extends State<_CheckInRow> {
                   size: 16,
                   color: missed
                       ? theme.colorScheme.error
-                      : theme.colorScheme.outline),
+                      : context.colors.textMuted),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -328,7 +329,7 @@ class _CheckInRowState extends State<_CheckInRow> {
                 'Tú decides. Puedes llamar a emergencias o avisar a una persona '
                 'de confianza. Nada se hace de forma automática.',
                 style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+                    ?.copyWith(color: context.colors.textMuted),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
@@ -356,7 +357,7 @@ class _CheckInRowState extends State<_CheckInRow> {
                     return Text(
                       'No tienes contactos de confianza guardados.',
                       style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.outline),
+                          ?.copyWith(color: context.colors.textMuted),
                     );
                   }
                   return Column(

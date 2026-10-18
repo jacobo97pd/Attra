@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_motion.dart';
 
 /// Cabecera del feed al estilo Hinge.
 ///
@@ -31,7 +32,8 @@ class FeedTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool showTitle = collapsed && title.isNotEmpty;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
+      duration:
+          AttraMotion.durationOf(context, const Duration(milliseconds: 180)),
       decoration: BoxDecoration(
         color: AttraAppShellBackground.contentColorOf(context),
         border: Border(
@@ -45,10 +47,15 @@ class FeedTopBar extends StatelessWidget {
         child: SizedBox(
           height: height,
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
+            duration: AttraMotion.durationOf(
+                context, const Duration(milliseconds: 180)),
             layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
               fit: StackFit.expand,
-              children: <Widget>[...previous, if (current != null) current],
+              children: <Widget>[
+                for (final Widget child in previous)
+                  IgnorePointer(child: ExcludeSemantics(child: child)),
+                if (current != null) current
+              ],
             ),
             child: showTitle
                 ? _CollapsedTitle(
@@ -297,7 +304,8 @@ class FeedCollapsible extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRect(
       child: AnimatedAlign(
-        duration: const Duration(milliseconds: 200),
+        duration:
+            AttraMotion.durationOf(context, const Duration(milliseconds: 200)),
         curve: Curves.easeOut,
         alignment: Alignment.topCenter,
         heightFactor: collapsed ? 0 : 1,

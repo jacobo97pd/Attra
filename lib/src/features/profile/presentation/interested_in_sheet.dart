@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../onboarding/presentation/interested_in_picker.dart';
 
@@ -64,7 +65,7 @@ class _InterestedInSheetState extends State<InterestedInSheet> {
                 'Solo lo usamos para citas: verás a estas personas y te verán '
                     'quienes también te buscan a ti.',
             style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.outline),
+                ?.copyWith(color: context.colors.textMuted),
           ),
           const SizedBox(height: 16),
           InterestedInPicker(

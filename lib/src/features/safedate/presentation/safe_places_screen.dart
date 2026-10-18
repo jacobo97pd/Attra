@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_editorial.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../data/safedate_service.dart';
 import '../domain/safe_place.dart';
@@ -33,7 +35,8 @@ class SafePlacesScreen extends StatelessWidget {
           if (places.isEmpty) {
             return _EmptyState(theme: theme);
           }
-          return ListView.separated(
+          return AttraContentFrame(
+              child: ListView.separated(
             padding: EdgeInsets.fromLTRB(
                 16, 12, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
             itemCount: places.length + 1,
@@ -46,7 +49,7 @@ class SafePlacesScreen extends StatelessWidget {
                     'Sitios públicos donde muchas personas empiezan una primera '
                     'cita. Recomendados, no una garantía de seguridad.',
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
+                        ?.copyWith(color: context.colors.textMuted),
                   ),
                 );
               }
@@ -61,7 +64,7 @@ class SafePlacesScreen extends StatelessWidget {
                       },
               );
             },
-          );
+          ));
         },
       ),
     );
@@ -132,7 +135,7 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Icon(Icons.place_outlined,
-                size: 48, color: theme.colorScheme.outline),
+                size: 48, color: context.colors.textMuted),
             const SizedBox(height: 12),
             Text('Todavía no hay lugares recomendados en tu zona',
                 textAlign: TextAlign.center, style: theme.textTheme.titleSmall),
@@ -142,7 +145,7 @@ class _EmptyState extends StatelessWidget {
               'concurrido, y avisa a alguien de confianza.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
           ],
         ),

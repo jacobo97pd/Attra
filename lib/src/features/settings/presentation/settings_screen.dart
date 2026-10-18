@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_editorial.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../../../../core/config/legal_links.dart';
 import '../../../theme/app_colors.dart';
@@ -45,16 +48,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   /// Paleta de acentos para los iconos de las secciones (rota por orden).
-  static const List<Color> _palette = <Color>[
-    AppColors.aiViolet,
-    AppColors.coral,
-    AppColors.gold,
-    AppColors.success,
-    AppColors.nightBlue,
-    AppColors.attraRed,
-    AppColors.wine,
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -88,7 +81,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (s.key == SettingsCatalog.secLifecycle) lifecycle = s;
         }
 
-        return ListView(
+        return AttraContentFrame(
+            child: ListView(
           padding: EdgeInsets.fromLTRB(
               16, 12, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
           children: <Widget>[
@@ -119,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 for (int i = 0; i < normal.length; i++)
                   _NavRow(
                     icon: settingsIcon(normal[i].icon),
-                    color: _palette[i % _palette.length],
+                    color: context.colors.textSecondary,
                     title: normal[i].title,
                     subtitle: normal[i].description,
                     onTap: () => _openSection(normal[i]),
@@ -197,7 +191,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ],
-        );
+        ));
       },
     );
   }
@@ -210,17 +204,11 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(
-        text.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.outline,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-        ),
-      ),
+      padding: const EdgeInsets.only(left: 4, bottom: 12),
+      child: Semantics(
+          header: true,
+          child: Text(text, style: Theme.of(context).textTheme.titleLarge)),
     );
   }
 }
@@ -245,16 +233,7 @@ class _Group extends StatelessWidget {
       }
       rows.add(children[i]);
     }
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(18),
-        border:
-            Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(children: rows),
-    );
+    return AttraCard(padding: EdgeInsets.zero, child: Column(children: rows));
   }
 }
 
@@ -281,49 +260,21 @@ class _NavRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return InkWell(
+    return ListTile(
+      minTileHeight: 72,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(icon, size: 20, color: color),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: destructive ? theme.colorScheme.error : null,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            trailing ??
-                Icon(Icons.chevron_right,
-                    color: theme.colorScheme.outline.withValues(alpha: 0.7)),
-          ],
-        ),
-      ),
+      leading: Icon(icon,
+          size: 22,
+          color: destructive
+              ? theme.colorScheme.error
+              : context.colors.textSecondary),
+      title: Text(title,
+          style: theme.textTheme.bodyLarge
+              ?.copyWith(color: destructive ? theme.colorScheme.error : null)),
+      subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
+      trailing: trailing ??
+          Icon(Icons.chevron_right, color: context.colors.textMuted),
     );
   }
 }

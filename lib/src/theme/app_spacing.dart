@@ -8,6 +8,7 @@ class AppSpacing {
   static const double sm = 8;
   static const double md = 12;
   static const double lg = 16;
+  static const double page = 20;
   static const double xl = 24;
   static const double xxl = 32;
 
@@ -18,6 +19,15 @@ class AppSpacing {
   static const double radiusLg = 20;
   static const double radiusXl = 28;
   static const double radiusPill = 999;
+
+  static const double readingWidth = 680;
+  static const double touchTarget = 48;
+
+  /// Compact phones keep 16dp; wider viewports give content more breathing room.
+  static double pageInset(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width;
+    return width < 380 ? lg : (width < 600 ? page : xl);
+  }
 
   static const EdgeInsets screen = EdgeInsets.all(lg);
   static const EdgeInsets card = EdgeInsets.all(lg);

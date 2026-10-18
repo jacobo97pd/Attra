@@ -61,8 +61,12 @@ class AttraImage extends StatelessWidget {
         width: width,
         height: height,
         memCacheWidth: decodeWidth,
-        fadeInDuration: const Duration(milliseconds: 180),
-        fadeOutDuration: const Duration(milliseconds: 120),
+        fadeInDuration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 180),
+        fadeOutDuration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 120),
         placeholder: (BuildContext ctx, __) => _placeholder(ctx),
         errorWidget: (BuildContext ctx, __, ___) => _fallback(ctx),
       );

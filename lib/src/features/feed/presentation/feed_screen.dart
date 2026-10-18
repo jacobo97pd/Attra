@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/attra_motion.dart';
 
 import '../../ads/presentation/feed_native_ad_card.dart';
 import '../../ai_visual/data/ai_visual_service.dart';
@@ -45,6 +47,7 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_image.dart';
+import '../../../widgets/attra_editorial.dart';
 import '../../../widgets/attra_states.dart';
 import '../data/feed_metrics_service.dart';
 import '../data/ranking_signals_repository.dart';
@@ -2815,8 +2818,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// quedarse vacío. Sin explicación, ver perfiles de otro país parece un error
   /// (y un feed vacío, un feed roto).
   Widget _countryFallbackBanner() {
-    final ThemeData theme = Theme.of(context);
-    final Color color = theme.colorScheme.outline;
+    final Color color = context.colors.textSecondary;
     final String country = (widget.user?.countryName ?? '').trim();
     return Material(
       color: color.withValues(alpha: 0.10),
@@ -2846,8 +2848,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// Aviso de que el mazo son perfiles de MUESTRA de otros lugares porque en tu
   /// zona todavía no hay nadie. Sin él parecerían gente de alrededor.
   Widget _sampleFallbackBanner() {
-    final ThemeData theme = Theme.of(context);
-    final Color color = theme.colorScheme.outline;
+    final Color color = context.colors.textSecondary;
     return Material(
       color: color.withValues(alpha: 0.10),
       child: Padding(
@@ -2876,8 +2877,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// usuario seguía viendo "De viaje en Cádiz" con el feed de casa (o al revés)
   /// y no sabía por qué. El toque abre la hoja, que deja apagarlo sin plan.
   Widget _travelPausedBanner() {
-    final ThemeData theme = Theme.of(context);
-    final Color color = theme.colorScheme.outline;
+    final Color color = context.colors.textSecondary;
     return Material(
       color: color.withValues(alpha: 0.10),
       child: InkWell(
@@ -2911,8 +2911,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
   /// [TravelScope.widenedRadiusKm]: se dice, para que nadie crea que la gente a
   /// 150 km "es de Cádiz".
   Widget _travelWidenedBanner() {
-    final ThemeData theme = Theme.of(context);
-    final Color color = theme.colorScheme.outline;
+    final Color color = context.colors.textSecondary;
     final String city = (widget.user?.travelCity ?? '').trim();
     final String where =
         city.isNotEmpty ? city : (widget.user?.travelCountry ?? '').trim();
@@ -3000,7 +2999,7 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     // pinta con el mismo color de aviso que el incompleto.
     final bool degraded = partial || ai.visualOff;
     final Color color = inactive
-        ? theme.colorScheme.outline
+        ? context.colors.textSecondary
         : degraded
             ? theme.colorScheme.tertiary
             : theme.colorScheme.primary;
@@ -3328,39 +3327,43 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
         ? (_storiesByOwner[profile.id] ?? const <Story>[])
         : const <Story>[];
     return SafeArea(
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-        padding: likedMe
-            ? const EdgeInsets.fromLTRB(4, 4, 4, 4)
-            : const EdgeInsets.fromLTRB(12, 10, 12, 8),
-        child: _SwipeCard(
-          key: const ValueKey<String>('feed-swipe-card'),
-          profile: profile,
-          likedMe: likedMe,
-          stories: stories,
-          storySeen: _ownerStoriesSeen(profile.id),
-          onOpenStory: _openBlindViewer,
-          resetToken: _cardResetToken,
-          // Marcha atrás en la propia tarjeta: es donde se da el like y el pase
-          // cuando el muro está apagado.
-          rewind: _rewindState,
-          rewinding: _rewinding,
-          // Con un gesto en vuelo el botón espera (no gira): deshacer antes de
-          // que el like esté escrito lo dejaría enviado para siempre.
-          pendingSend: _sending > 0,
-          onRewind: _onRewind,
-          onBeforeLike: () async => !await _pendingBlocks(isAttra: false),
-          onLike: () => _onLikeProfile(profile),
-          onPass: () => _onPass(profile),
-          onRespondToPhoto: (
-            AdditionalPhoto photo,
-            PhotoResponseKind kind,
-          ) =>
-              _onRespondToPhoto(profile, photo, kind),
-          onRespondToPrompt: (PublicPrompt prompt) =>
-              _onRespondToPrompt(profile, prompt),
-          onSafetyMenu: () => _openSafetyMenu(profile),
+      child: AttraContentFrame(
+        child: AnimatedPadding(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          padding: likedMe
+              ? const EdgeInsets.fromLTRB(4, 4, 4, 4)
+              : const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: _SwipeCard(
+            key: const ValueKey<String>('feed-swipe-card'),
+            profile: profile,
+            likedMe: likedMe,
+            stories: stories,
+            storySeen: _ownerStoriesSeen(profile.id),
+            onOpenStory: _openBlindViewer,
+            resetToken: _cardResetToken,
+            // Marcha atrás en la propia tarjeta: es donde se da el like y el pase
+            // cuando el muro está apagado.
+            rewind: _rewindState,
+            rewinding: _rewinding,
+            // Con un gesto en vuelo el botón espera (no gira): deshacer antes de
+            // que el like esté escrito lo dejaría enviado para siempre.
+            pendingSend: _sending > 0,
+            onRewind: _onRewind,
+            onBeforeLike: () async => !await _pendingBlocks(isAttra: false),
+            onLike: () => _onLikeProfile(profile),
+            onPass: () => _onPass(profile),
+            onRespondToPhoto: (
+              AdditionalPhoto photo,
+              PhotoResponseKind kind,
+            ) =>
+                _onRespondToPhoto(profile, photo, kind),
+            onRespondToPrompt: (PublicPrompt prompt) =>
+                _onRespondToPrompt(profile, prompt),
+            onSafetyMenu: () => _openSafetyMenu(profile),
+          ),
         ),
       ),
     );
@@ -3579,6 +3582,11 @@ class _SwipeCardState extends State<_SwipeCard>
   late final AnimationController _controller;
   Animation<double>? _animation;
   double _dx = 0;
+  final ValueNotifier<int> _dragRevision = ValueNotifier<int>(0);
+  late final Listenable _motion = Listenable.merge(<Listenable>[
+    _controller,
+    _dragRevision,
+  ]);
   double _cardWidth = 360;
   bool _checkingLike = false;
 
@@ -3588,10 +3596,12 @@ class _SwipeCardState extends State<_SwipeCard>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 260),
+      // La finalización despacha el gesto: Reduce Motion solo cambia el dibujo.
+      animationBehavior: AnimationBehavior.preserve,
     )..addListener(() {
         final Animation<double>? anim = _animation;
         if (anim != null) {
-          setState(() => _dx = anim.value);
+          _dx = anim.value;
         }
       });
   }
@@ -3602,20 +3612,22 @@ class _SwipeCardState extends State<_SwipeCard>
     if (oldWidget.profile.id != widget.profile.id ||
         oldWidget.resetToken != widget.resetToken) {
       _controller.stop();
-      setState(() => _dx = 0);
+      _dx = 0;
+      _dragRevision.value++;
     }
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _dragRevision.dispose();
     super.dispose();
   }
 
   void _runTo(double target, {VoidCallback? onDone}) {
-    _animation = Tween<double>(begin: _dx, end: target).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
-    );
+    _animation = Tween<double>(begin: _dx, end: target)
+        .chain(CurveTween(curve: AttraMotion.enter))
+        .animate(_controller);
     _controller
       ..reset()
       ..forward().whenCompleteOrCancel(() {
@@ -3647,11 +3659,23 @@ class _SwipeCardState extends State<_SwipeCard>
     }
   }
 
+  void _passFromControl() {
+    // Protege también dos activaciones antes del siguiente frame.
+    if (widget.rewinding ||
+        widget.pendingSend ||
+        _checkingLike ||
+        _controller.isAnimating) {
+      return;
+    }
+    unawaited(_trySwipe(false));
+  }
+
   void _onDragUpdate(DragUpdateDetails d) {
     // Mientras se deshace un gesto la tarjeta no acepta otro: la marcha atrás
     // está a punto de recolocar el muro y el like caería sobre quien no es.
     if (_checkingLike || widget.rewinding) return;
-    setState(() => _dx += d.delta.dx);
+    _dx += d.delta.dx;
+    _dragRevision.value++;
   }
 
   void _onDragEnd(DragEndDetails d) {
@@ -3659,8 +3683,17 @@ class _SwipeCardState extends State<_SwipeCard>
       _runTo(0);
       return;
     }
-    if (_dx.abs() > _threshold) {
-      unawaited(_trySwipe(_dx > 0));
+    // Un flick decidido completa el gesto aunque no haya recorrido el umbral
+    // de distancia: mide la CONVICCIÓN del gesto (qué tan rápido se soltó),
+    // no solo cuánto ha viajado el dedo. Antes un "zas" corto y rápido sobre
+    // el centro de la tarjeta volvía al centro igual que un roce accidental;
+    // ahora, como en cualquier deslizar nativo, basta con la velocidad.
+    // 700 px/s es el mismo umbral que usa `Dismissible` en el propio Flutter.
+    const double flingVelocity = 700;
+    final double velocity = d.primaryVelocity ?? 0;
+    final bool decisiveFling = velocity.abs() > flingVelocity;
+    if (_dx.abs() > _threshold || decisiveFling) {
+      unawaited(_trySwipe(decisiveFling ? velocity > 0 : _dx > 0));
     } else {
       _runTo(0);
     }
@@ -3671,10 +3704,6 @@ class _SwipeCardState extends State<_SwipeCard>
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         _cardWidth = constraints.maxWidth;
-        final double angle = (_dx / _cardWidth) * 0.25;
-        final double likeOpacity = (_dx / _threshold).clamp(0.0, 1.0);
-        final double nopeOpacity = (-_dx / _threshold).clamp(0.0, 1.0);
-
         // El cuerpo de la tarjeta: la PILA de historias en el muro, o el perfil
         // completo cuando el muro no está activo. El resto de la tarjeta (swipe,
         // sellos, botón de seguridad) es idéntico en ambos casos: así una misma
@@ -3690,7 +3719,7 @@ class _SwipeCardState extends State<_SwipeCard>
               )
             : DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
                   // Realce editorial para quien te dio like: borde limpio, sin
                   // convertir una señal relacional en una alerta roja.
                   border: widget.likedMe
@@ -3698,7 +3727,7 @@ class _SwipeCardState extends State<_SwipeCard>
                       : null,
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
                   child: Material(
                     color: Theme.of(context).colorScheme.surface,
                     child: _ProfileDetail(
@@ -3718,63 +3747,103 @@ class _SwipeCardState extends State<_SwipeCard>
                 ),
               );
 
-        // Drag SOLO horizontal -> el scroll vertical interno sigue funcionando.
-        return GestureDetector(
-          onHorizontalDragUpdate: _onDragUpdate,
-          onHorizontalDragEnd: _onDragEnd,
-          child: Transform.translate(
-            offset: Offset(_dx, 0),
-            child: Transform.rotate(
-              angle: angle,
-              child: Stack(
-                children: <Widget>[
-                  body,
-                  // Guideline 1.2: acceso permanente a Reportar / Bloquear
-                  // sobre la propia tarjeta del feed. La marcha atrás va a su
-                  // lado y NO abajo a la izquierda: ahí la tarjeta ya tiene el
-                  // botón de Attra a la foto y el badge de "te dio like" ocupa
-                  // la esquina de arriba.
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        _RewindCardButton(
-                          state: widget.rewind,
-                          busy: widget.rewinding,
-                          waiting: widget.pendingSend,
-                          onPressed: widget.onRewind,
-                        ),
-                        const SizedBox(width: 8),
-                        _SafetyCardButton(onPressed: widget.onSafetyMenu),
-                      ],
-                    ),
-                  ),
-                  Positioned(
-                    top: 24,
-                    left: 20,
-                    child: _SwipeStamp(
-                      progress: likeOpacity,
-                      icon: Icons.check_rounded,
-                      color: context.colors.accent,
-                      semanticLabel: 'Me interesa',
-                    ),
-                  ),
-                  Positioned(
-                    top: 24,
-                    right: 20,
-                    child: _SwipeStamp(
-                      progress: nopeOpacity,
-                      icon: Icons.close_rounded,
-                      color: context.colors.textSecondary,
-                      semanticLabel: 'Paso',
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        return AnimatedBuilder(
+          animation: _motion,
+          child: AttraStateTransition(
+            key: const ValueKey<String>('feed-motion-content'),
+            value: widget.profile.id,
+            duration: const Duration(milliseconds: 160),
+            offset: const Offset(0, .008),
+            child: body,
           ),
+          builder: (BuildContext context, Widget? stableBody) {
+            final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+            final double visualDx = reduceMotion ? 0 : _dx;
+            final double angle = (visualDx / _cardWidth) * 0.25;
+            final double likeOpacity = (visualDx / _threshold).clamp(0.0, 1.0);
+            final double nopeOpacity = (-visualDx / _threshold).clamp(0.0, 1.0);
+            final bool canPass = !widget.rewinding &&
+                !widget.pendingSend &&
+                !_checkingLike &&
+                !_controller.isAnimating;
+
+            // Drag SOLO horizontal -> el scroll vertical interno sigue funcionando.
+            final Widget card = GestureDetector(
+              onHorizontalDragUpdate: _onDragUpdate,
+              onHorizontalDragEnd: _onDragEnd,
+              child: Transform.translate(
+                offset: Offset(visualDx, 0),
+                child: Transform.rotate(
+                  angle: angle,
+                  child: Stack(
+                    children: <Widget>[
+                      stableBody!,
+                      // Guideline 1.2: acceso permanente a Reportar / Bloquear
+                      // sobre la propia tarjeta del feed. La marcha atrás va a su
+                      // lado y NO abajo a la izquierda: ahí la tarjeta ya tiene el
+                      // botón de Attra a la foto y el badge de "te dio like" ocupa
+                      // la esquina de arriba.
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            TextButton(
+                              key: const ValueKey<String>(
+                                  'feed-pass-profile-button'),
+                              onPressed: canPass ? _passFromControl : null,
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(48, 48),
+                                foregroundColor: Colors.white,
+                                disabledForegroundColor: Colors.white54,
+                                backgroundColor:
+                                    Colors.black.withValues(alpha: 0.45),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                shape: const StadiumBorder(),
+                              ),
+                              child: const Text('Pasar'),
+                            ),
+                            const SizedBox(width: 8),
+                            _RewindCardButton(
+                              state: widget.rewind,
+                              busy: widget.rewinding,
+                              waiting: widget.pendingSend,
+                              onPressed: widget.onRewind,
+                            ),
+                            const SizedBox(width: 8),
+                            _SafetyCardButton(onPressed: widget.onSafetyMenu),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: 24,
+                        left: 20,
+                        child: _SwipeStamp(
+                          progress: likeOpacity,
+                          icon: Icons.check_rounded,
+                          color: context.colors.accent,
+                          semanticLabel: 'Me interesa',
+                        ),
+                      ),
+                      Positioned(
+                        top: 24,
+                        right: 20,
+                        child: _SwipeStamp(
+                          progress: nopeOpacity,
+                          icon: Icons.close_rounded,
+                          color: context.colors.textSecondary,
+                          semanticLabel: 'Paso',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+            return card;
+          },
         );
       },
     );
@@ -3818,53 +3887,47 @@ class _RewindCardButton extends StatelessWidget {
             ? Colors.white38
             : Colors.white;
     final String? counter = state.counterLabel;
-    return Material(
-      color: Colors.black.withValues(alpha: 0.45),
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          IconButton(
-            key: const ValueKey<String>('feed-rewind-button'),
-            tooltip: state.hint,
-            onPressed: (busy || waiting) ? null : onPressed,
-            icon: busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
-                  )
-                : Icon(Icons.replay_rounded, color: color, size: 22),
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-            padding: EdgeInsets.zero,
-          ),
-          if (counter != null)
-            Positioned(
-              right: 2,
-              top: 2,
-              child: IgnorePointer(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    counter,
-                    style: const TextStyle(
-                      color: AppColors.black,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
+    // El círculo oscuro + el escalado al tacto los da AttraCircleIconButton;
+    // aquí solo queda el contador, que sigue siendo un badge aparte encima.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        AttraCircleIconButton(
+          key: const ValueKey<String>('feed-rewind-button'),
+          tooltip: state.hint,
+          onPressed: (busy || waiting) ? null : onPressed,
+          icon: busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : Icon(Icons.replay_rounded, color: color, size: 22),
+        ),
+        if (counter != null)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  counter,
+                  style: const TextStyle(
+                    color: AppColors.black,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
@@ -3878,24 +3941,17 @@ class _SafetyCardButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.45),
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: IconButton(
-        key: const ValueKey<String>('feed-safety-button'),
-        tooltip: 'Reportar o bloquear',
-        onPressed: onPressed,
-        icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
-        constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-        padding: EdgeInsets.zero,
-      ),
+    return AttraCircleIconButton(
+      key: const ValueKey<String>('feed-safety-button'),
+      tooltip: 'Reportar o bloquear',
+      onPressed: onPressed,
+      icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
     );
   }
 }
 
-/// Contenido del perfil con scroll vertical: foto principal con nombre,
-/// panel de datos, bio, intereses y el resto de fotos debajo.
+/// Contenido del perfil con scroll vertical: foto principal, nota de identidad,
+/// datos, bio, intereses y el resto de fotos y respuestas personales debajo.
 class _ProfileDetail extends StatelessWidget {
   const _ProfileDetail({
     required this.profile,
@@ -3939,9 +3995,9 @@ class _ProfileDetail extends StatelessWidget {
 
     for (final AdditionalPhoto photo in photos) {
       items.add(Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: const EdgeInsets.only(top: AppSpacing.xl),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           child: _PhotoWithAction(
             photo: photo,
             name: profile.displayName,
@@ -3953,7 +4009,7 @@ class _ProfileDetail extends StatelessWidget {
       if (promptIndex < prompts.length) {
         final PublicPrompt prompt = prompts[promptIndex];
         items.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
           child: _PromptCard(
             prompt: prompt,
             onRespond: () => onRespondToPrompt(prompt),
@@ -3966,7 +4022,7 @@ class _ProfileDetail extends StatelessWidget {
     while (promptIndex < prompts.length) {
       final PublicPrompt prompt = prompts[promptIndex];
       items.add(Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: const EdgeInsets.only(top: AppSpacing.sm),
         child: _PromptCard(
           prompt: prompt,
           onRespond: () => onRespondToPrompt(prompt),
@@ -3999,38 +4055,55 @@ class _ProfileDetail extends StatelessWidget {
       key: ValueKey<String>('feed-profile-scroll-${profile.id}'),
       padding: EdgeInsets.zero,
       children: <Widget>[
-        // Foto principal con nombre/edad superpuestos y boton de respuesta.
-        _PhotoWithAction(
-          photo: primary,
-          name: profile.displayName,
-          onRespond: onRespondToPhoto,
-          hasStory: hasStory,
-          storySeen: storySeen,
-          onOpenStory: onOpenStory,
-          topBadge: likedMe ? const _LikedYouBadge() : null,
-          overlay: Column(
+        // La fotografía y la nota personal comparten el mismo objeto, sin
+        // superponer el nombre a la imagen ni a sus acciones.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          child: _PhotoWithAction(
+            photo: primary,
+            name: profile.displayName,
+            onRespond: onRespondToPhoto,
+            hasStory: hasStory,
+            storySeen: storySeen,
+            onOpenStory: onOpenStory,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, AppSpacing.sm),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (profile.traveling) ...<Widget>[
-                const _TravelingChip(),
-                const SizedBox(height: 8),
-              ],
-              Text(
-                '${profile.displayName}$ageText',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+              Semantics(
+                header: true,
+                child: Text(
+                  '${profile.displayName}$ageText',
+                  style: theme.textTheme.headlineLarge,
                 ),
               ),
-              if (place.isNotEmpty)
-                _IconLine(icon: Icons.place_outlined, text: place),
+              if (place.isNotEmpty) ...<Widget>[
+                const SizedBox(height: AppSpacing.sm),
+                Text(place, style: theme.textTheme.bodyMedium),
+              ],
+              if (profile.traveling || likedMe) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                Wrap(
+                  spacing: AppSpacing.md,
+                  runSpacing: AppSpacing.sm,
+                  children: <Widget>[
+                    if (profile.traveling) const _TravelingChip(),
+                    if (likedMe) const _LikedYouBadge(),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
         // Panel de datos.
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.sm),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -4042,22 +4115,23 @@ class _ProfileDetail extends StatelessWidget {
                   text: profile.orientation.map(_orientationLabel).join(', '),
                 ),
               if (profile.bio.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 14),
-                Text('Sobre mí', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 6),
+                const SizedBox(height: AppSpacing.xl),
+                const AttraSectionHeading(title: 'Sobre mí'),
+                const SizedBox(height: AppSpacing.md),
                 Text(profile.bio, style: theme.textTheme.bodyLarge),
               ],
               if (profile.interests.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 16),
-                Text('Intereses', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.xl),
+                const AttraSectionHeading(title: 'Intereses'),
+                const SizedBox(height: AppSpacing.md),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: profile.interests
                       .map((String i) => Chip(
                             label: Text(i),
-                            visualDensity: VisualDensity.compact,
+                            backgroundColor: context.colors.surfaceHigh,
+                            side: BorderSide.none,
                           ))
                       .toList(growable: false),
                 ),
@@ -4073,7 +4147,7 @@ class _ProfileDetail extends StatelessWidget {
   }
 }
 
-/// Card de prompt en el perfil: pregunta pequeña, respuesta protagonista y
+/// Nota de prompt en el perfil: pregunta secundaria, respuesta protagonista y
 /// botón para responder (like/Attra con comentario).
 class _PromptCard extends StatelessWidget {
   const _PromptCard({required this.prompt, required this.onRespond});
@@ -4083,43 +4157,15 @@ class _PromptCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(prompt.question,
-              style: theme.textTheme.bodySmall?.copyWith(letterSpacing: 0.3)),
-          const SizedBox(height: 8),
-          Text(prompt.answer,
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700, height: 1.25)),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Material(
-              color: Colors.white,
-              shape: const CircleBorder(),
-              elevation: 2,
-              child: InkWell(
-                key: ValueKey<String>('feed-prompt-respond-${prompt.id}'),
-                customBorder: const CircleBorder(),
-                onTap: onRespond,
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Icon(Icons.favorite_border,
-                      color: context.colors.accent, size: 22),
-                ),
-              ),
-            ),
-          ),
-        ],
+    return AttraPromptNote(
+      question: prompt.question,
+      answer: prompt.answer,
+      trailing: IconButton.filledTonal(
+        key: ValueKey<String>('feed-prompt-respond-${prompt.id}'),
+        tooltip: 'Responder a esta pregunta',
+        onPressed: onRespond,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        icon: const Icon(Icons.favorite_border_rounded),
       ),
     );
   }
@@ -4131,8 +4177,6 @@ class _PhotoWithAction extends StatelessWidget {
     required this.photo,
     required this.name,
     required this.onRespond,
-    this.overlay,
-    this.topBadge,
     this.hasStory = false,
     this.storySeen = false,
     this.onOpenStory,
@@ -4141,8 +4185,6 @@ class _PhotoWithAction extends StatelessWidget {
   final AdditionalPhoto? photo;
   final String name;
   final void Function(AdditionalPhoto photo, PhotoResponseKind kind) onRespond;
-  final Widget? overlay;
-  final Widget? topBadge;
   final bool hasStory;
   final bool storySeen;
   final VoidCallback? onOpenStory;
@@ -4160,13 +4202,10 @@ class _PhotoWithAction extends StatelessWidget {
         _PhotoBox(
           url: p?.url ?? '',
           name: name,
-          overlay: overlay,
           hasStory: hasStory,
           storySeen: storySeen,
           onOpenStory: onOpenStory,
-          overlayBottom: overlay != null && p != null ? 76 : 16,
         ),
-        if (topBadge != null) Positioned(top: 14, left: 14, child: topBadge!),
         if (p != null) ...<Widget>[
           Positioned(
             left: 12,
@@ -4229,15 +4268,16 @@ class _PhotoActionButton extends StatelessWidget {
       child: Semantics(
         button: true,
         label: label,
-        child: Material(
+        child: AttraPressFeedback(
+            child: Material(
           color: backgroundColor,
           shape: const CircleBorder(),
-          elevation: 3,
+          elevation: 0,
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
             child: SizedBox.square(
-              dimension: 46,
+              dimension: 48,
               child: IconTheme(
                 data: IconThemeData(color: foregroundColor),
                 child: DefaultTextStyle.merge(
@@ -4247,33 +4287,29 @@ class _PhotoActionButton extends StatelessWidget {
               ),
             ),
           ),
-        ),
+        )),
       ),
     );
   }
 }
 
-/// Caja de foto con relación 3:4 y degradado opcional para el texto. Si el
+/// Caja de foto limpia con relación 3:4. Si el
 /// perfil tiene story viva ([hasStory]) muestra un aro editorial y abre el
 /// visor al pulsar.
 class _PhotoBox extends StatelessWidget {
   const _PhotoBox({
     required this.url,
     required this.name,
-    this.overlay,
     this.hasStory = false,
     this.storySeen = false,
     this.onOpenStory,
-    this.overlayBottom = 16,
   });
 
   final String url;
   final String name;
-  final Widget? overlay;
   final bool hasStory;
   final bool storySeen;
   final VoidCallback? onOpenStory;
-  final double overlayBottom;
 
   @override
   Widget build(BuildContext context) {
@@ -4288,28 +4324,6 @@ class _PhotoBox extends StatelessWidget {
             )
           else
             _PhotoFallback(name: name),
-          if (overlay != null) ...<Widget>[
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.black87
-                  ],
-                  stops: <double>[0.0, 0.55, 1.0],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 18,
-              right: 18,
-              bottom: overlayBottom,
-              child: overlay!,
-            ),
-          ],
           // Aro de tinta (sin ver) o gris (ya visto) + badge "Historia" + tap.
           if (hasStory) ...<Widget>[
             Positioned.fill(
@@ -4357,30 +4371,31 @@ class _StoryPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: seen ? Colors.black.withValues(alpha: 0.5) : null,
-        gradient: seen ? null : const LinearGradient(colors: AppColors.action),
+        color: seen ? AppColors.brandGraphite : AppColors.brandInk,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.play_circle_fill_rounded,
-              color: seen ? context.colors.textMuted : Colors.white, size: 15),
+          Icon(
+              seen
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.play_circle_fill_rounded,
+              color: seen ? AppColors.textSecondary : AppColors.textPrimary,
+              size: 15),
           const SizedBox(width: 5),
           Text('Historia',
               style: TextStyle(
-                  color: seen ? context.colors.textSecondary : Colors.white,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700)),
+                  color: seen ? AppColors.textSecondary : AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 }
 
-/// Distintivo "Te ha dado like" sobre la foto principal (Plus/Pro). Pill con
-/// degradado de marca, glow y corazón.
-/// Distintivo "De viaje" sobre la foto de quien está en modo viajes.
+/// Distintivo de viaje junto a los datos de la persona.
 class _TravelingChip extends StatelessWidget {
   const _TravelingChip();
 
@@ -4389,20 +4404,19 @@ class _TravelingChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        border: Border.all(color: AppColors.attraRed.withValues(alpha: 0.6)),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(Icons.flight_takeoff_rounded,
-              size: 13, color: AppColors.attraRed),
-          SizedBox(width: 5),
+              size: 16, color: context.colors.textSecondary),
+          const SizedBox(width: 6),
           Text('De viaje',
               style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11.5,
+                  color: context.colors.textSecondary,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700)),
         ],
       ),
@@ -4418,21 +4432,21 @@ class _LikedYouBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: AppColors.action),
+        color: context.colors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.favorite_rounded, size: 15, color: Colors.white),
-          SizedBox(width: 6),
+          Icon(Icons.favorite_rounded,
+              size: 16, color: context.colors.textPrimary),
+          const SizedBox(width: 6),
           Text(
             'Te ha dado like',
             style: TextStyle(
-              color: Colors.white,
+              color: context.colors.textPrimary,
               fontWeight: FontWeight.w700,
-              fontSize: 12.5,
-              letterSpacing: 0.2,
+              fontSize: 13,
             ),
           ),
         ],
@@ -4522,13 +4536,6 @@ class _SwipeStamp extends StatelessWidget {
               shape: BoxShape.circle,
               color: context.colors.bg.withValues(alpha: 0.42),
               border: Border.all(color: color, width: 2.5),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: color.withValues(alpha: 0.45 * t),
-                  blurRadius: 26,
-                  spreadRadius: 1,
-                ),
-              ],
             ),
             child: Icon(icon, color: color, size: 40),
           ),
@@ -4546,51 +4553,17 @@ class _PhotoFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFF1D6A96), Color(0xFF14324A)],
-        ),
-      ),
+    return ColoredBox(
+      color: context.colors.surfaceHigh,
       child: Center(
         child: Text(
           initial,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: context.colors.textMuted,
             fontSize: 96,
             fontWeight: FontWeight.bold,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _IconLine extends StatelessWidget {
-  const _IconLine({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 16, color: Colors.white70),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white70),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -4621,25 +4594,12 @@ class _FeedEndState extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: <Color>[
-                  AppColors.attraRed.withValues(alpha: 0.22),
-                  Colors.transparent,
-                ]),
-              ),
-              // El icono del círculo estaba fijo a "replay" e ignoraba `icon`:
-              // en estados que no son la segunda vuelta contaba otra historia.
-              child: Icon(icon, size: 44, color: AppColors.attraRed),
-            ),
+            Icon(icon, size: 32, color: context.colors.textSecondary),
             const SizedBox(height: 18),
             Text(title,
                 style: theme.textTheme.titleLarge, textAlign: TextAlign.center),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../theme/attra_colors.dart';
 
 import '../domain/date_plan.dart';
 
@@ -118,7 +119,7 @@ class _DatePlanProposalSheetState extends State<DatePlanProposalSheet> {
               'Comparte 1-3 ideas de plan. Vuestro match podrá elegir la que más '
               'le guste.',
               style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+                  ?.copyWith(color: context.colors.textMuted),
             ),
             const SizedBox(height: 14),
             _ConsentBanner(theme: theme),

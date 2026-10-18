@@ -90,7 +90,7 @@ class _SheetFrame extends StatelessWidget {
                   child: Text(
                     title,
                     style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
                 TextButton(

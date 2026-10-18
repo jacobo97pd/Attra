@@ -40,7 +40,7 @@ class DatePlannerScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Text('Easy first-date ideas',
               style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text('Low-key plans that make it easy to say yes.',
               style: TextStyle(color: context.colors.textSecondary)),
@@ -105,7 +105,7 @@ class DatePlannerScreen extends StatelessWidget {
           const SizedBox(height: 8),
           Text('A message to propose it',
               style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+                  ?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           LabCard(
             accent: AppColors.attraRed,

@@ -5,9 +5,91 @@ import 'package:attra/src/features/match/domain/match_flow_result.dart';
 import 'package:attra/src/features/profile/domain/profile_state.dart';
 import 'package:attra/src/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:attra/src/widgets/attra_motion.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('drag and return reuse the full profile content subtree',
+      (WidgetTester tester) async {
+    _usePhoneViewport(tester);
+    final _MatchServiceStub matches = _MatchServiceStub();
+    await tester.pumpWidget(_FeedHost(
+      profiles: <SeedProfile>[_profile('zoe', 'Zoe')],
+      matchService: matches,
+    ));
+    await tester.pumpAndSettle();
+    final Finder content =
+        find.byKey(const ValueKey<String>('feed-motion-content'));
+    final Widget body = tester.widget<AttraStateTransition>(content).child;
+    final TestGesture gesture =
+        await tester.startGesture(tester.getCenter(content));
+    await gesture.moveBy(const Offset(35, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pump();
+    expect(identical(tester.widget<AttraStateTransition>(content).child, body),
+        isTrue);
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(identical(tester.widget<AttraStateTransition>(content).child, body),
+        isTrue);
+    await tester.pumpAndSettle();
+    expect(matches.passedUids, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final bool reduceMotion in <bool>[false, true]) {
+    testWidgets(
+      'pasar sin gesto conserva destino y espera de envío (reduceMotion=$reduceMotion)',
+      (WidgetTester tester) async {
+        _usePhoneViewport(tester);
+        final _MatchServiceStub matchService = _MatchServiceStub();
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        try {
+          await tester.pumpWidget(_FeedHost(
+            profiles: <SeedProfile>[_profile('zoe', 'Zoe')],
+            matchService: matchService,
+            reduceMotion: reduceMotion,
+          ));
+          await tester.pumpAndSettle();
+
+          final Finder pass =
+              find.byKey(const ValueKey<String>('feed-pass-profile-button'));
+          expect(tester.getSize(pass).height, greaterThanOrEqualTo(48));
+          expect(
+              tester.getSemantics(pass),
+              isSemantics(
+                  label: 'Pasar',
+                  isButton: true,
+                  hasEnabledState: true,
+                  isEnabled: true,
+                  isFocusable: true,
+                  hasTapAction: true));
+          for (final String key in <String>[
+            'feed-rewind-button',
+            'feed-safety-button',
+            'feed-photo-attra-action-profiles/zoe/photo-42.jpg',
+            'feed-photo-like-action-profiles/zoe/photo-42.jpg',
+          ]) {
+            final Size size = tester.getSize(find.byKey(ValueKey<String>(key)));
+            expect(size.width, greaterThanOrEqualTo(48));
+            expect(size.height, greaterThanOrEqualTo(48));
+          }
+          await tester.tap(pass);
+          await tester.tap(pass);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(matchService.passedUids, isEmpty);
+          await tester.pumpAndSettle();
+          expect(matchService.passedUids, <String>['zoe']);
+          expect(tester.takeException(), isNull);
+        } finally {
+          semantics.dispose();
+        }
+      },
+    );
+  }
+
   testWidgets(
     'quita el dock y coloca Attra a la izquierda y like a la derecha de la foto',
     (WidgetTester tester) async {
@@ -97,16 +179,22 @@ class _FeedHost extends StatelessWidget {
     required this.profiles,
     required this.matchService,
     this.attrasBalance = 0,
+    this.reduceMotion = false,
   });
 
   final List<SeedProfile> profiles;
   final MatchService matchService;
   final int attrasBalance;
+  final bool reduceMotion;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: AppTheme.light,
+      builder: (BuildContext context, Widget? child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(disableAnimations: reduceMotion),
+        child: child!,
+      ),
       home: Scaffold(
         body: FeedScreen(
           user: null,
@@ -154,6 +242,7 @@ class _MatchServiceStub implements MatchService {
   int sendAttraCalls = 0;
   String? lastAttraToUid;
   String? lastAttraTargetPhotoId;
+  final List<String> passedUids = <String>[];
 
   @override
   Future<MatchFlowResult> sendAttra(
@@ -171,7 +260,9 @@ class _MatchServiceStub implements MatchService {
   }
 
   @override
-  Future<void> passProfile(String toUid) async {}
+  Future<void> passProfile(String toUid) async {
+    passedUids.add(toUid);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) {

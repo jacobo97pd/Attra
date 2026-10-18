@@ -72,20 +72,9 @@ class _CloseConversationSheetState extends State<CloseConversationSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 14),
-                    decoration: BoxDecoration(
-                      color: context.colors.surfaceLine,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
                 Text('Cerrar con elegancia',
                     style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w800)),
+                        ?.copyWith(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 Text(
                   'Cerrar con elegancia evita dejar a la otra persona en el aire. '

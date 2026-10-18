@@ -5,6 +5,7 @@ import 'package:attra/src/features/match/domain/user_match.dart';
 import 'package:attra/src/features/match/presentation/likes_received_screen.dart';
 import 'package:attra/src/features/profile/data/profile_summary_repository.dart';
 import 'package:attra/src/features/profile/domain/profile_summary.dart';
+import 'package:attra/src/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -69,6 +70,64 @@ Widget _host({required bool canSeeAllLikes, VoidCallback? onUpgrade}) {
 }
 
 void main() {
+  for (final double width in <double>[320, 390]) {
+    testWidgets('connections remain readable at $width with 200% text',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = Size(width, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.dark,
+        builder: (BuildContext context, Widget? child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: LikesReceivedScreen(
+          currentUid: 'me',
+          matchService: _FakeMatchService(),
+          chatService: _FakeChatService(),
+          summaries: _FakeSummaries(),
+          canSeeAllLikes: true,
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Perfil a'), findsOneWidget);
+      expect(find.byTooltip('Descartar like'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('descartar tiene nombre accesible y target de 48 puntos',
+      (WidgetTester tester) async {
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    try {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_host(canSeeAllLikes: false));
+      await tester.pumpAndSettle();
+
+      final Finder discard = find.byTooltip('Descartar like');
+      expect(discard, findsOneWidget);
+      expect(
+          tester.getSemantics(discard),
+          isSemantics(
+              tooltip: 'Descartar like', isButton: true, hasTapAction: true));
+      expect(tester.getSize(discard).width, greaterThanOrEqualTo(48));
+      expect(tester.getSize(discard).height, greaterThanOrEqualTo(48));
+      final Finder respond = find.ancestor(
+          of: find.text('Responder'), matching: find.byType(InkWell));
+      expect(tester.getSize(respond.first).height, greaterThanOrEqualTo(48));
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('Free: solo se revela el primer like y aparece el muro',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(900, 1600);

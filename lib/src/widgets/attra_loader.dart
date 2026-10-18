@@ -2,9 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
+import '../theme/attra_colors.dart';
 
-/// Loader de marca: el logo ATTRA respirando con escala y halo suave.
+/// Loader de marca: el logo ATTRA respirando con escala suave.
 /// Sustituye a los spinners genericos en procesos con espera real.
 ///
 /// Uso suelto:
@@ -42,12 +42,25 @@ class _AttraLogoLoaderState extends State<AttraLogoLoader>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1500),
-  )..repeat(reverse: true);
+  );
+
+  bool _reduceMotion = false;
 
   late final Animation<double> _breath = CurvedAnimation(
     parent: _c,
     curve: Curves.easeInOut,
   );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion || !TickerMode.valuesOf(context).enabled) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {
@@ -57,57 +70,49 @@ class _AttraLogoLoaderState extends State<AttraLogoLoader>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        AnimatedBuilder(
-          animation: _breath,
-          builder: (BuildContext context, Widget? child) {
-            final double t = _breath.value;
-            final double scale = lerpDouble(0.92, 1.08, t)!;
-            final double glow = lerpDouble(16, 38, t)!;
-            final double glowAlpha = lerpDouble(0.22, 0.5, t)!;
-            return Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.attraRed.withValues(alpha: glowAlpha),
-                    blurRadius: glow,
-                    spreadRadius: 1,
-                  ),
-                ],
+    return Semantics(
+      label: widget.label ?? 'Cargando',
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AnimatedBuilder(
+              animation: _breath,
+              builder: (BuildContext context, Widget? child) {
+                final double t = _reduceMotion ? 0.5 : _breath.value;
+                final double scale = lerpDouble(0.92, 1.08, t)!;
+                return Transform.scale(scale: scale, child: child);
+              },
+              child: Image.asset(
+                'assets/images/ATTRA.png',
+                height: widget.size,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
               ),
-              child: Transform.scale(scale: scale, child: child),
-            );
-          },
-          child: Image.asset(
-            'assets/images/ATTRA.png',
-            height: widget.size,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-          ),
-        ),
-        if (widget.label != null) ...<Widget>[
-          const SizedBox(height: 18),
-          Text(
-            widget.label!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              // El overlay siempre va sobre un fondo oscuro difuminado: texto
-              // blanco de alto contraste (antes gris/tenue y difícil de leer).
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
             ),
-          ),
-        ],
-      ],
+            if (widget.label != null) ...<Widget>[
+              const SizedBox(height: 18),
+              Text(
+                widget.label!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  // El overlay siempre va sobre un fondo oscuro difuminado: texto
+                  // blanco de alto contraste (antes gris/tenue y difícil de leer).
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
 
-/// Capa a pantalla completa: oscurece y difumina el fondo.
+/// Capa a pantalla completa: oscurece el fondo.
 /// Bloquea la interaccion mientras dura la tarea.
 class AttraLoadingOverlay extends StatelessWidget {
   const AttraLoadingOverlay({super.key, this.message});
@@ -120,10 +125,7 @@ class AttraLoadingOverlay extends StatelessWidget {
       child: Stack(
         children: <Widget>[
           Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Container(color: Colors.black.withValues(alpha: 0.55)),
-            ),
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.72)),
           ),
           Center(child: AttraLogoLoader(size: 76, label: message)),
         ],
@@ -139,7 +141,7 @@ class AttraLoadingOverlay extends StatelessWidget {
 /// cosa. Antes esto era un `LinearProgressIndicator` suelto, la única subida
 /// de la app que no llevaba la marca: un hilo gris sin nombre ni logo, frente
 /// al logo respirando del resto de subidas. Mismo lenguaje visual que
-/// [AttraLogoLoader] (punto con halo que respira) a escala de banner.
+/// [AttraLogoLoader] (punto que respira) a escala de banner.
 class AttraInlineLoader extends StatefulWidget {
   const AttraInlineLoader({super.key, required this.label});
 
@@ -155,12 +157,25 @@ class _AttraInlineLoaderState extends State<AttraInlineLoader>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
+  );
+
+  bool _reduceMotion = false;
 
   late final Animation<double> _breath = CurvedAnimation(
     parent: _c,
     curve: Curves.easeInOut,
   );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion || !TickerMode.valuesOf(context).enabled) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {
@@ -170,51 +185,52 @@ class _AttraInlineLoaderState extends State<AttraInlineLoader>
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black.withValues(alpha: 0.28),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            AnimatedBuilder(
-              animation: _breath,
-              builder: (BuildContext context, Widget? child) {
-                final double t = _breath.value;
-                final double scale = lerpDouble(0.7, 1.0, t)!;
-                final double glow = lerpDouble(4, 10, t)!;
-                final double glowAlpha = lerpDouble(0.35, 0.75, t)!;
-                return Transform.scale(
-                  scale: scale,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.attraRed,
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color:
-                              AppColors.attraRed.withValues(alpha: glowAlpha),
-                          blurRadius: glow,
-                          spreadRadius: 1,
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      label: widget.label,
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: ColoredBox(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.28)
+              : context.colors.surfaceHigh,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                AnimatedBuilder(
+                  animation: _breath,
+                  builder: (BuildContext context, Widget? child) {
+                    final double t = _reduceMotion ? 0.5 : _breath.value;
+                    final double scale = lerpDouble(0.7, 1.0, t)!;
+                    return Transform.scale(
+                      scale: scale,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: context.colors.accent,
                         ),
-                      ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : context.colors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                );
-              },
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Text(
-              widget.label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
