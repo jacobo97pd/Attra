@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/app_spacing.dart';
 import '../../../theme/attra_colors.dart';
+import '../../../widgets/attra_motion.dart';
 import '../domain/live_session.dart';
 
 /// Gesto de veredicto del vivo: IZQUIERDA = paso, DERECHA = me interesa.
@@ -63,7 +64,7 @@ class _LiveVerdictSwipeState extends State<LiveVerdictSwipe>
 
   void _runTo(double target, {VoidCallback? onDone}) {
     _animation = Tween<double>(begin: _dx, end: target).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+      CurvedAnimation(parent: _controller, curve: AttraMotion.enter),
     );
     _controller
       ..reset()
@@ -80,8 +81,13 @@ class _LiveVerdictSwipeState extends State<LiveVerdictSwipe>
       _runTo(0);
       return;
     }
-    if (_dx.abs() > _threshold) {
-      final bool like = _dx > 0;
+    // Mismo criterio que la tarjeta del feed: un flick rápido cuenta aunque
+    // no haya cruzado el umbral de distancia. 700 px/s, el de `Dismissible`.
+    const double flingVelocity = 700;
+    final double velocity = details.primaryVelocity ?? 0;
+    final bool decisiveFling = velocity.abs() > flingVelocity;
+    if (_dx.abs() > _threshold || decisiveFling) {
+      final bool like = decisiveFling ? velocity > 0 : _dx > 0;
       _runTo(
         like ? _width * 1.4 : -_width * 1.4,
         onDone: () {
@@ -249,19 +255,22 @@ class _RoundAction extends StatelessWidget {
       label: tooltip,
       child: Tooltip(
         message: tooltip,
-        child: Material(
-          color: filled ? colors.accent : colors.surfaceHigh,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: SizedBox(
-              width: 64,
-              height: 64,
-              child: Icon(
-                icon,
-                size: 28,
-                color: filled ? colors.onAccent : colors.textPrimary,
+        child: AttraPressFeedback(
+          enabled: onPressed != null,
+          child: Material(
+            color: filled ? colors.accent : colors.surfaceHigh,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onPressed,
+              child: SizedBox(
+                width: 64,
+                height: 64,
+                child: Icon(
+                  icon,
+                  size: 28,
+                  color: filled ? colors.onAccent : colors.textPrimary,
+                ),
               ),
             ),
           ),

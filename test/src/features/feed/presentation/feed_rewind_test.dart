@@ -9,6 +9,7 @@ import 'package:attra/src/features/match/data/match_service.dart';
 import 'package:attra/src/features/match/domain/match_flow_result.dart';
 import 'package:attra/src/features/profile/domain/profile_state.dart';
 import 'package:attra/src/theme/app_theme.dart';
+import 'package:attra/src/widgets/attra_buttons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -288,13 +289,13 @@ void main() {
 
     await _dar(tester);
     expect(service.liked.length, 1);
-    expect(tester.widget<IconButton>(boton).onPressed, isNull,
+    expect(tester.widget<AttraCircleIconButton>(boton).onPressed, isNull,
         reason: 'el like todavía no está escrito: deshacerlo sería un no-op '
             'que además lo dejaría enviado');
 
     enVuelo.complete(const MatchFlowResult.liked());
     await tester.pumpAndSettle();
-    expect(tester.widget<IconButton>(boton).onPressed, isNotNull);
+    expect(tester.widget<AttraCircleIconButton>(boton).onPressed, isNotNull);
   });
 
   testWidgets('con el feed agotado Free también ve el gancho', (
@@ -500,7 +501,14 @@ void main() {
 Future<void> _responderPrompt(WidgetTester tester, String nombre) async {
   final Finder responder = find
       .byKey(ValueKey<String>('feed-prompt-respond-p_${nombre.toLowerCase()}'));
-  await tester.ensureVisible(responder);
+  final Finder scrollable = find
+      .descendant(
+        of: find.byKey(
+            ValueKey<String>('feed-profile-scroll-${nombre.toLowerCase()}')),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  await tester.scrollUntilVisible(responder, 180, scrollable: scrollable);
   await tester.pumpAndSettle();
   await tester.tap(responder);
   await tester.pumpAndSettle();

@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Skills de agentes IA (Claude Code, Codex...) sincronizadas localmente: son
+# config/caché de herramienta, no código de la app. Una de ellas trae un
+# binario de ~25 MB; no pertenece al repo de Attra, igual que .claude/.
+.agents/
+.codex/
+skills-lock.json
