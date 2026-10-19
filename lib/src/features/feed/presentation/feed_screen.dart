@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../widgets/attra_buttons.dart';
+import '../../../widgets/attra_glass.dart';
 import '../../../widgets/attra_motion.dart';
 
 import '../../ads/presentation/feed_native_ad_card.dart';
@@ -3789,21 +3790,11 @@ class _SwipeCardState extends State<_SwipeCard>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            TextButton(
+                            AttraGlassPillButton(
                               key: const ValueKey<String>(
                                   'feed-pass-profile-button'),
+                              label: 'Pasar',
                               onPressed: canPass ? _passFromControl : null,
-                              style: TextButton.styleFrom(
-                                minimumSize: const Size(48, 48),
-                                foregroundColor: Colors.white,
-                                disabledForegroundColor: Colors.white54,
-                                backgroundColor:
-                                    Colors.black.withValues(alpha: 0.45),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                shape: const StadiumBorder(),
-                              ),
-                              child: const Text('Pasar'),
                             ),
                             const SizedBox(width: 8),
                             _RewindCardButton(

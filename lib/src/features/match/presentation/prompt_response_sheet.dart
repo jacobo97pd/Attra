@@ -4,6 +4,7 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../widgets/attra_backgrounds.dart';
+import '../../../widgets/attra_glass.dart';
 import 'photo_response_sheet.dart' show PhotoResponseKind, PhotoResponseResult;
 
 /// Bottom sheet "Responde a esta respuesta": muestra el prompt (pregunta +
@@ -139,15 +140,15 @@ class _PromptResponseSheetState extends State<PromptResponseSheet> {
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
-          FilledButton.icon(
+          AttraGlassPillButton(
             onPressed: tooLong ? null : () => _send(PhotoResponseKind.like),
             icon: const Icon(Icons.favorite),
-            label: Text(_comment == null
-                ? 'Enviar Like'
-                : 'Enviar Like con comentario'),
+            label:
+                _comment == null ? 'Enviar Like' : 'Enviar Like con comentario',
+            expand: true,
           ),
           const SizedBox(height: AppSpacing.sm),
-          OutlinedButton.icon(
+          AttraGlassPillButton(
             onPressed: tooLong
                 ? null
                 : () {
@@ -160,10 +161,12 @@ class _PromptResponseSheetState extends State<PromptResponseSheet> {
                     }
                     _send(PhotoResponseKind.attra);
                   },
-            icon: const Icon(Icons.star, color: AppColors.gold),
-            label: Text(hasAttras
+            icon: const Icon(Icons.star),
+            label: hasAttras
                 ? 'Enviar Attra · ${widget.attraBalance}'
-                : 'Comprar Attras'),
+                : 'Comprar Attras',
+            tint: AppColors.gold,
+            expand: true,
           ),
           const SizedBox(height: 4),
           Center(

@@ -4,6 +4,7 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/app_spacing.dart';
 import '../../../theme/attra_colors.dart';
 import '../../../widgets/attra_editorial.dart';
+import '../../../widgets/attra_glass.dart';
 import '../../../widgets/attra_image.dart';
 
 /// Que accion eligio el usuario en el sheet de respuesta a una foto.
@@ -184,39 +185,31 @@ class _PhotoResponseSheetState extends State<PhotoResponseSheet> {
                               : context.colors.textMuted)),
                 ),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  key: ValueKey<String>(
-                    isAttra
-                        ? 'photo-response-submit-attra'
-                        : 'photo-response-submit-like',
-                  ),
-                  style: isAttra
-                      ? FilledButton.styleFrom(
-                          backgroundColor: AppColors.gold,
-                          foregroundColor: AppColors.black,
-                        )
-                      : null,
-                  onPressed: tooLong || (isAttra && !hasAttras) ? null : _send,
-                  icon: isAttra
-                      ? const Text(
-                          'A',
-                          style: TextStyle(
-                            fontSize: 20,
-                            height: 1,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        )
-                      : const Icon(Icons.favorite_border_rounded),
-                  label: Text(
-                    isAttra
-                        ? 'Enviar Attra · ${widget.attraBalance}'
-                        : _comment == null
-                            ? 'Enviar Like'
-                            : 'Enviar Like con comentario',
-                  ),
+              AttraGlassPillButton(
+                key: ValueKey<String>(
+                  isAttra
+                      ? 'photo-response-submit-attra'
+                      : 'photo-response-submit-like',
                 ),
+                onPressed: tooLong || (isAttra && !hasAttras) ? null : _send,
+                tint: isAttra ? AppColors.gold : null,
+                expand: true,
+                icon: isAttra
+                    ? const Text(
+                        'A',
+                        style: TextStyle(
+                          fontSize: 16,
+                          height: 1,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.favorite_border_rounded),
+                label: isAttra
+                    ? 'Enviar Attra · ${widget.attraBalance}'
+                    : _comment == null
+                        ? 'Enviar Like'
+                        : 'Enviar Like con comentario',
               ),
               const SizedBox(height: 4),
               Center(

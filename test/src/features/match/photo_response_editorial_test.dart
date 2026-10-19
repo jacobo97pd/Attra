@@ -1,5 +1,6 @@
 import 'package:attra/src/features/match/presentation/photo_response_sheet.dart';
 import 'package:attra/src/theme/app_theme.dart';
+import 'package:attra/src/widgets/attra_glass.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -86,7 +87,7 @@ void main() {
 
     final Finder submit =
         find.byKey(const ValueKey<String>('photo-response-submit-attra'));
-    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    expect(tester.widget<AttraGlassPillButton>(submit).onPressed, isNull);
     expect(find.byType(TextField), findsNothing);
     expect(find.text('Comentario con Plus'), findsOneWidget);
     await tester.ensureVisible(find.text('Cancelar'));

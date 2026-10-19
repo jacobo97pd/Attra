@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/attra_colors.dart';
 import '../theme/app_spacing.dart';
+import 'attra_glass.dart';
 import 'attra_motion.dart';
 
 /// Acción principal con estados Material, altura flexible y superficie tonal.
@@ -126,11 +127,11 @@ class AttraSecondaryButton extends StatelessWidget {
 }
 
 /// Icono circular flotante sobre una foto o un vídeo: cerrar, más opciones,
-/// reportar... Antes cada pantalla (tarjeta del feed, historias, en vivo,
-/// cámara de perfil) repetía su propio `Material` + `IconButton` con el mismo
-/// 45% de negro, cada uno con su propio nivel de pulido — y ninguno con el
-/// escalado de [AttraPressFeedback]. Un solo sitio para los tres: el aro
-/// oscuro, el tamaño del área de toque y la respuesta al tacto.
+/// reportar, deshacer... Antes cada pantalla (tarjeta del feed, historias, en
+/// vivo, cámara de perfil) repetía su propio `Material` + `IconButton` con el
+/// mismo 45% de negro plano. Desde la maqueta "Liquid Glass" del 19 de
+/// octubre de 2026, es [AttraGlassIconButton] por debajo: mismo sitio para el
+/// tamaño del área de toque y la respuesta al tacto, ahora en vidrio.
 class AttraCircleIconButton extends StatelessWidget {
   const AttraCircleIconButton({
     super.key,
@@ -138,7 +139,7 @@ class AttraCircleIconButton extends StatelessWidget {
     this.onPressed,
     this.tooltip,
     this.size = 48,
-    this.background = const Color(0x73000000),
+    this.background,
   });
 
   /// El contenido del botón: normalmente un `Icon`, pero admite cualquier
@@ -150,25 +151,18 @@ class AttraCircleIconButton extends StatelessWidget {
   /// Lado del círculo. El área de toque crece con él.
   final double size;
 
-  /// Velo detrás del icono para que se lea sobre cualquier foto.
-  final Color background;
+  /// Tinte del vidrio. `null` = neutro (blanco); se puede dar un color, por
+  /// ejemplo el champagne de Plus/Attra.
+  final Color? background;
 
   @override
   Widget build(BuildContext context) {
-    return AttraPressFeedback(
-      enabled: onPressed != null,
-      child: Material(
-        color: background,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: icon,
-          padding: EdgeInsets.zero,
-          constraints: BoxConstraints.tightFor(width: size, height: size),
-        ),
-      ),
+    return AttraGlassIconButton(
+      icon: icon,
+      onPressed: onPressed,
+      tooltip: tooltip,
+      size: size,
+      tint: background,
     );
   }
 }
